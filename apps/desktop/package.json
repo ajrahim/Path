@@ -5,12 +5,17 @@
   "license": "Apache-2.0",
   "productName": "Path",
   "description": "Path desktop shell",
+  "author": "Path Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ajrahim/Path.git"
+  },
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node Build.mjs",
     "dev": "npm run build && wait-on http://127.0.0.1:3000 && cross-env PATH_APP_RENDERER_URL=http://127.0.0.1:3000 electron .",
-    "package": "npm run rebuild:native && electron-builder",
-    "package:dir": "npm run rebuild:native && electron-builder --dir",
+    "package": "npm run rebuild:native && electron-builder --publish never",
+    "package:dir": "npm run rebuild:native && electron-builder --dir --publish never",
     "rebuild:native": "node scripts/RebuildNative.mjs",
     "typecheck": "tsc --noEmit"
   },

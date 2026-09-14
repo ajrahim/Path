@@ -30,9 +30,10 @@ jobs:
         with:
           draft: false
           make_latest: true
+          fail_on_unmatched_files: false
           files: |
             release/*.exe
             release/*.blockmap
-            release/latest.yml
+            release/*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
