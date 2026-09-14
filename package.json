@@ -32,6 +32,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "npm run db:generate -w @path/database",
     "version:bump": "node scripts/BumpVersion.mjs",
+    "push": "node scripts/PushReleasePr.mjs",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "check:architecture": "depcruise --config .dependency-cruiser.cjs apps/desktop/src apps/renderer/src packages/*/src",

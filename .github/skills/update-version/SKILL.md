@@ -1,23 +1,21 @@
 ---
 name: update-version
-description: "Update project and monorepo workspace versions, synchronize lockfiles, run quality checks, and publish git release tags. Use when: bumping version, releasing a new version, updating semver (patch/minor/major), creating release tags, or preparing package releases."
+description: "Automate release PR generation, version bumping across monorepo workspaces, i18n translation validation, code review & test suite execution, branch creation, commit, and Pull Request creation. Use when: creating a release PR, bumping versions (patch/minor/major/x.y.z), running release verification, or running npm run push."
 argument-hint: "<patch|minor|major|x.y.z>"
 user-invocable: true
 ---
 
-# Update Version Skill
+# Release PR Generation Skill
 
-Automates bumping the semantic version across the Path monorepo root and all workspace packages, synchronizing lockfiles, running validation suites, and publishing GitHub release tags.
+Automates the complete release process:
 
-## When to Use
+1. **Version Bump:** Synchronizes version numbers across the monorepo root and all 7 workspace packages plus `package-lock.json`.
+2. **i18n Validation:** Validates all JSON translation catalogs under `packages/shared/messages/`.
+3. **Code Review & Quality:** Runs full linting, formatting, TypeScript compilation, architectural boundaries, Knip unused exports (`npm run check`), and the test suite (`npm test`).
+4. **Git Branching & Commit:** Creates and checks out a `release/v<version>` branch, stages files, and commits with standard release message.
+5. **PR Creation & Push:** Pushes the release branch to GitHub and opens a Pull Request using `gh pr create` (or generates a pre-filled 1-click comparison URL).
 
-- Bumping semantic version for patch, minor, or major releases
-- Synchronizing version numbers across all monorepo packages (`apps/*`, `packages/*`)
-- Preparing and tagging a new release for GitHub Actions CI/CD release workflow
-
-## Monorepo Workspace Manifests
-
-When updating the version, all 8 manifests are kept aligned:
+## Monorepo Workspace Manifests Synchronized
 
 1. `package.json` (Root)
 2. `apps/desktop/package.json`
@@ -29,55 +27,65 @@ When updating the version, all 8 manifests are kept aligned:
 8. `packages/transcription/package.json`
 9. `package-lock.json`
 
-## Procedure
+## Single-Command Workflow
 
-### 1. Determine Target Version
-
-Choose one of:
-
-- `patch`: Bug fixes and minor tweaks (e.g. `0.1.0` -> `0.1.1`)
-- `minor`: New backwards-compatible features (e.g. `0.1.0` -> `0.2.0`)
-- `major`: Breaking changes (e.g. `0.1.0` -> `1.0.0`)
-- Explicit semver string (e.g. `0.2.0`, `1.0.0`)
-
-### 2. Execute Version Bump
-
-Run the repository version script:
+Run the push release script with your target bump or version:
 
 ```sh
-npm run version:bump <patch|minor|major|x.y.z>
+npm run push <patch|minor|major|x.y.z>
 ```
 
-_(or `node scripts/BumpVersion.mjs <target>`)_
-
-This automatically:
-
-- Validates the target semver
-- Updates `"version"` across all workspace `package.json` files
-- Synchronizes `package-lock.json` via `npm install --package-lock-only`
-
-### 3. Verify Code Quality and Tests
-
-Ensure all workspace packages typecheck, lint, pass architecture rules, and pass the test suite:
+### Examples:
 
 ```sh
-npm run check
-npm test
+npm run push patch    # 0.1.0 -> 0.1.1
+npm run push minor    # 0.1.0 -> 0.2.0
+npm run push 0.2.0    # Explicit semver
 ```
 
-### 4. Commit and Tag Release
+## Step-by-Step Procedure
 
-Commit the version changes and create an annotated git tag:
+### 1. Version Bumping
+
+The script calculates the target semver and updates all 8 `package.json` files, followed by `npm install --package-lock-only` to ensure lockfile synchronization.
+
+### 2. Translation & i18n Checks
+
+Validates all localization files under `packages/shared/messages/` (e.g. `en.json`) ensuring valid JSON structure and complete key trees.
+
+### 3. Comprehensive Code Review
+
+Executes:
 
 ```sh
-git add .
-git commit -m "chore(release): v<version>"
+npm run check  # prettier, eslint, typecheck, depcruise, knip
+npm test       # vitest unit & component test suite
+```
+
+### 4. Git Branch & Commit
+
+- Creates branch: `release/v<version>`
+- Stages all modified files: `git add .`
+- Commits: `chore(release): v<version>`
+- Pushes to remote: `git push -u origin release/v<version>`
+
+### 5. Pull Request Generation
+
+- If GitHub CLI (`gh`) is available, executes `gh pr create` with pre-filled title and formatted description following `.github/pull_request_template.md`.
+- If `gh` is not installed, generates a direct GitHub compare & PR URL for immediate one-click submission.
+
+### 6. Tagging and Final Release
+
+Once the PR is merged into `main`:
+
+```sh
+git checkout main
+git pull
 git tag -a v<version> -m "Release v<version>"
+git push origin v<version>
 ```
 
-### 5. Push to GitHub
-
-Push the main branch and the release tag:
+Pushing the tag (`v*`) triggers [.github/workflows/release.yml](../../workflows/release.yml) to package the Windows `.exe` installer and publish the GitHub Release automatically.
 
 ```sh
 git push origin main
