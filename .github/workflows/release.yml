@@ -24,10 +24,11 @@ jobs:
         run: npm run package -w @path/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create Draft Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
+          make_latest: true
           files: |
             release/*.exe
             release/*.blockmap
