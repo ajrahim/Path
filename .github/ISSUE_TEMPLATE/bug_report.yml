@@ -1,0 +1,70 @@
+name: Bug Report
+description: Create a report to help us improve Path
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue with Path!
+        *Please make sure not to include any private screen recordings, credentials, or personal information in your report.*
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what went wrong.
+      placeholder: When I click Stop recording, the application...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior.
+      placeholder: |
+        1. Open Path
+        2. Click 'New recording'
+        3. Select display source and click 'Start recording'
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Sonoma / Sequoia)
+        - macOS (Other)
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App Version / Git Commit
+      placeholder: e.g. 0.1.0 or commit SHA
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Screenshots
+      description: Sanitized console output, logs, or UI screenshots (ensure no private information is exposed).
+      render: shell
+    validations:
+      required: false

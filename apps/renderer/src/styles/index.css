@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Shared defaults precede owner rules. Button alone stays below caller utilities. */
+@import "./global.css";
+@import "./components/Button.css";
+@import "./pages/WorkspacePage.css";
+@import "./components/ThemeToggle.css";
+@import "./components/LocalModelSelect.css";
+@import "./components/HistorySidebar.css";
+@import "./components/RecordingPane.css";
+@import "./components/ScreenshotAction.css";
+@import "./components/ScreenshotImage.css";
+@import "./components/GuidePane.css";
+@import "./components/InstructionFlowSelect.css";
+@import "./components/SourceDialog.css";
+@import "./pages/RecorderPage.css";
+@import "./pages/RecordingToolbarPage.css";
+@import "./pages/RegionPage.css";
+@import "./pages/SettingsPage.css";

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", "tests/*.mjs"],
+      "project": ["scripts/**/*.mjs", "tests/**/*.mjs"]
+    },
+    "apps/desktop": {
+      "entry": ["src/Main.ts", "src/Preload.ts", "test/**/*.test.ts", "scripts/*.mjs"],
+      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/*.mjs"]
+    },
+    "apps/renderer": {
+      "entry": ["src/pages/*.tsx", "test/**/*.test.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx,css}", "test/**/*.{ts,tsx}", "*.{ts,mjs}"],
+      "paths": { "@/*": ["src/*"] }
+    },
+    "packages/shared": { "entry": [], "project": ["src/**/*.ts"], "includeEntryExports": true },
+    "packages/database": {
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      "entry": ["test/**/*.test.ts"],
+      "includeEntryExports": true
+    },
+    "packages/recording-core": {
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      "entry": ["test/**/*.test.ts"],
+      "includeEntryExports": true
+    },
+    "packages/timeline": {
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      "entry": ["test/**/*.test.ts"],
+      "includeEntryExports": true
+    },
+    "packages/transcription": {
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      "entry": ["test/**/*.test.ts"],
+      "includeEntryExports": true
+    }
+  }
+}

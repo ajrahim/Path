@@ -1,0 +1,103 @@
+/* Caller utilities and unlayered owner rules retain priority over the shared button defaults. */
+
+@layer components {
+  .path-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--spacing) * 2);
+    border-radius: 8px;
+    font-size: var(--text-sm);
+    line-height: var(--tw-leading, var(--text-sm--line-height));
+    --tw-font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    transition-property: background-color, border-color, box-shadow, color;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    --tw-duration: 150ms;
+    transition-duration: 150ms;
+  }
+
+  .path-button:focus-visible {
+    outline-style: var(--tw-outline-style, solid);
+    outline-width: 2px;
+    outline-offset: 2px;
+    outline-color: var(--focus);
+  }
+
+  .path-button:disabled {
+    pointer-events: none;
+    opacity: 45%;
+  }
+
+  .path-button-default,
+  .path-button-secondary,
+  .path-button-ghost,
+  .path-button-danger {
+    border-style: var(--tw-border-style, solid);
+    border-width: 1px;
+    border-color: transparent;
+  }
+
+  .path-button-default {
+    background-color: var(--primary);
+    color: var(--color-white);
+    --tw-shadow: 0 1px 2px var(--tw-shadow-color, rgb(24 90 189 / 28%));
+  }
+
+  .path-button-secondary {
+    border-color: var(--border-strong);
+    background-color: var(--surface-raised);
+    color: var(--ink);
+    --tw-shadow: 0 1px 1px var(--tw-shadow-color, rgb(15 23 42 / 4%));
+  }
+
+  .path-button-default,
+  .path-button-secondary {
+    /* Keep utility-provided rings and shadow colors composable when callers opt into them. */
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+  }
+
+  .path-button-ghost {
+    color: var(--ink);
+  }
+
+  .path-button-danger {
+    color: var(--danger);
+  }
+
+  @media (hover: hover) {
+    .path-button-default:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .path-button-secondary:hover,
+    .path-button-ghost:hover {
+      background-color: var(--surface-hover);
+    }
+
+    .path-button-danger:hover {
+      background-color: var(--danger-soft);
+    }
+  }
+
+  .path-button-size-default {
+    height: calc(var(--spacing) * 9);
+    padding-inline: calc(var(--spacing) * 3.5);
+  }
+
+  .path-button-size-sm {
+    height: calc(var(--spacing) * 8);
+    padding-inline: calc(var(--spacing) * 2.5);
+    font-size: var(--text-xs);
+    line-height: var(--tw-leading, var(--text-xs--line-height));
+  }
+
+  .path-button-size-icon {
+    width: calc(var(--spacing) * 8);
+    height: calc(var(--spacing) * 8);
+  }
+}

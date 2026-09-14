@@ -1,0 +1,71 @@
+html:has(.region-overlay),
+body:has(.region-overlay) {
+  background: transparent;
+}
+
+.region-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: rgb(12 14 16 / 42%);
+  cursor: crosshair;
+  user-select: none;
+}
+
+.region-overlay:has(.region-selection) {
+  background: transparent;
+}
+
+.region-hint {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  padding: 9px 13px;
+  border-radius: 6px;
+  background: rgb(24 24 23 / 88%);
+  color: white;
+  font-size: 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.region-selection {
+  position: absolute;
+  min-width: 24px;
+  min-height: 24px;
+  resize: both;
+  overflow: visible;
+  border: 2px solid #ffffff;
+  border-radius: 3px;
+  outline: 1px solid rgb(22 73 190 / 90%);
+  background: transparent;
+  box-shadow: 0 0 0 9999px rgb(12 14 16 / 42%);
+  cursor: default;
+}
+
+.region-size {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgb(24 24 23 / 82%);
+  color: white;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.region-actions {
+  position: absolute;
+  right: 0;
+  bottom: -44px;
+  display: flex;
+  gap: 6px;
+}
+
+.region-cancel {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+}

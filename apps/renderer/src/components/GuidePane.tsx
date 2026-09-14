@@ -1,0 +1,289 @@
+import { useEffect, useRef } from "react";
+import { Copy, Download, ImagePlus, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { useTranslations } from "next-intl";
+import type { RecordingSummary } from "@path/shared";
+import { Button } from "@/components/Button";
+import { InstructionFlowSelect } from "./InstructionFlowSelect";
+import { useInstructionFlows } from "../hooks/useInstructionFlows";
+import { useGuideDocument } from "../hooks/useGuideDocument";
+
+export function GuidePane({ recording }: { recording: RecordingSummary | null }) {
+  const t = useTranslations();
+  const flows = useInstructionFlows();
+  const { markdownInputRef, ...guide } = useGuideDocument(recording);
+  const flowSelectRef = useRef<HTMLButtonElement>(null);
+  const flowNameRef = useRef<HTMLInputElement>(null);
+  const flowDialogRef = useRef<HTMLFormElement>(null);
+  const instructionsOpen = flows.editor !== null;
+  const error = guide.error ?? flows.error;
+  const { closeEditor } = flows;
+
+  useEffect(() => {
+    if (!instructionsOpen) return;
+
+    // Keep focus inside the editor until it closes, then return it to the flow chooser.
+    const returnFocus = flowSelectRef.current;
+
+    flowNameRef.current?.focus();
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeEditor();
+      }
+
+      if (event.key === "Tab") {
+        const controls = flowDialogRef.current?.querySelectorAll<HTMLElement>(
+          "input, textarea, button:not(:disabled)",
+        );
+
+        const first = controls?.[0];
+        const last = controls?.[controls.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      returnFocus?.focus();
+    };
+  }, [instructionsOpen, closeEditor]);
+
+  return (
+    <>
+      <aside className="guide-panel">
+        <header className="pane-header">
+          <InstructionFlowSelect
+            triggerRef={flowSelectRef}
+            selectedFlow={flows.selectedFlow}
+            customFlows={flows.customFlows}
+            disabled={!flows.loaded || guide.generating}
+            onSelect={flows.selectFlow}
+          />
+          <div className="guide-header-actions">
+            <Button
+              size="icon"
+              variant="secondary"
+              title={t("guide.editPrompt")}
+              aria-label={t("guide.editPrompt")}
+              disabled={!flows.loaded || guide.generating}
+              onClick={flows.editSelectedFlow}
+            >
+              <Pencil aria-hidden="true" size={14} />
+            </Button>
+            <Button
+              size="sm"
+              disabled={!recording || guide.generating || !flows.loaded}
+              onClick={() => void guide.generateGuide(flows.selectedFlow.instructions)}
+            >
+              <Sparkles size={14} />
+              {guide.generating ? t("guide.generating") : t("guide.generate")}
+            </Button>
+          </div>
+        </header>
+        <div
+          className="editor-surface markdown-editor-surface"
+          onDragOver={(event) => {
+            if (
+              [...event.dataTransfer.items].some(
+                (item) => item.kind === "file" && item.type.startsWith("image/"),
+              )
+            ) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }
+          }}
+          onDrop={(event) => {
+            const images = [...event.dataTransfer.files].filter((file) =>
+              file.type.startsWith("image/"),
+            );
+
+            if (images.length === 0) return;
+
+            event.preventDefault();
+            void guide.insertImages(images);
+          }}
+        >
+          {recording ? (
+            <>
+              <textarea
+                ref={markdownInputRef}
+                value={guide.markdown}
+                onChange={(event) => guide.editMarkdown(event.target.value)}
+                onPaste={(event) => {
+                  const images = [...event.clipboardData.files].filter((file) =>
+                    file.type.startsWith("image/"),
+                  );
+
+                  if (images.length === 0) return;
+
+                  event.preventDefault();
+                  void guide.insertImages(images);
+                }}
+                aria-label={t("guide.editor")}
+                placeholder={t("guide.markdownPlaceholder")}
+              />
+              <div className="markdown-editor-footer">
+                <span className="markdown-image-hint">
+                  <ImagePlus aria-hidden="true" size={13} />
+                  {t("guide.imageHint")}
+                </span>
+                <div className="markdown-editor-actions">
+                  <Button
+                    className="markdown-copy-action"
+                    size="icon"
+                    variant="secondary"
+                    title={guide.copied ? t("guide.copied") : t("guide.copy")}
+                    aria-label={guide.copied ? t("guide.copied") : t("guide.copy")}
+                    disabled={!guide.markdown}
+                    onClick={() => void guide.copyMarkdown()}
+                  >
+                    <Copy aria-hidden="true" size={14} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!guide.markdown || guide.exporting}
+                    onClick={() => void guide.exportMarkdown()}
+                  >
+                    <Download size={13} />
+                    {guide.exporting ? t("guide.exporting") : t("guide.export")}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="guide-empty-state">
+              <span>
+                <Sparkles aria-hidden="true" size={18} />
+              </span>
+              <strong>{t("guide.emptyTitle")}</strong>
+              <p>{flows.selectedFlow.name}</p>
+            </div>
+          )}
+          {error && (
+            <p className="markdown-image-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      </aside>
+      {flows.editor && (
+        <div
+          className="modal-backdrop guide-instructions-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              flows.closeEditor();
+            }
+          }}
+        >
+          <form
+            ref={flowDialogRef}
+            className="guide-instructions-dialog prompt-editor-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="guide-instructions-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              flows.saveFlow();
+            }}
+          >
+            <header className="prompt-editor-header">
+              <Pencil aria-hidden="true" size={20} />
+              <div>
+                <h2 id="guide-instructions-title">
+                  {flows.editor.editingId || flows.editor.mode === "copy"
+                    ? t("guide.editPrompt")
+                    : t("guide.newPrompt")}
+                </h2>
+                <p>
+                  {flows.editor.mode === "copy" ? t("guide.presetCopy") : t("guide.customPrompt")}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                title={t("guide.closeEditor")}
+                aria-label={t("guide.closeEditor")}
+                onClick={() => flows.closeEditor()}
+              >
+                <X aria-hidden="true" size={18} />
+              </Button>
+            </header>
+            <div className="prompt-editor-body">
+              <label className="prompt-name-field">
+                <span>{t("guide.promptName")}</span>
+                <input
+                  ref={flowNameRef}
+                  value={flows.editor.name}
+                  onChange={(event) => flows.renameDraft(event.target.value)}
+                  required
+                  maxLength={80}
+                  placeholder={t("guide.flowNamePlaceholder")}
+                />
+              </label>
+              <label className="prompt-instructions-field">
+                <span className="prompt-field-heading">
+                  <span>{t("guide.instructionsLabel")}</span>
+                  <span className="prompt-character-count" aria-hidden="true">
+                    {flows.editor.instructions.length.toLocaleString()} / 10,000
+                  </span>
+                </span>
+                <textarea
+                  aria-label={t("guide.instructionsLabel")}
+                  value={flows.editor.instructions}
+                  spellCheck={false}
+                  required
+                  maxLength={10_000}
+                  onChange={(event) => flows.reviseInstructions(event.target.value)}
+                  placeholder={t("guide.instructionsPlaceholder")}
+                />
+              </label>
+              {flows.editor.error && (
+                <p className="settings-inline-error" role="alert">
+                  {flows.editor.error}
+                </p>
+              )}
+            </div>
+            <footer>
+              {flows.editor.editingId && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="guide-flow-delete"
+                  title={t("guide.deleteFlow")}
+                  aria-label={t("guide.deleteFlow")}
+                  onClick={flows.deleteFlow}
+                >
+                  <Trash2 aria-hidden="true" size={15} />
+                </Button>
+              )}
+              <Button type="button" variant="secondary" onClick={() => flows.closeEditor()}>
+                {t("actions.cancel")}
+              </Button>
+              <Button type="submit">
+                {flows.editor.mode === "copy" ? (
+                  <Copy aria-hidden="true" size={14} />
+                ) : (
+                  <Save aria-hidden="true" size={14} />
+                )}
+                {flows.editor.mode === "copy" ? t("guide.saveCopy") : t("guide.savePrompt")}
+              </Button>
+            </footer>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}

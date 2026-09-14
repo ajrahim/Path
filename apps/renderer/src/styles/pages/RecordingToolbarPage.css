@@ -1,0 +1,88 @@
+body:has(.recording-toolbar) {
+  overflow: hidden;
+  background: transparent;
+}
+
+.recording-toolbar {
+  display: grid;
+  grid-template-columns: 22px 10px minmax(70px, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  width: calc(100vw - 12px);
+  height: calc(100dvh - 12px);
+  margin: 6px;
+  padding: 0 8px 0 7px;
+  border: 1px solid rgb(214 200 187 / 94%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: none;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.recording-toolbar-drag {
+  display: grid;
+  width: 22px;
+  height: 30px;
+  place-items: center;
+  color: var(--faint-ink);
+  cursor: grab;
+}
+
+.recording-toolbar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #df443c;
+  box-shadow: none;
+}
+
+.recording-toolbar-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.recording-toolbar-copy strong {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recording-toolbar-copy span,
+.recording-toolbar-clicks {
+  color: var(--muted-ink);
+  font-size: 9px;
+}
+
+.recording-toolbar-clicks {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.recording-toolbar-stop {
+  -webkit-app-region: no-drag;
+}
+
+.recording-toolbar {
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.recording-toolbar {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow-float);
+}
+
+.recording-toolbar-copy span,
+.recording-toolbar-clicks {
+  font-size: 12px;
+}
+
+.recording-toolbar {
+  border-radius: 12px;
+}

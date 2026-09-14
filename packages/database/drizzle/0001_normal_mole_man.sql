@@ -1,0 +1,1 @@
+ALTER TABLE `click_events` ADD `action_description` text;

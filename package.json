@@ -1,0 +1,63 @@
+{
+  "name": "path",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-first screen-to-support, spec, and feedback documentation desktop app",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ajrahim/Path.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ajrahim/Path/issues"
+  },
+  "homepage": "https://github.com/ajrahim/Path#readme",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @path/renderer && npm run build -w @path/desktop",
+    "dev": "node scripts/Dev.mjs",
+    "predev": "npm run rebuild:native -w @path/desktop",
+    "lint": "eslint . --max-warnings 0",
+    "package": "npm run build && npm run package -w @path/desktop",
+    "package:dir": "npm run build && npm run package:dir -w @path/desktop",
+    "pretest": "npm rebuild better-sqlite3",
+    "pretest:recording": "npm run build && npm run rebuild:native -w @path/desktop",
+    "test": "vitest run --exclude **/*.integration.test.ts",
+    "test:recording": "wait-on http://127.0.0.1:3000 && node tests/ElectronRecording.mjs",
+    "test:renderer": "npm run build -w @path/renderer && node tests/RendererPages.mjs",
+    "test:transcription": "npm run test:integration -w @path/transcription",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @path/database",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "check:architecture": "depcruise --config .dependency-cruiser.cjs apps/desktop/src apps/renderer/src packages/*/src",
+    "check:unused": "knip",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:architecture && npm run check:unused"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "dependency-cruiser": "18.3.0",
+    "esbuild": "0.28.2",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "16.3.5",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.4.0",
+    "jsdom": "^27.4.0",
+    "knip": "6.35.1",
+    "playwright-core": "^1.62.1",
+    "prettier": "3.9.6",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "8.70.0",
+    "vitest": "4.1.11",
+    "wait-on": "^8.0.4"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.2"
+  }
+}

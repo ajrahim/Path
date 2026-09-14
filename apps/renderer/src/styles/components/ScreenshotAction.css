@@ -1,0 +1,50 @@
+.activity-screenshot-action {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  margin-top: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-ink);
+  box-shadow: none;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.activity-screenshot-action:hover,
+.activity-screenshot-action:focus-visible {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.activity-screenshot-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .activity-screenshot-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.activity-screenshot-action {
+  border-radius: 4px;
+}
+
+.activity-screenshot-action:hover,
+.activity-screenshot-action:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.activity-screenshot-action {
+  border-radius: 8px;
+}
