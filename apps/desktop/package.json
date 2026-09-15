@@ -78,6 +78,7 @@
       ]
     },
     "win": {
+      "artifactName": "${productName}-${version}.${ext}",
       "extraResources": [
         {
           "from": "../../node_modules/ffmpeg-static/ffmpeg.exe",
