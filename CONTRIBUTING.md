@@ -15,7 +15,7 @@ The same ownership, data-safety, and verification expectations apply to human an
 
 ## Code and Architecture Rules
 
-Renderer application pages, components, hooks, state, and helpers live in flat folders under `apps/renderer/src`. Next uses `src/pages` directly, with default component exports, `_app.tsx`, `_document.tsx`, and one `index.tsx` home alias. Keep window/navigation URLs aligned with page filenames through `RENDERER_ROUTES` in `@path/shared`. Authored source, test, fixture, and script basenames use PascalCase; class files match their main exported class. Keep one `useCamelCase` hook per file and preserve test/declaration suffixes. Follow the [engineering contract](.agents/instructions/engineering.md#readability-and-comments) for framework, config, public entry, data, and generated-file exceptions, and the [renderer instructions](apps/renderer/AGENTS.md) for routing and import direction. Functions remain idiomatic camelCase.
+Renderer application pages, components, hooks, state, and helpers live in flat folders under `apps/renderer/src`. Next uses `src/pages` directly, with default component exports, `_app.tsx`, `_document.tsx`, and one `index.tsx` home alias. Keep window/navigation URLs aligned with page filenames through `RENDERER_ROUTES` in `@path/shared`. Authored source, test, fixture, and script basenames use PascalCase; class files match their main exported class. Keep one `useCamelCase` hook per file and preserve test/declaration suffixes. Follow the [engineering contract](.agents/instructions/Engineering.md#2-readability-control-flow-and-naming) for framework, config, public entry, data, and generated-file exceptions, and the [renderer instructions](apps/renderer/AGENTS.md) for routing and import direction. Functions remain idiomatic camelCase.
 
 Styles use a separate owner-based hierarchy. `src/styles/index.css` imports Tailwind, `global.css` shared defaults, then component and page styles such as `styles/components/Button.css` and `styles/pages/RegionPage.css`. Keep static rules in their owning files and preserve cascade order; computed geometry can remain inline. Create stylesheets only when there are rules to own.
 
@@ -27,9 +27,9 @@ npm test
 npm run build
 ```
 
-Use `npx prettier --write <changed-files>` for focused formatting or `npm run format` for a deliberate repository-wide format pass. See [verification](.agents/instructions/verification.md) for native runtime checks and when a documentation-only change needs less validation.
+Use `npx prettier --write <changed-files>` for focused formatting or `npm run format` for a deliberate repository-wide format pass. See [verification](.agents/instructions/Verification.md) for native runtime checks and when a documentation-only change needs less validation.
 
-Keep visible breathing room between logical phases of a function or test. ESLint checks a baseline of blank lines; Prettier preserves intentional grouping. Add useful comments about purpose, assumptions, units, lifecycle, and failure behavior, especially around asynchronous workflows and native boundaries. The [readability rules](.agents/instructions/engineering.md#readability-and-comments) apply to scripts and tests as well as application code.
+Keep visible breathing room between logical phases of a function or test. ESLint checks a baseline of blank lines; Prettier preserves intentional grouping. Add useful comments about purpose, assumptions, units, lifecycle, and failure behavior, especially around asynchronous workflows and native boundaries. The [readability rules](.agents/instructions/Engineering.md#2-readability-control-flow-and-naming) apply to scripts and tests as well as application code.
 
 A pull request should explain the problem, the resulting behavior, relevant tests and outcomes, and any remaining platform or provider limitations. Include before/after evidence when changing visible behavior, with all private content removed. A passing build alone is not evidence of working screen capture or cross-platform support.
 

@@ -72,7 +72,7 @@ npm run build
 
 `check` verifies formatting, lint, TypeScript, architecture, and unused code. `npm test` runs the default Vitest suite. `build` creates the static renderer export and desktop bundles without launching the app.
 
-Use `npm run format` to apply Prettier or `npx prettier --write <files>` for a focused change. Native recording, capture-overlay, title-bar, and transcription checks have separate runtime requirements; see [verification](.agents/instructions/verification.md). Native SQLite is rebuilt for Node tests and rebuilt for Electron before desktop startup or packaging.
+Use `npm run format` to apply Prettier or `npx prettier --write <files>` for a focused change. Native recording, capture-overlay, title-bar, and transcription checks have separate runtime requirements; see [verification](.agents/instructions/Verification.md). Native SQLite is rebuilt for Node tests and rebuilt for Electron before desktop startup or packaging.
 
 For routing or static-export changes, `npm run test:renderer` builds the renderer and checks all six direct pages and the home entry, hydration, and Settings navigation in headless Chrome. It requires Chrome or a Chromium-compatible executable selected through `PATH_APP_BROWSER_EXECUTABLE`; it does not exercise native capture.
 
@@ -84,14 +84,15 @@ packages/shared/     Browser-safe contracts, IPC schemas, and messages
 packages/recording-core/  Recording states, clock, and coordinate mapping
 packages/timeline/   Click/transcript correlation
 packages/transcription/  Transcription contract and whisper.cpp adapter
+specs/               Feature specifications and acceptance criteria
 .agents/              Instructions, prompts, specifications, and project memory
 scripts/             Repository tooling
 tests/               Interactive Electron checks
 ```
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [architecture map](.agents/architecture.md). The renderer accesses native capabilities through a typed preload API; it does not import filesystem, SQLite, credentials, or native input implementations.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [architecture map](.agents/Architecture.md). The renderer accesses native capabilities through a typed preload API; it does not import filesystem, SQLite, credentials, or native input implementations.
 
-Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, `src/state`, and `src/lib` folders. Authored source, test, fixture, and script basenames use PascalCase; class files match their main exported class, and each hook has its own `useCamelCase` file. Framework/config names, public package entries, data, and generated files follow the exceptions in the [engineering contract](.agents/instructions/engineering.md#readability-and-comments). Next uses `src/pages` directly: PascalCase filenames define their routes, `_app.tsx` and `_document.tsx` provide the shared shell, and `index.tsx` exposes the workspace at `/`. Shared `RENDERER_ROUTES` values keep Electron and browser navigation aligned. The preload declaration remains at `src/Desktop.d.ts`. `src/styles/index.css` loads styles in order: Tailwind, shared defaults from `global.css`, component rules from `styles/components`, and page rules from `styles/pages`. See the [renderer conventions](apps/renderer/AGENTS.md) for ownership and routing.
+Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, `src/state`, and `src/lib` folders. Authored source, test, fixture, and script basenames use PascalCase; class files match their main exported class, and each hook has its own `useCamelCase` file. Framework/config names, public package entries, data, and generated files follow the exceptions in the [engineering contract](.agents/instructions/Engineering.md#2-readability-control-flow-and-naming). Next uses `src/pages` directly: PascalCase filenames define their routes, `_app.tsx` and `_document.tsx` provide the shared shell, and `index.tsx` exposes the workspace at `/`. Shared `RENDERER_ROUTES` values keep Electron and browser navigation aligned. The preload declaration remains at `src/Desktop.d.ts`. `src/styles/index.css` loads styles in order: Tailwind, shared defaults from `global.css`, component rules from `styles/components`, and page rules from `styles/pages`. See the [renderer conventions](apps/renderer/AGENTS.md) for ownership and routing.
 
 ## Local data
 
@@ -132,7 +133,7 @@ Generated bundles, models, installers, credentials, local media, and environment
 - English transcription uses `tiny.en`; multilingual/model-size selection is not exposed.
 - Window capture does not yet provide reliable window-relative click hotspots. Broader multi-monitor and platform capture/permission validation remains outstanding.
 
-See the [workflow specification](.agents/specs/recording-workflow.md) for observable behavior and [project memory](.agents/memory-bank/current-state.md) for source-linked capability boundaries.
+See the [workflow specification](specs/RecordingWorkflow.md) for observable behavior and [project memory](.agents/memory-bank/CurrentState.md) for source-linked capability boundaries.
 
 ## License
 
