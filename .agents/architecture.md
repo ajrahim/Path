@@ -1,54 +1,53 @@
 # Architecture and ownership
 
-Path is an npm workspace monorepo. Electron owns desktop capabilities; a statically exported Next.js Pages Router application owns browser presentation. The application does not run a Next.js production server.
+Path is an npm workspace monorepo. Electron owns desktop capabilities and native orchestration; a statically exported Next.js Pages Router application owns browser UI. The app runs no production Node.js server.
 
 ```text
-Application pages -> components/hooks -> state/browser helpers
-Browser helpers -> window.desktop preload API -> IPC
-IPC -> desktop services/controllers -> package APIs and native adapters
+Application Pages -> Components / Hooks -> State / Browser Helpers
+Browser Helpers -> window.desktop (Preload API) -> IPC
+IPC Handlers -> Desktop Services / Controllers -> Domain Packages & Native Adapters
 ```
 
-The capture worker is a separate sandboxed renderer: browser media APIs produce chunks, and validated IPC transfers them to the desktop recording controller. Native input events and media chunks join the same recording lifecycle in main.
+## Workspace and package ownership
 
-| Owner                                                                     | Responsibility and entry points                                                                        |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `apps/desktop/src/Main.ts`                                                | Application composition, profile setup, startup recovery, dependency wiring, and shutdown              |
-| `apps/desktop/src/Preload.ts`, `ipc/`                                     | Typed bridge exposure, incoming validation, restricted sender checks, and desktop dispatch             |
-| `apps/desktop/src/recording/`                                             | Recording lifecycle, region selection, click collection, screenshot capture, and analysis coordination |
-| `apps/desktop/src/windows/`, `tray/`                                      | Window security/lifecycle, static renderer serving, tray and floating controls                         |
-| `apps/desktop/src/media/`                                                 | FFmpeg processing and token-protected loopback media delivery                                          |
-| `apps/desktop/src/input/`                                                 | Native global-input adapter behind its owned interface                                                 |
-| `apps/desktop/src/storage/`, `settings/`                                  | Managed recording assets, encrypted credentials, and settings orchestration                            |
-| `apps/desktop/src/ai/`                                                    | Selected local/cloud model, provider adaptation, click interpretation, and document prompt policy      |
-| `apps/renderer/src/pages/`                                                | Direct Next pages, shared providers/styles, the document shell, and the home entry                     |
-| `apps/renderer/src/components/`                                           | Page controls, recording/document presentation, screenshot controls, and the renderer provider         |
-| `apps/renderer/src/hooks/`                                                | Local workflow/resource hooks, recording/history operations, and typed Redux hooks                     |
-| `apps/renderer/src/state/`                                                | Per-provider Redux store, recording/history slices, desktop dependencies, and recording subscription   |
-| `apps/renderer/src/lib/`                                                  | Browser bridge access, capture engine, instruction-flow data, formatting, and geometry                 |
-| `apps/renderer/src/styles/index.css`                                      | Single stylesheet entry with ordered Tailwind, global, and owner imports                               |
-| `apps/renderer/src/styles/global.css`                                     | App-wide tokens, reset rules, and shared defaults                                                      |
-| `apps/renderer/src/styles/components/`, `apps/renderer/src/styles/pages/` | Styles grouped by their component or page owner                                                        |
-| `apps/renderer/src/Desktop.d.ts`                                          | Browser declaration of the typed preload API                                                           |
-| `packages/shared`                                                         | Domain DTOs, IPC channels/schemas, bridge interface, and translation catalog                           |
-| `packages/recording-core`                                                 | Pure state transitions, coordinate mapping, and session clock                                          |
-| `packages/timeline`                                                       | Pure click/transcript correlation                                                                      |
-| `packages/database`                                                       | SQLite connection, Drizzle schema/migrations, and repositories                                         |
-| `packages/transcription`                                                  | Transcription contract and whisper.cpp adapter                                                         |
+| Package / Directory        | Type           | Responsibility & Entry Points                                                                                                                                                                                                                                                        |
+| -------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/desktop/`            | Electron Main  | App lifecycle ([Main.ts](apps/desktop/src/Main.ts)), typed bridge ([Preload.ts](apps/desktop/src/Preload.ts)), IPC validation ([RegisterIpc.ts](apps/desktop/src/ipc/RegisterIpc.ts)), recording orchestration, loopback media server, safeStorage credentials, and native adapters. |
+| `apps/renderer/`           | Next.js Pages  | Flat UI architecture: direct Pages (`src/pages`), presentation (`src/components`), workflow hooks (`src/hooks`), Redux Toolkit state (`src/state`), browser helpers (`src/lib`), and owner stylesheets (`src/styles`).                                                               |
+| `packages/shared/`         | Pure Contracts | Serializable DTOs, Zod IPC validation schemas, route constants (`RendererRoutes.ts`), and localized translation catalogs (`messages/en.json`).                                                                                                                                       |
+| `packages/recording-core/` | Pure Domain    | Deterministic state machine transitions, monotonic session clock, and DIP-to-video coordinate mapping (zero I/O).                                                                                                                                                                    |
+| `packages/timeline/`       | Pure Domain    | Chronological correlation of transcript segments and click events for seekable playback (zero I/O).                                                                                                                                                                                  |
+| `packages/database/`       | Infrastructure | SQLite connection, Drizzle schema & migrations, and typed repositories (`RecordingRepository`, `AppSettingsRepository`).                                                                                                                                                             |
+| `packages/transcription/`  | Infrastructure | Audio transcription contract and whisper.cpp Windows x64 runtime adapter with SHA-256 model verification.                                                                                                                                                                            |
 
-Package `test/` directories and application `test/` directories contain Vitest tests for their owner. Root `tests/` contains browser smoke checks and interactive Electron integration scripts. `scripts/` contains repository tooling, not product behavior. `.agents/` contains engineering context, not prompts automatically sent to an AI provider.
+## Renderer structure and routing
 
-Renderer TypeScript folders stay flat. Authored source, test, fixture, and script basenames use PascalCase across apps and packages, including helpers, state, declarations, and desktop entry sources. Class files match their main exported class; hooks use `useCamelCase` filenames. Preserve test/declaration suffixes and the [engineering contract's filename exceptions](instructions/engineering.md#readability-and-comments). Do not reintroduce feature folders, nested UI folders, or single-component directories. Existing desktop/package domain folders remain unchanged.
+- **Flat TypeScript Directories:** `src/pages`, `src/components`, `src/hooks`, `src/state`, and `src/lib`. No nested feature or single-component folders.
+- **Pages Router:** `src/pages` PascalCase filenames define direct routes: `/WorkspacePage/` (aliased to `/` via `index.tsx`), `/CapturePage/`, `/RecorderPage/`, `/RecordingToolbarPage/`, `/RegionPage/`, and `/SettingsPage/`.
+- **Route Contract:** Electron windows and renderer navigation stay synchronized through `RENDERER_ROUTES` in `@path/shared`.
+- **Styles Hierarchy:** `src/pages/_app.tsx` imports single entry `src/styles/index.css` (Tailwind -> `global.css` defaults -> `styles/components/<Component>.css` -> `styles/pages/<Page>.css`).
 
-Styles are the nested exception: `src/styles/components/Button.css` owns button rules, while `src/styles/pages/RegionPage.css` owns region-page rules. `src/pages/_app.tsx` imports only `src/styles/index.css`, an ordered manifest of Tailwind, `global.css`, then owner stylesheets. `global.css` keeps the app-wide tokens, resets, and shared defaults; this order preserves their cascade priority. Keep static presentation in these files and computed geometry inline where needed. A component or page with no distinct rules does not need an empty stylesheet.
+## Layered dependency directions
 
-Next uses `apps/renderer/src/pages` directly. Each of the six PascalCase page files exports its component as default, so `RecorderPage.tsx` becomes `/RecorderPage/`. `_app.tsx` owns shared providers/styles and scopes recording subscriptions using the router pathname; `_document.tsx` owns the document shell. The sole alias, `index.tsx`, re-exports `WorkspacePage` to keep `/` as the home URL. Do not create a renderer-root `pages` folder: Next would select it instead of `src/pages`.
+Strict import hierarchy checked by `.dependency-cruiser.cjs`:
 
-The browser-safe `RENDERER_ROUTES` contract in `packages/shared/src/RendererRoutes.ts` supplies URLs to both Electron windows and browser navigation. The six direct routes are `/WorkspacePage/`, `/CapturePage/`, `/RecorderPage/`, `/RecordingToolbarPage/`, `/RegionPage/`, and `/SettingsPage/`. The static export and development server use the same filename-based routes without export maps or rewrites. Match casing in consumers and tests when changing a page name.
+```text
+Pages → Components / Hooks → State → Browser Helpers (lib)
+Packages (database, transcription, recording-core, timeline, shared) → Pure or Native
+Applications (desktop, renderer) → Packages
+```
 
-Pages compose components and hooks and may use browser helpers. Components may depend on hooks, state, and helpers; hooks may depend on state and helpers; state may depend on helpers. None of those layers may import their consumers. In particular, `lib` does not import pages, components, hooks, or state. Hooks, state, and helpers do not import styles. `.dependency-cruiser.cjs` checks these directions alongside the process and package boundaries.
+- `lib` never imports pages, components, hooks, or state.
+- Hooks never import presentation (pages/components) or styles.
+- State never imports presentation or hooks.
+- Packages never import applications.
 
-`components/RendererProvider.tsx` supplies Redux context to pages. Recording runtime and history live in `state/RecordingSlice.ts` and `state/HistorySlice.ts`; `hooks/useRecording.ts` and `hooks/useRecordingHistory.ts` expose operations to consumers. Media, playback, click activity, screenshots, document editing, instruction flows, settings, and model selection use local hooks. Browser resources stay with those hooks, and Electron remains the authority for persisted and cross-window state. See [renderer state ownership](instructions/state-management.md) before changing these boundaries.
+## IPC and contract extension workflow
 
-To add or change an IPC capability, update `packages/shared/src/Ipc.ts`, preload, its main-process handler, and the owning service together; update the renderer consumer and boundary tests. To change stored data, start with the database repository/schema or managed asset owner and account for existing profiles. To change generated documents, trace the selected instruction flow through `ai/DocumentPrompt.ts` and the selected AI service.
+To add or update an IPC capability:
 
-The [engineering contract](instructions/engineering.md) defines dependency restrictions. The [workflow specification](specs/recording-workflow.md) defines behavior to preserve; the [current-state memory](memory-bank/current-state.md) records capability gaps rather than promising future implementations.
+1. Define typed DTOs and Zod schema in `packages/shared/src/Contracts.ts` and `Ipc.ts`.
+2. Expose typed method on `DesktopApi` interface in `packages/shared/src/Ipc.ts` and `Desktop.d.ts`.
+3. Implement handler in `apps/desktop/src/ipc/RegisterIpc.ts` with schema validation before dispatching to owning desktop service.
+4. Wire preload invoker in `apps/desktop/src/Preload.ts`.
+5. Consume via `getDesktopApi()` in renderer hooks or thunks with unit test coverage.
