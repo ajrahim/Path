@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/Banner.png" alt="Path - Privacy-first screen-to-docs walkthrough recorder" width="100%">
+</p>
+
 # Path
 
 Path records software walkthroughs and turns their captured activity into help guides or improvement specifications. Review a video alongside click screenshots and transcript segments, choose a local or cloud AI model, and edit or export the resulting Markdown.
