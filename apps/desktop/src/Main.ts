@@ -1,7 +1,7 @@
 import { app, session } from "electron";
 import { createRequire } from "node:module";
 import { stat } from "node:fs/promises";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AppSettingsRepository, openDatabase, RecordingRepository } from "@path/database";
 import { registerIpcHandlers } from "./ipc/RegisterIpc";
@@ -110,9 +110,13 @@ if (!hasSingleInstanceLock) {
 
     await mediaServer.start();
 
-    const appIconPath = app.isPackaged
-      ? join(app.getAppPath(), "assets/app-icon.ico")
-      : resolve(app.getAppPath(), "assets/app-icon.ico");
+    const appIconPath =
+      [
+        resolve(app.getAppPath(), "assets/app-icon.ico"),
+        join(__dirname, "../assets/app-icon.ico"),
+        join(process.resourcesPath, "assets/app-icon.ico"),
+      ].find((candidate) => existsSync(candidate)) ??
+      resolve(app.getAppPath(), "assets/app-icon.ico");
 
     const mainWindow = createMainWindow({
       preloadPath: join(__dirname, "preload.cjs"),

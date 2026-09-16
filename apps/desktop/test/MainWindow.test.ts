@@ -8,9 +8,16 @@ vi.mock("electron", () => ({
       once: vi.fn(),
       loadURL: vi.fn(),
       loadFile: vi.fn(),
+      setIcon: vi.fn(),
       webContents: { setWindowOpenHandler: vi.fn(), on: vi.fn() },
     };
   }),
+  nativeImage: {
+    createFromPath: vi.fn((path: string) => ({
+      isEmpty: () => false,
+      path,
+    })),
+  },
   shell: { openExternal: vi.fn() },
 }));
 
@@ -25,7 +32,7 @@ describe("main window appearance", () => {
 
     const options = vi.mocked(BrowserWindow).mock.calls[0]?.[0];
 
-    expect(options?.icon).toBe("assets/app-icon.ico");
+    expect(options?.icon).toEqual(expect.objectContaining({ path: "assets/app-icon.ico" }));
     expect(options?.titleBarStyle).toBe(process.platform === "darwin" ? "hiddenInset" : "hidden");
     expect(options?.titleBarOverlay).toEqual(
       process.platform === "win32"

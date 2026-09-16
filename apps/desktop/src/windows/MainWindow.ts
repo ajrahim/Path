@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from "electron";
+import { BrowserWindow, nativeImage, shell } from "electron";
 import { join } from "node:path";
 
 export interface CreateMainWindowOptions {
@@ -14,13 +14,14 @@ export function createMainWindow({
   rendererDirectory,
   iconPath,
 }: CreateMainWindowOptions): BrowserWindow {
+  const windowIcon = iconPath ? nativeImage.createFromPath(iconPath) : undefined;
   const window = new BrowserWindow({
     width: 1480,
     height: 900,
     minWidth: 960,
     minHeight: 640,
     show: false,
-    icon: iconPath,
+    icon: windowIcon && !windowIcon.isEmpty() ? windowIcon : iconPath,
     autoHideMenuBar: true,
     backgroundColor: "#f3f3f3",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
@@ -35,6 +36,10 @@ export function createMainWindow({
       preload: preloadPath,
     },
   });
+
+  if (windowIcon && !windowIcon.isEmpty()) {
+    window.setIcon(windowIcon);
+  }
 
   window.once("ready-to-show", () => window.show());
 
