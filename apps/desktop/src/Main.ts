@@ -110,16 +110,22 @@ if (!hasSingleInstanceLock) {
 
     await mediaServer.start();
 
+    const appIconPath = app.isPackaged
+      ? join(app.getAppPath(), "assets/app-icon.ico")
+      : resolve(app.getAppPath(), "assets/app-icon.ico");
+
     const mainWindow = createMainWindow({
       preloadPath: join(__dirname, "preload.cjs"),
       rendererUrl,
       rendererDirectory,
+      iconPath: appIconPath,
     });
 
     const rendererTarget = {
       preloadPath: join(__dirname, "preload.cjs"),
       rendererUrl,
       rendererDirectory,
+      iconPath: appIconPath,
     };
 
     let settingsWindow: ReturnType<typeof createSettingsWindow> | null = null;

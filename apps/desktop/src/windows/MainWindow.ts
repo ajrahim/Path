@@ -5,12 +5,14 @@ export interface CreateMainWindowOptions {
   preloadPath: string;
   rendererUrl?: string;
   rendererDirectory: string;
+  iconPath?: string;
 }
 
 export function createMainWindow({
   preloadPath,
   rendererUrl,
   rendererDirectory,
+  iconPath,
 }: CreateMainWindowOptions): BrowserWindow {
   const window = new BrowserWindow({
     width: 1480,
@@ -18,6 +20,7 @@ export function createMainWindow({
     minWidth: 960,
     minHeight: 640,
     show: false,
+    icon: iconPath,
     autoHideMenuBar: true,
     backgroundColor: "#f3f3f3",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",

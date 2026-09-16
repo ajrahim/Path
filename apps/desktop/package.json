@@ -41,6 +41,7 @@
   "build": {
     "appId": "app.path.desktop",
     "productName": "Path",
+    "icon": "assets/icon.png",
     "npmRebuild": false,
     "asar": true,
     "asarUnpack": [
@@ -49,6 +50,7 @@
     ],
     "files": [
       "dist/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "extraResources": [
@@ -65,6 +67,7 @@
       "output": "../../release"
     },
     "mac": {
+      "icon": "assets/icon.png",
       "category": "public.app-category.productivity",
       "extraResources": [
         {
@@ -78,6 +81,7 @@
       ]
     },
     "win": {
+      "icon": "assets/icon.ico",
       "artifactName": "${productName}-${version}.${ext}",
       "extraResources": [
         {

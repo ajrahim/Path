@@ -15,15 +15,17 @@ vi.mock("electron", () => ({
 }));
 
 describe("main window appearance", () => {
-  it("matches Windows caption controls to the blue renderer title bar", () => {
+  it("matches Windows caption controls to the blue renderer title bar and passes iconPath", () => {
     createMainWindow({
       preloadPath: "preload.cjs",
       rendererDirectory: "renderer",
       rendererUrl: "http://localhost:3001",
+      iconPath: "assets/app-icon.ico",
     });
 
     const options = vi.mocked(BrowserWindow).mock.calls[0]?.[0];
 
+    expect(options?.icon).toBe("assets/app-icon.ico");
     expect(options?.titleBarStyle).toBe(process.platform === "darwin" ? "hiddenInset" : "hidden");
     expect(options?.titleBarOverlay).toEqual(
       process.platform === "win32"
