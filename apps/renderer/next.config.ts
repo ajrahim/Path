@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   assetPrefix: process.env.NODE_ENV === "production" ? "." : undefined,
   trailingSlash: true,
   images: { unoptimized: true },
+  devIndicators: false,
 };
 
 export default nextConfig;

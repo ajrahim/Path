@@ -345,6 +345,13 @@ html[data-theme="dark"]
   color: var(--success);
 }
 
+nextjs-portal,
+[data-nextjs-dev-indicator],
+[data-nextjs-toast],
+#__next-build-watcher {
+  display: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
