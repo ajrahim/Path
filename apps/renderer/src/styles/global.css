@@ -216,15 +216,16 @@ body {
 }
 
 .brand-mark {
+  display: inline-block;
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   border: 0;
-  border-radius: 4px;
-  background:
-    linear-gradient(var(--primary), var(--primary)) 5px 6px / 12px 2px no-repeat,
-    linear-gradient(var(--primary), var(--primary)) 5px 10px / 12px 2px no-repeat,
-    linear-gradient(var(--primary), var(--primary)) 5px 14px / 8px 2px no-repeat,
-    #ffffff;
+  border-radius: 5px;
+  background-image: url(/icons/Icon64.png);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
 }
 
 .section-label {

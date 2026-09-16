@@ -19,6 +19,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
         <title>{messages.app.name}</title>
         <meta name="description" content={messages.app.description} />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/icons/Icon64.png" />
       </Head>
       <style jsx global>{`
         :root {

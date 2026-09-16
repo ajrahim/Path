@@ -6,6 +6,7 @@ interface RendererTarget {
   preloadPath: string;
   rendererUrl?: string;
   rendererDirectory: string;
+  iconPath?: string;
 }
 
 function loadRoute(window: BrowserWindow, target: RendererTarget, route: string): void {

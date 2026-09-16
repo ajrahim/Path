@@ -7,6 +7,7 @@ export function createSettingsWindow({
   preloadPath,
   rendererUrl,
   rendererDirectory,
+  iconPath,
 }: CreateMainWindowOptions): BrowserWindow {
   const window = new BrowserWindow({
     width: 940,
@@ -14,6 +15,7 @@ export function createSettingsWindow({
     minWidth: 760,
     minHeight: 620,
     show: false,
+    icon: iconPath,
     autoHideMenuBar: true,
     backgroundColor: "#f3f3f3",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
