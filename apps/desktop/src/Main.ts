@@ -52,7 +52,7 @@ if (!hasSingleInstanceLock) {
 } else {
   void app.whenReady().then(async () => {
     if (process.platform === "win32") {
-      app.setAppUserModelId("app.path.desktop");
+      app.setAppUserModelId(app.isPackaged ? "app.path.desktop" : process.execPath);
     }
 
     const dataDirectory = app.getPath("userData");
