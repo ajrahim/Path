@@ -1,19 +1,19 @@
 ---
 name: update-version
-description: "Automate release PR generation, version bumping across monorepo workspaces, i18n translation validation, code review & test suite execution, branch creation, commit, and Pull Request creation. Use when: creating a release PR, bumping versions (patch/minor/major/x.y.z), running release verification, or running npm run push."
+description: "Automate release generation, version bumping across monorepo workspaces, i18n translation validation, code review & test suite execution, git commit, tag creation, and GitHub Release deployment. Use when: bumping versions (patch/minor/major/x.y.z), creating releases, running release verification, or running npm run push / npm run release."
 argument-hint: "<patch|minor|major|x.y.z>"
 user-invocable: true
 ---
 
-# Release PR Generation Skill
+# Release and Versioning Skill
 
 Automates the complete release process:
 
 1. **Version Bump:** Synchronizes version numbers across the monorepo root and all 7 workspace packages plus `package-lock.json`.
 2. **i18n Validation:** Validates all JSON translation catalogs under `packages/shared/messages/`.
 3. **Code Review & Quality:** Runs full linting, formatting, TypeScript compilation, architectural boundaries, Knip unused exports (`npm run check`), and the test suite (`npm test`).
-4. **Git Branching & Commit:** Creates and checks out a `release/v<version>` branch, stages files, and commits with standard release message.
-5. **PR Creation & Push:** Pushes the release branch to GitHub and opens a Pull Request using `gh pr create` (or generates a pre-filled 1-click comparison URL).
+4. **Git Commit & Tag:** Stages all files, commits with `chore(release): v<version>`, and creates annotated git tag `v<version>`.
+5. **Push & GitHub Release:** Pushes the commit and git tag to GitHub, which automatically triggers [.github/workflows/release.yml](../../workflows/release.yml) on GitHub Actions to build `Path-<version>.exe` and publish the GitHub Release with the source `.zip` and `.exe` installer.
 
 ## Monorepo Workspace Manifests Synchronized
 
@@ -29,18 +29,20 @@ Automates the complete release process:
 
 ## Single-Command Workflow
 
-Run the push release script with your target bump or version:
+Run the release script with your target bump or version:
 
 ```sh
 npm run push <patch|minor|major|x.y.z>
+# or
+npm run release <patch|minor|major|x.y.z>
 ```
 
 ### Examples:
 
 ```sh
-npm run push patch    # 0.1.0 -> 0.1.1
-npm run push minor    # 0.1.0 -> 0.2.0
-npm run push 0.2.0    # Explicit semver
+npm run push patch    # 0.3.0 -> 0.3.1
+npm run push minor    # 0.3.0 -> 0.4.0
+npm run push 0.3.0    # Tag and release specific version
 ```
 
 ## Step-by-Step Procedure
@@ -62,21 +64,17 @@ npm run check  # prettier, eslint, typecheck, depcruise, knip
 npm test       # vitest unit & component test suite
 ```
 
-### 4. Git Branch & Commit
+### 4. Git Commit & Tagging
 
-- Creates branch: `release/v<version>`
 - Stages all modified files: `git add .`
 - Commits: `chore(release): v<version>`
-- Pushes to remote: `git push -u origin release/v<version>`
+- Creates annotated tag: `git tag -a v<version> -m "Release v<version>"`
 
-### 5. Pull Request Generation
+### 5. Remote Push & GitHub Actions Release
 
-- If GitHub CLI (`gh`) is available, executes `gh pr create` with pre-filled title and formatted description following `.github/pull_request_template.md`.
-- If `gh` is not installed, generates a direct GitHub compare & PR URL for immediate one-click submission.
-
-### 6. Tagging and Final Release
-
-Once the PR is merged into `main`:
+- Pushes commit: `git push origin HEAD`
+- Pushes tag: `git push origin v<version>`
+- The tag push (`v*`) automatically triggers the **Release** workflow on GitHub Actions to package the Windows `.exe` installer and attach it directly to the GitHub Release.
 
 ```sh
 git checkout main
