@@ -1,4 +1,6 @@
-import { Menu, Tray, nativeImage, screen, type BrowserWindow } from "electron";
+import { app, Menu, Tray, nativeImage, screen, type BrowserWindow } from "electron";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import messages from "@path/shared/messages/en.json";
 import type { RecordingRuntimeStatus } from "@path/shared";
 
@@ -6,19 +8,35 @@ const RECORDER_POPOVER_WIDTH = 400;
 const RECORDER_POPOVER_COLLAPSED_HEIGHT = 80;
 const RECORDER_POPOVER_EXPANDED_HEIGHT = 230;
 
-function createTrayImage(status: RecordingRuntimeStatus = "idle") {
-  const fill =
+function getTrayIconPath(status: RecordingRuntimeStatus = "idle"): string {
+  const fileName =
     status === "recording"
-      ? "#d83f36"
+      ? "tray-recording.png"
       : status === "processing" || status === "stopping"
-        ? "#c28227"
-        : "#18181b";
+        ? "tray-processing.png"
+        : "tray-idle.png";
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><rect x="2" y="2" width="14" height="14" rx="4" fill="${fill}"/><circle cx="9" cy="9" r="3.5" fill="#fafafa"/></svg>`;
+  const appPath = typeof app.getAppPath === "function" ? app.getAppPath() : "";
+  const candidates = [
+    appPath ? resolve(appPath, "assets", fileName) : null,
+    join(__dirname, "../assets", fileName),
+    process.resourcesPath ? join(process.resourcesPath, "assets", fileName) : null,
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+  return (
+    candidates.find((candidate) => existsSync(candidate)) ??
+    (appPath ? resolve(appPath, "assets", fileName) : join(__dirname, "../assets", fileName))
   );
+}
+
+function createTrayImage(status: RecordingRuntimeStatus = "idle") {
+  const iconPath = getTrayIconPath(status);
+
+  if (existsSync(iconPath)) {
+    return nativeImage.createFromPath(iconPath);
+  }
+
+  return nativeImage.createEmpty();
 }
 
 export class TrayController {

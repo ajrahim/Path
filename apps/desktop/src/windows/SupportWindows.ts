@@ -31,6 +31,7 @@ export function createCaptureWorker(target: RendererTarget): BrowserWindow {
     height: 200,
     show: false,
     skipTaskbar: true,
+    icon: target.iconPath,
     webPreferences: webPreferences(target.preloadPath),
   });
 
@@ -49,6 +50,7 @@ export function createRecorderPopover(target: RendererTarget): BrowserWindow {
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    icon: target.iconPath,
     backgroundColor: "#00000000",
     webPreferences: webPreferences(target.preloadPath),
   });
@@ -75,6 +77,7 @@ export function createRecordingToolbar(target: RendererTarget): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: true,
+    icon: target.iconPath,
     backgroundColor: "#00000000",
     webPreferences: webPreferences(target.preloadPath),
   });

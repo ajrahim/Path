@@ -4,6 +4,7 @@ import { TrayController } from "../src/tray/TrayController";
 const trayHandlers = new Map<string, () => void>();
 
 vi.mock("electron", () => ({
+  app: { getAppPath: vi.fn(() => "") },
   Menu: { buildFromTemplate: vi.fn() },
   Tray: vi.fn(function () {
     return {
@@ -17,7 +18,11 @@ vi.mock("electron", () => ({
       setToolTip: vi.fn(),
     };
   }),
-  nativeImage: { createFromDataURL: vi.fn(() => ({})) },
+  nativeImage: {
+    createFromDataURL: vi.fn(() => ({})),
+    createFromPath: vi.fn(() => ({})),
+    createEmpty: vi.fn(() => ({})),
+  },
   screen: {
     getDisplayNearestPoint: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
   },

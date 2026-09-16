@@ -114,8 +114,10 @@ if (!hasSingleInstanceLock) {
       [
         resolve(app.getAppPath(), "assets/app-icon.ico"),
         join(__dirname, "../assets/app-icon.ico"),
-        join(process.resourcesPath, "assets/app-icon.ico"),
-      ].find((candidate) => existsSync(candidate)) ??
+        process.resourcesPath ? join(process.resourcesPath, "assets/app-icon.ico") : null,
+      ]
+        .filter((candidate): candidate is string => Boolean(candidate))
+        .find((candidate) => existsSync(candidate)) ??
       resolve(app.getAppPath(), "assets/app-icon.ico");
 
     const mainWindow = createMainWindow({
