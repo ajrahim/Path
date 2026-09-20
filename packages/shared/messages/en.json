@@ -68,13 +68,13 @@
     "keysSecurityNote": "Keys are encrypted with your operating system's secure storage and never exposed to the renderer."
   },
   "history": {
-    "title": "History",
+    "title": "Recordings",
     "search": "Search recordings",
     "sort": "Sort recordings",
     "sortNewest": "Newest first",
     "sortOldest": "Oldest first",
     "sortTitle": "Title",
-    "newRecording": "New recording",
+    "newRecording": "New",
     "deleteTitle": "Delete recording?",
     "deleteDescription": "The video, transcript, and captured screenshots will be permanently deleted. This cannot be undone.",
     "deleteError": "The recording could not be deleted. Please try again.",
@@ -94,7 +94,7 @@
     "transcript": "Transcript",
     "selectPrompt": "Select a recording",
     "emptyVideoTitle": "Select a recording to begin",
-    "emptyVideoDescription": "Choose an item from History to review its video, transcript, and captured clicks.",
+    "emptyVideoDescription": "Choose an item from Recordings to review its video, transcript, and captured clicks.",
     "videoUnavailable": "Video preview unavailable",
     "loadingVideo": "Loading processed video…",
     "videoLoadFailed": "The processed video could not be loaded",
@@ -124,7 +124,7 @@
     "noSources": "No capture sources are available",
     "microphone": "Include microphone",
     "captureClicks": "Capture mouse clicks",
-    "defaultTitle": "Untitled walkthrough",
+    "defaultTitle": "{date} - {time} recording",
     "openApplication": "Open Path",
     "modes": {
       "fullScreen": "Full screen",

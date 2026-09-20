@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatClickTimestamp } from "../src/lib/Format";
+import {
+  formatClickTimestamp,
+  formatDefaultRecordingTitle,
+  formatRecordingTime,
+} from "../src/lib/Format";
 
 describe("click timestamp tooltip", () => {
   it("pairs the actual captured time with the video offset including milliseconds", () => {
@@ -25,5 +29,18 @@ describe("click timestamp tooltip", () => {
 
   it("does not invent an actual time when capture metadata is invalid", () => {
     expect(formatClickTimestamp("invalid", 2000, "en-US", "UTC")).toBe("00:02.000");
+  });
+
+  it("formats default recording title as Date - time recording", () => {
+    const title = formatDefaultRecordingTitle("2026-09-19T10:30:00Z", "en-US");
+
+    expect(title).toMatch(/^Sep 19, 2026 - .+ recording$/);
+  });
+
+  it("formats recording time", () => {
+    const time = formatRecordingTime("2026-09-19T10:30:00Z", "en-US");
+
+    expect(typeof time).toBe("string");
+    expect(time.length).toBeGreaterThan(0);
   });
 });

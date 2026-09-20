@@ -13,12 +13,35 @@ export function formatDuration(durationMs: number | null, fallback: string): str
     : [minutes, seconds].map((part) => part.toString().padStart(2, "0")).join(":");
 }
 
-export function formatRecordingDate(value: string, locale: string): string {
+export function formatRecordingDate(value: string | number | Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+}
+
+export function formatRecordingTime(value: string | number | Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+export function formatDefaultRecordingTitle(
+  value: string | number | Date = new Date(),
+  locale = "en",
+): string {
+  const date = new Date(value);
+
+  if (!Number.isFinite(date.getTime())) {
+    return "Recording";
+  }
+
+  const dateStr = formatRecordingDate(date, locale);
+  const timeStr = formatRecordingTime(date, locale);
+
+  return `${dateStr} - ${timeStr} recording`;
 }
 
 /** Show capture time and media offset separately; they come from different clocks. */

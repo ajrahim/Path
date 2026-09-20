@@ -33,7 +33,14 @@ export default function WorkspacePage() {
     recordingState.status,
   );
 
-  const selected = snapshot.recordings.find((recording) => recording.id === selectedId) ?? null;
+  const hasPendingRecordings = snapshot.recordings.some(
+    (recording) => recording.status === "recording" || recording.status === "processing",
+  );
+
+  const activeSelectedId = selectedId ?? recordingState.recordingId;
+  const selected =
+    snapshot.recordings.find((recording) => recording.id === activeSelectedId) ?? null;
+
   let titleStatus = t("navigation.saved");
 
   if (titleSaving) titleStatus = t("navigation.saving");
@@ -41,8 +48,18 @@ export default function WorkspacePage() {
   if (titleError) titleStatus = t("navigation.titleSaveFailed");
 
   useEffect(() => {
-    if (recordingState.status === "ready") void refresh();
-  }, [recordingState.status, refresh]);
+    void refresh();
+  }, [recordingState.status, recordingState.recordingId, refresh]);
+
+  useEffect(() => {
+    if (!recordingActive && !hasPendingRecordings) return;
+
+    const timer = setInterval(() => {
+      void refresh();
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [recordingActive, hasPendingRecordings, refresh]);
 
   function resize(event: React.PointerEvent<HTMLDivElement>, target: DragTarget): void {
     if (event.buttons !== 1) return;
@@ -152,10 +169,10 @@ export default function WorkspacePage() {
         }}
       >
         <HistorySidebar
-          selectedId={selectedId}
+          selectedId={activeSelectedId}
           onSelect={setSelectedId}
           onDeleted={(id) => {
-            if (id === selectedId) setSelectedId(null);
+            if (id === activeSelectedId) setSelectedId(null);
           }}
           onNewRecording={() => setSourceDialogOpen(true)}
           onOpenSettings={() => {

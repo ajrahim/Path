@@ -5,6 +5,7 @@ import { dirname, extname, join, parse } from "node:path";
 export interface MediaProcessor {
   finalize(inputPath: string, outputPath: string): Promise<void>;
   extractAudio(inputPath: string, outputPath: string): Promise<void>;
+  extractThumbnail(inputPath: string, outputPath: string): Promise<void>;
 }
 
 export class FfmpegMediaProcessor implements MediaProcessor {
@@ -50,6 +51,17 @@ export class FfmpegMediaProcessor implements MediaProcessor {
     ]);
   }
 
+  async extractThumbnail(inputPath: string, outputPath: string): Promise<void> {
+    await this.writeArtifact(inputPath, outputPath, [
+      "-ss",
+      "0",
+      "-vframes",
+      "1",
+      "-vf",
+      "scale=w='min(320,iw)':h='min(180,ih)':force_original_aspect_ratio=decrease",
+    ]);
+  }
+
   private async writeArtifact(
     inputPath: string,
     outputPath: string,
@@ -66,7 +78,7 @@ export class FfmpegMediaProcessor implements MediaProcessor {
       await this.run(inputPath, temporaryPath, outputArguments);
       const output = await stat(temporaryPath);
 
-      if (output.size >= 1_024) {
+      if (output.size >= 100) {
         await rm(outputPath, { force: true });
         await rename(temporaryPath, outputPath);
 
@@ -80,7 +92,7 @@ export class FfmpegMediaProcessor implements MediaProcessor {
 
     await rm(temporaryPath, { force: true });
 
-    throw new Error("FFmpeg produced an empty video");
+    throw new Error("FFmpeg produced an empty artifact");
   }
 
   private run(inputPath: string, outputPath: string, outputArguments: string[]): Promise<void> {

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { AppWindow, Check, Crop, Mic, Monitor, MousePointer2, ScreenShare, X } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import type { CaptureMode, CaptureSource } from "@path/shared";
 import { Button } from "@/components/Button";
+import { formatDefaultRecordingTitle } from "@/lib/Format";
 import { getDesktopApi } from "@/lib/Desktop";
 import { cn } from "@/lib/ClassNames";
 import { useRecording } from "../hooks/useRecording";
@@ -20,13 +21,15 @@ const modeIcons = { "full-screen": ScreenShare, display: Monitor, window: AppWin
 
 export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
   const t = useTranslations("recording");
+  const locale = useLocale();
   const actions = useTranslations("actions");
   const { snapshot, loadSources, start: startCapture } = useRecording();
   const [mode, setMode] = useState<SourceMode>("full-screen");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [includeMicrophone, setIncludeMicrophone] = useState(false);
   const [captureClicks, setCaptureClicks] = useState(true);
-  const [title, setTitle] = useState(t("defaultTitle"));
+  const [defaultTitle] = useState(() => formatDefaultRecordingTitle(new Date(), locale));
+  const [title, setTitle] = useState(defaultTitle);
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +65,7 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
 
     const state = await startCapture({
       sourceId: selected.id,
-      title: title.trim() || t("defaultTitle"),
+      title: title.trim() || defaultTitle,
       captureMode: mode === "window" ? "window" : mode === "region" ? "region" : "display",
       ...(captureRegion ? { captureRegion } : {}),
       includeMicrophone,
@@ -150,7 +153,7 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder={t("defaultTitle")}
+            placeholder={defaultTitle}
           />
         </label>
 

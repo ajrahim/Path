@@ -11,11 +11,11 @@ import {
   ScreenShare,
   Square,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import type { CaptureMode } from "@path/shared";
 import { Button } from "@/components/Button";
 import { getDesktopApi } from "@/lib/Desktop";
-import { formatDuration } from "@/lib/Format";
+import { formatDefaultRecordingTitle, formatDuration } from "@/lib/Format";
 import { cn } from "@/lib/ClassNames";
 import { useRecording } from "../hooks/useRecording";
 
@@ -23,6 +23,7 @@ type PopoverMode = "full-screen" | CaptureMode;
 
 export default function RecorderPage() {
   const t = useTranslations("recording");
+  const locale = useLocale();
   const { snapshot, loadSources, start: startCapture, stop } = useRecording();
   const [expanded, setExpanded] = useState(true);
   const [mode, setMode] = useState<PopoverMode>("full-screen");
@@ -64,7 +65,7 @@ export default function RecorderPage() {
 
     await startCapture({
       sourceId: source.id,
-      title: t("defaultTitle"),
+      title: formatDefaultRecordingTitle(new Date(), locale),
       captureMode: mode === "window" ? "window" : mode === "region" ? "region" : "display",
       ...(captureRegion ? { captureRegion } : {}),
       includeMicrophone,

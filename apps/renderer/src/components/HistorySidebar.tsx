@@ -1,7 +1,9 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
+  AlertCircle,
   ArrowUpDown,
   Check,
+  LoaderCircle,
   MoreHorizontal,
   MonitorUp,
   Pencil,
@@ -15,7 +17,9 @@ import type { RecordingSummary } from "@path/shared";
 import { Button } from "@/components/Button";
 import { formatDuration, formatRecordingDate } from "@/lib/Format";
 import { cn } from "@/lib/ClassNames";
+import { useAppVersion } from "../hooks/useAppVersion";
 import { useRecordingHistory } from "../hooks/useRecordingHistory";
+import { useRecordingThumbnailUrl } from "../hooks/useRecordingThumbnailUrl";
 
 type SortMode = "newest" | "oldest" | "title";
 
@@ -38,6 +42,66 @@ function sortRecordings(recordings: RecordingSummary[], mode: SortMode): Recordi
   });
 }
 
+function HistoryItemThumbnail({
+  recording,
+  statusLabel,
+}: {
+  recording: RecordingSummary;
+  statusLabel: string;
+}) {
+  const thumbnailUrl = useRecordingThumbnailUrl(
+    recording.id,
+    recording.status,
+    recording.thumbnailPath,
+  );
+
+  const [imageError, setImageError] = useState(false);
+
+  if (recording.status === "recording") {
+    return (
+      <span className="history-thumbnail history-thumbnail-recording" title={statusLabel}>
+        <span className="history-thumbnail-dot" aria-hidden="true" />
+      </span>
+    );
+  }
+
+  if (recording.status === "processing") {
+    return (
+      <span className="history-thumbnail history-thumbnail-processing" title={statusLabel}>
+        <LoaderCircle className="history-thumbnail-spinner" aria-hidden="true" size={18} />
+      </span>
+    );
+  }
+
+  if (recording.status === "failed") {
+    return (
+      <span className="history-thumbnail history-thumbnail-failed" title={statusLabel}>
+        <AlertCircle aria-hidden="true" size={18} />
+      </span>
+    );
+  }
+
+  if (thumbnailUrl && !imageError) {
+    return (
+      <span className="history-thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={thumbnailUrl}
+          alt=""
+          className="history-thumbnail-image"
+          onError={() => setImageError(true)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className="history-thumbnail">
+      <MonitorUp aria-hidden="true" size={15} />
+    </span>
+  );
+}
+
 export function HistorySidebar({
   selectedId,
   onSelect,
@@ -47,6 +111,13 @@ export function HistorySidebar({
 }: HistorySidebarProps) {
   const t = useTranslations();
   const locale = useLocale();
+  const appVersion = useAppVersion();
+  const versionLabel = appVersion
+    ? appVersion.startsWith("v")
+      ? appVersion
+      : `v${appVersion}`
+    : "";
+
   const { snapshot, refresh, rename, remove } = useRecordingHistory();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase(locale));
@@ -195,6 +266,10 @@ export function HistorySidebar({
     <aside className="history-panel">
       <div className="history-header">
         <span className="section-label">{t("history.title")}</span>
+        <Button className="history-new-recording" size="sm" onClick={onNewRecording}>
+          <Plus aria-hidden="true" size={14} />
+          {t("history.newRecording")}
+        </Button>
       </div>
 
       <div className="history-tools">
@@ -267,9 +342,10 @@ export function HistorySidebar({
             data-recording-id={recording.id}
           >
             <button className="history-item-main" onClick={() => onSelect(recording.id)}>
-              <span className="history-thumbnail">
-                <MonitorUp aria-hidden="true" size={15} />
-              </span>
+              <HistoryItemThumbnail
+                recording={recording}
+                statusLabel={t(`history.status.${recording.status}`)}
+              />
               <span className="history-copy">
                 <span className="history-title-line">
                   {renamingId === recording.id ? (
@@ -365,13 +441,9 @@ export function HistorySidebar({
       </div>
 
       <div className="history-footer">
-        <Button className="history-new-recording" onClick={onNewRecording}>
-          <Plus aria-hidden="true" size={16} />
-          {t("history.newRecording")}
-        </Button>
         <Button
           className="history-settings"
-          variant="secondary"
+          variant="ghost"
           size="icon"
           title={t("navigation.settings")}
           aria-label={t("navigation.settings")}
@@ -379,6 +451,7 @@ export function HistorySidebar({
         >
           <Settings aria-hidden="true" size={16} />
         </Button>
+        {versionLabel && <span className="history-version">{versionLabel}</span>}
       </div>
       <dialog
         ref={deleteDialogRef}

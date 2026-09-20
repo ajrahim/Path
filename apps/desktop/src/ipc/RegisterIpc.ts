@@ -235,6 +235,23 @@ export function registerIpcHandlers({
 
     return mediaServer.url(id);
   });
+  ipcMain.handle(IPC_CHANNELS.recordingsThumbnailUrl, async (_event, input: unknown) => {
+    const { id } = recordingIdInputSchema.parse(input);
+    const recording = await recordings.get(id);
+    const thumbnailPath = recording?.thumbnailPath ?? assets.thumbnailPath(id);
+
+    if (!assets.isManagedFile(thumbnailPath)) {
+      return null;
+    }
+
+    try {
+      await stat(thumbnailPath);
+    } catch {
+      return null;
+    }
+
+    return mediaServer.thumbnailUrl(id);
+  });
   ipcMain.handle(IPC_CHANNELS.recordingsListClicks, (_event, input: unknown) => {
     const { id } = recordingIdInputSchema.parse(input);
 

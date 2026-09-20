@@ -52,6 +52,7 @@ export const IPC_CHANNELS = {
   recordingsRename: "recordings:rename",
   recordingsDelete: "recordings:delete",
   recordingsMediaUrl: "recordings:media-url",
+  recordingsThumbnailUrl: "recordings:thumbnail-url",
   recordingsListClicks: "recordings:list-clicks",
   recordingsAnalyzeClicks: "recordings:analyze-clicks",
   recordingsScreenshotUrl: "recordings:screenshot-url",
@@ -222,6 +223,7 @@ export interface DesktopApi {
     rename(input: RenameRecordingInput): Promise<RecordingSummary>;
     delete(input: RecordingIdInput): Promise<void>;
     mediaUrl(input: RecordingIdInput): Promise<string>;
+    thumbnailUrl(input: RecordingIdInput): Promise<string | null>;
     listClicks(input: RecordingIdInput): Promise<ClickEvent[]>;
     analyzeClicks(input: RecordingIdInput): Promise<ClickAnalysisResult>;
     screenshotUrl(input: z.infer<typeof clickAssetInputSchema>): Promise<string>;

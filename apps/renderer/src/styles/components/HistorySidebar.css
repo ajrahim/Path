@@ -400,10 +400,6 @@
   background: transparent;
 }
 
-.history-footer > button:first-child {
-  height: 40px;
-}
-
 .history-settings {
   height: 34px;
   padding-left: 4px;
@@ -599,10 +595,6 @@
   font-size: 12px;
 }
 
-.history-footer > button:first-child {
-  height: 44px;
-}
-
 .history-item {
   min-height: 76px;
 }
@@ -730,6 +722,66 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface-raised);
+  overflow: hidden;
+  position: relative;
+}
+
+.history-thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.history-thumbnail-recording {
+  border-color: #fecaca;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.history-thumbnail-processing {
+  border-color: #bfdbfe;
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.history-thumbnail-failed {
+  border-color: #fecaca;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.history-thumbnail-spinner {
+  animation: history-spin 1s linear infinite;
+}
+
+@keyframes history-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.history-thumbnail-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: history-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes history-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
 }
 
 .history-item-selected .history-thumbnail {
@@ -758,14 +810,6 @@
   background: var(--canvas);
 }
 
-.history-footer > button:first-child {
-  height: 40px;
-}
-
-.history-footer > button:first-child {
-  height: 40px;
-}
-
 .history-overflow-dropdown {
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -782,8 +826,12 @@
 }
 
 .history-panel .history-header {
-  min-height: 54px;
-  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  height: 52px;
+  padding: 0 14px;
   border-bottom: 0;
 }
 
@@ -792,7 +840,7 @@
 }
 
 .history-panel .history-footer {
-  padding: 6px 16px 16px;
+  padding: 8px 14px 12px;
 }
 
 .history-empty {
@@ -909,32 +957,48 @@
 .history-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.history-footer .history-new-recording {
-  flex: 1;
-  min-width: 0;
-  padding-inline: 8px;
+.history-header .history-new-recording {
+  height: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
+  gap: 5px;
 }
 
 .history-footer .history-settings {
   display: grid;
   place-items: center;
   justify-content: center;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   box-shadow: none;
   color: var(--muted-ink);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
 }
 
 .history-footer .history-settings:is(:hover, :focus-visible) {
-  background: transparent;
+  background: var(--surface-hover);
   color: var(--ink);
+}
+
+.history-version {
+  color: var(--muted-ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  user-select: none;
 }
 
 .recording-delete-dialog {

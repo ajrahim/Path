@@ -119,7 +119,12 @@ export class RecordingRepository {
   }
 
   /** A final processed path may replace the raw path without changing the recording's identity. */
-  async markReady(id: string, completedAt: string, videoPath?: string): Promise<void> {
+  async markReady(
+    id: string,
+    completedAt: string,
+    videoPath?: string,
+    thumbnailPath?: string,
+  ): Promise<void> {
     const result = await this.db
       .update(recordings)
       .set({
@@ -127,6 +132,7 @@ export class RecordingRepository {
         completedAt,
         updatedAt: completedAt,
         ...(videoPath ? { videoPath } : {}),
+        ...(thumbnailPath ? { thumbnailPath } : {}),
       })
       .where(eq(recordings.id, id));
 

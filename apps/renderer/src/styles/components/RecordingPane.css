@@ -1018,7 +1018,7 @@ button.activity-entry {
 }
 
 .transcript-panel header {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
 }
 
 .activity-heading > span:last-child {

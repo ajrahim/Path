@@ -62,6 +62,10 @@ export class ManagedRecordingAssets {
     return join(this.recordingDirectory(recordingId), "audio.wav");
   }
 
+  thumbnailPath(recordingId: string): string {
+    return join(this.recordingDirectory(recordingId), "thumbnail.png");
+  }
+
   async clickScreenshotPath(recordingId: string, clickId: string): Promise<string> {
     const directory = join(this.recordingDirectory(recordingId), "screenshots");
 

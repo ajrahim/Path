@@ -76,6 +76,12 @@ export class RecordingMediaServer {
     return `http://127.0.0.1:${this.port}/recordings/${recordingId}/screenshots/${clickId}.png?token=${this.token}`;
   }
 
+  thumbnailUrl(recordingId: string): string {
+    if (!this.port) throw new Error("Recording media server is not running");
+
+    return `http://127.0.0.1:${this.port}/recordings/${recordingId}/thumbnail.png?token=${this.token}`;
+  }
+
   close(): void {
     this.server?.close();
     this.server = null;
@@ -133,6 +139,37 @@ export class RecordingMediaServer {
         if (request.method === "HEAD") return void response.end();
 
         await pipeline(createReadStream(click.screenshotPath), response);
+
+        return;
+      }
+
+      const thumbnailMatch = url.pathname.match(/^\/recordings\/([^/]+)\/thumbnail\.png$/);
+
+      if (thumbnailMatch) {
+        const { id } = recordingIdInputSchema.parse({ id: thumbnailMatch[1] });
+        const recording = await this.recordings.get(id);
+        const thumbnailPath = recording?.thumbnailPath ?? this.assets.thumbnailPath(id);
+
+        if (!thumbnailPath || !this.assets.isManagedFile(thumbnailPath)) {
+          return void response.writeHead(404).end();
+        }
+
+        let image;
+
+        try {
+          image = await stat(thumbnailPath);
+        } catch {
+          return void response.writeHead(404).end();
+        }
+
+        response.setHeader("Cache-Control", "private, no-store");
+        response.setHeader("Content-Length", image.size);
+        response.setHeader("Content-Type", "image/png");
+        response.writeHead(200);
+
+        if (request.method === "HEAD") return void response.end();
+
+        await pipeline(createReadStream(thumbnailPath), response);
 
         return;
       }

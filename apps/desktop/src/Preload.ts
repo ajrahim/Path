@@ -42,6 +42,7 @@ const desktopApi: DesktopApi = {
     rename: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsRename, input),
     delete: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsDelete, input),
     mediaUrl: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsMediaUrl, input),
+    thumbnailUrl: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsThumbnailUrl, input),
     listClicks: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsListClicks, input),
     analyzeClicks: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsAnalyzeClicks, input),
     screenshotUrl: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsScreenshotUrl, input),

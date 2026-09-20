@@ -11,19 +11,25 @@ let directory: string;
 let server: RecordingMediaServer;
 let url: string;
 let videoPath: string;
+let thumbnailPath: string;
+let currentRecordingId: string;
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "path-media-test-"));
   const recordingId = randomUUID();
+
+  currentRecordingId = recordingId;
   const assets = new ManagedRecordingAssets(directory);
 
   await assets.createRecordingDirectory(recordingId);
   videoPath = assets.finalVideoPath(recordingId);
+  thumbnailPath = assets.thumbnailPath(recordingId);
 
   // Distinct bytes verify range handling without depending on video decoding.
   await writeFile(videoPath, "0123456789");
+  await writeFile(thumbnailPath, "fake-png-thumbnail");
   const recordings = {
-    get: async (id: string) => (id === recordingId ? { videoPath } : null),
+    get: async (id: string) => (id === recordingId ? { videoPath, thumbnailPath } : null),
   } as unknown as RecordingRepository;
 
   server = new RecordingMediaServer(recordings, assets);
@@ -91,5 +97,14 @@ describe("recording media server", () => {
     const range = await fetch(url, { headers: { Range: "bytes=-1" } });
 
     expect(range.status).toBe(416);
+  });
+
+  it("serves recording thumbnail image", async () => {
+    const thumbnailUrl = server.thumbnailUrl(currentRecordingId);
+    const response = await fetch(thumbnailUrl);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
+    expect(await response.text()).toBe("fake-png-thumbnail");
   });
 });

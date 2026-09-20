@@ -249,12 +249,23 @@ export class RecordingController {
 
     try {
       await this.mediaProcessor.finalize(this.active.rawVideoPath, this.active.finalVideoPath);
+      const thumbnailPath = this.assets.thumbnailPath(this.active.id);
+      let finalThumbnailPath: string | undefined;
+
+      try {
+        await this.mediaProcessor.extractThumbnail(this.active.finalVideoPath, thumbnailPath);
+        finalThumbnailPath = thumbnailPath;
+      } catch (thumbnailError) {
+        console.warn("Failed to generate video thumbnail", thumbnailError);
+      }
+
       await this.processTranscript(this.active);
       await this.processClickActions(this.active);
       await this.recordings.markReady(
         this.active.id,
         new Date().toISOString(),
         this.active.finalVideoPath,
+        finalThumbnailPath,
       );
 
       this.emitState();
