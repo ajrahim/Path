@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Captions,
   Check,
@@ -107,6 +107,11 @@ export function RecordingPane({
   } | null>(null);
 
   const [timelineQuery, setTimelineQuery] = useState("");
+  const [timelineFilter, setTimelineFilter] = useState<"all" | "clicks" | "speech">("all");
+  const activityListRef = useRef<HTMLOListElement>(null);
+  const isUserScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   let emptyVideoLabel = t("recording.emptyVideoTitle");
 
   if (recordingStatus === "recording" || recordingStatus === "processing") {
@@ -119,13 +124,33 @@ export function RecordingPane({
 
   if (mediaStatus === "loading") emptyVideoLabel = t("recording.loadingVideo");
 
+  const allTimeline = mergeTimeline(transcript, clicks);
+  const normalizedQuery = timelineQuery.trim().toLocaleLowerCase();
+
+  const timeline = allTimeline.filter((entry) => {
+    if (timelineFilter === "clicks" && entry.type !== "click") return false;
+    if (timelineFilter === "speech" && entry.type !== "transcript") return false;
+
+    if (!normalizedQuery) return true;
+
+    return entry.type === "transcript"
+      ? entry.segment.text.toLocaleLowerCase().includes(normalizedQuery)
+      : `${clickLabel(t, entry.click)} ${clickActionDescription(t, entry.click) ?? ""}`
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
+  });
+
   let emptyTimelineLabel = t("recording.noTimeline");
 
   if (recording?.transcriptStatus === "failed") {
     emptyTimelineLabel = t("recording.transcriptFailed");
   }
 
-  if (!recording) emptyTimelineLabel = t("recording.selectPrompt");
+  if (!recording) {
+    emptyTimelineLabel = t("recording.selectPrompt");
+  } else if (allTimeline.length > 0 && timeline.length === 0) {
+    emptyTimelineLabel = t("recording.noFilteredActivity");
+  }
 
   useEffect(() => {
     if (!openScreenshot) return;
@@ -139,19 +164,99 @@ export function RecordingPane({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [openScreenshot]);
 
+  useEffect(() => {
+    function handlePlaybackKeyDown(event: KeyboardEvent) {
+      if (!recording || !mediaUrl) return;
+
+      const target = event.target;
+
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          Boolean(target.closest("[contenteditable='true']")))
+      ) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        togglePlayback();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        seek(Math.max(0, currentTime - 3));
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        seek(Math.min(duration, currentTime + 3));
+      }
+    }
+
+    window.addEventListener("keydown", handlePlaybackKeyDown);
+
+    return () => window.removeEventListener("keydown", handlePlaybackKeyDown);
+  }, [recording, mediaUrl, currentTime, duration, togglePlayback, seek]);
+
+  const currentTimeMs = currentTime * 1_000;
+
+  const activePlaybackEntry = useMemo(() => {
+    if (!playing || timeline.length === 0) return null;
+
+    const activeTranscript = timeline.find(
+      (entry) =>
+        entry.type === "transcript" &&
+        currentTimeMs >= entry.segment.startMs &&
+        currentTimeMs <= entry.segment.endMs,
+    );
+
+    if (activeTranscript) return activeTranscript;
+
+    let mostRecent = null;
+
+    for (const entry of timeline) {
+      if (entry.timestampMs <= currentTimeMs) {
+        mostRecent = entry;
+      } else {
+        break;
+      }
+    }
+
+    return mostRecent;
+  }, [playing, timeline, currentTimeMs]);
+
+  const activePlaybackKey = activePlaybackEntry
+    ? activePlaybackEntry.type === "click"
+      ? `click-${activePlaybackEntry.click.id}`
+      : `transcript-${activePlaybackEntry.segment.id}`
+    : null;
+
+  useEffect(() => {
+    if (!playing || !activePlaybackKey || isUserScrollingRef.current) return;
+
+    const list = activityListRef.current;
+
+    if (!list) return;
+
+    const activeElement = list.querySelector<HTMLElement>(
+      `[data-activity-id="${activePlaybackKey}"]`,
+    );
+
+    if (activeElement) {
+      activeElement.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [playing, activePlaybackKey]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
   const activeClick = clicks
     .filter((click) => click.normalizedX !== null && click.normalizedY !== null)
     .map((click) => ({ click, distance: Math.abs(click.timestampMs - currentTime * 1_000) }))
     .sort((left, right) => left.distance - right.distance)[0];
-
-  const normalizedQuery = timelineQuery.trim().toLocaleLowerCase();
-  const timeline = mergeTimeline(transcript, clicks).filter((entry) =>
-    entry.type === "transcript"
-      ? entry.segment.text.toLocaleLowerCase().includes(normalizedQuery)
-      : `${clickLabel(t, entry.click)} ${clickActionDescription(t, entry.click) ?? ""}`
-          .toLocaleLowerCase()
-          .includes(normalizedQuery),
-  );
 
   const canRetryAnalysis =
     recording?.status === "ready" &&
@@ -242,22 +347,23 @@ export function RecordingPane({
     }
   }
 
-  async function insertViewerScreenshot(): Promise<void> {
-    if (!openScreenshot) return;
-
+  async function insertScreenshotIntoGuide(click: ClickEvent, url: string): Promise<void> {
     setViewerError(null);
 
     try {
-      const dataUrl = await screenshotUrlToDataUrl(openScreenshot.url);
+      const dataUrl = await screenshotUrlToDataUrl(url);
 
-      dispatchGuideImage(
-        dataUrl,
-        clickActionDescription(t, openScreenshot.click) ?? clickLabel(t, openScreenshot.click),
-      );
-      setOpenScreenshot(null);
+      dispatchGuideImage(dataUrl, clickActionDescription(t, click) ?? clickLabel(t, click));
     } catch {
       setViewerError(t("guide.imageInsertFailed"));
     }
+  }
+
+  async function insertViewerScreenshot(): Promise<void> {
+    if (!openScreenshot) return;
+
+    await insertScreenshotIntoGuide(openScreenshot.click, openScreenshot.url);
+    setOpenScreenshot(null);
   }
 
   return (
@@ -375,27 +481,57 @@ export function RecordingPane({
         <header>
           <div className="activity-heading">
             <span className="section-label">{t("recording.activity")}</span>
-            <span>
+            <span
+              className="activity-summary"
+              title={analyzingClicks ? t("recording.analyzingClicks") : undefined}
+            >
               {analyzingClicks
                 ? t("recording.analyzingClicks")
                 : t("recording.activityCount", { count: timeline.length })}
             </span>
             {canRetryAnalysis && (
-              <button type="button" className="activity-retry" onClick={() => void retryAnalysis()}>
+              <button
+                type="button"
+                className="activity-retry"
+                title={t("recording.retryAnalysis")}
+                aria-label={t("recording.retryAnalysis")}
+                onClick={() => void retryAnalysis()}
+              >
                 <RotateCcw size={13} />
-                {t("recording.retryAnalysis")}
               </button>
             )}
           </div>
-          <label className="transcript-search">
-            <Search size={14} />
+          <div className="transcript-search activity-search">
+            <Search size={14} aria-hidden="true" />
             <input
               value={timelineQuery}
               onChange={(event) => setTimelineQuery(event.target.value)}
               placeholder={t("recording.searchTranscript")}
               aria-label={t("recording.searchTranscript")}
             />
-          </label>
+            <select
+              className="activity-type-select"
+              aria-label={t("recording.filterActivity")}
+              value={timelineFilter}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+
+                if (value === "all" || value === "clicks" || value === "speech") {
+                  setTimelineFilter(value);
+                }
+              }}
+            >
+              <option value="all">
+                {t("recording.filterAll")} ({allTimeline.length})
+              </option>
+              <option value="clicks">
+                {t("recording.filterClicks")} ({clicks.length})
+              </option>
+              <option value="speech">
+                {t("recording.filterSpeech")} ({transcript.length})
+              </option>
+            </select>
+          </div>
         </header>
         {activityError && (
           <p className="activity-error" role="alert">
@@ -403,16 +539,38 @@ export function RecordingPane({
           </p>
         )}
         {recording && timeline.length > 0 ? (
-          <ol className="activity-cards" aria-label={t("recording.activity")}>
+          <ol
+            ref={activityListRef}
+            className="activity-cards"
+            aria-label={t("recording.activity")}
+            onPointerEnter={() => {
+              isUserScrollingRef.current = true;
+            }}
+            onPointerLeave={() => {
+              isUserScrollingRef.current = false;
+            }}
+            onScroll={() => {
+              isUserScrollingRef.current = true;
+
+              if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+
+              scrollTimeoutRef.current = setTimeout(() => {
+                isUserScrollingRef.current = false;
+              }, 1500);
+            }}
+          >
             {timeline.map((entry) =>
               entry.type === "click" ? (
                 <li
-                  className={
-                    `click-${entry.click.id}` === selectedActivityKey
-                      ? "activity-entry activity-entry-click selected"
-                      : "activity-entry activity-entry-click"
-                  }
+                  className={cn(
+                    "activity-entry activity-entry-click",
+                    `click-${entry.click.id}` === selectedActivityKey && "selected",
+                    playing &&
+                      `click-${entry.click.id}` === activePlaybackKey &&
+                      "activity-entry-playback-active",
+                  )}
                   key={`click-${entry.click.id}`}
+                  data-activity-id={`click-${entry.click.id}`}
                   data-timestamp-ms={entry.timestampMs}
                 >
                   <button
@@ -476,6 +634,7 @@ export function RecordingPane({
                         setViewerError(null);
                         setOpenScreenshot({ click: entry.click, url });
                       }}
+                      onInsert={(url) => void insertScreenshotIntoGuide(entry.click, url)}
                       onPreview={(url, anchor) => {
                         const width = 260;
                         const height = 174;
@@ -508,12 +667,15 @@ export function RecordingPane({
               ) : (
                 <li
                   key={`transcript-${entry.segment.id}`}
+                  data-activity-id={`transcript-${entry.segment.id}`}
                   data-timestamp-ms={entry.timestampMs}
-                  className={
-                    `transcript-${entry.segment.id}` === selectedActivityKey
-                      ? "activity-entry transcript-entry selected"
-                      : "activity-entry transcript-entry"
-                  }
+                  className={cn(
+                    "activity-entry transcript-entry",
+                    `transcript-${entry.segment.id}` === selectedActivityKey && "selected",
+                    playing &&
+                      `transcript-${entry.segment.id}` === activePlaybackKey &&
+                      "activity-entry-playback-active",
+                  )}
                 >
                   <div
                     className="activity-entry-main transcript-entry-main"

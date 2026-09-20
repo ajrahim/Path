@@ -222,6 +222,34 @@ describe("guide document workflow", () => {
     expect(result.current.error).toBe("Clipboard unavailable");
   });
 
+  it("copies rich formatted HTML and plain text when ClipboardItem is available", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+
+    class MockClipboardItem {
+      data: Record<string, Blob>;
+
+      constructor(data: Record<string, Blob>) {
+        this.data = data;
+      }
+    }
+
+    vi.stubGlobal("ClipboardItem", MockClipboardItem);
+    vi.stubGlobal("navigator", { clipboard: { write } });
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    act(() => result.current.editMarkdown("# Guide Title\n\n1. First step"));
+    await act(() => result.current.copyMarkdown());
+
+    expect(result.current.copied).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+
+    const item = write.mock.calls[0]?.[0]?.[0] as MockClipboardItem;
+
+    expect(item).toBeInstanceOf(MockClipboardItem);
+    expect(item.data["text/plain"]).toBeDefined();
+    expect(item.data["text/html"]).toBeDefined();
+  });
+
   it("revokes a browser export URL even when the download fails", async () => {
     mocks.desktopAvailable = false;
     const createObjectURL = vi.fn().mockReturnValue("blob:guide-test");

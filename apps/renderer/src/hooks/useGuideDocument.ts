@@ -3,6 +3,7 @@ import { useTranslations } from "next-intl";
 import type { RecordingSummary } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
 import { subscribeGuideImages } from "@/lib/GuideImageBus";
+import { renderMarkdownToHtml } from "@/lib/RenderMarkdown";
 
 interface DocumentState {
   markdown: string;
@@ -284,7 +285,30 @@ export function useGuideDocument(
     dispatch({ type: "error", error: null });
 
     try {
-      await navigator.clipboard.writeText(session.markdown);
+      let written = false;
+
+      if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
+        try {
+          const html = renderMarkdownToHtml(session.markdown);
+          const textBlob = new Blob([session.markdown], { type: "text/plain" });
+          const htmlBlob = new Blob([html], { type: "text/html" });
+
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/plain": textBlob,
+              "text/html": htmlBlob,
+            }),
+          ]);
+          written = true;
+        } catch {
+          // ClipboardItem write failed or was rejected; fall back to writeText below.
+        }
+      }
+
+      if (!written) {
+        await navigator.clipboard.writeText(session.markdown);
+      }
+
       if (!session.active || session.copying !== operation || session.revision !== revision) return;
 
       dispatch({ type: "copied", copied: true });

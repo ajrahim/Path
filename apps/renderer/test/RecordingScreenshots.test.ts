@@ -116,6 +116,31 @@ describe("recording screenshot lifecycle", () => {
     expect(view.queryByRole("button")).toBeNull();
   });
 
+  it("renders a quick-insert button and dispatches onInsert when provided", async () => {
+    bridge.screenshotUrl.mockResolvedValue("https://media.test/recording-a/click.webp");
+
+    const props = {
+      click: capturedClick("recording-a"),
+      onOpen: vi.fn(),
+      onInsert: vi.fn(),
+      onPreview: vi.fn(),
+      onPreviewEnd: vi.fn(),
+    };
+
+    const view = render(createElement(ScreenshotAction, props));
+
+    await waitFor(() => expect(view.getAllByRole("button")).toHaveLength(2));
+
+    const insertButton = view.getAllByRole("button")[0];
+
+    if (!insertButton) throw new Error("Expected insert button");
+
+    fireEvent.click(insertButton);
+
+    expect(props.onInsert).toHaveBeenCalledWith("https://media.test/recording-a/click.webp");
+    expect(props.onOpen).not.toHaveBeenCalled();
+  });
+
   it("uses geometry from the current image and releases image and resize listeners", () => {
     const props = {
       click: capturedClick("recording-a"),

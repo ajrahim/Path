@@ -1,3 +1,9 @@
+.activity-screenshot-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .activity-screenshot-action {
   position: relative;
   display: grid;
