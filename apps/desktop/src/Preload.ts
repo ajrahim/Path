@@ -35,6 +35,8 @@ const desktopApi: DesktopApi = {
   guides: {
     generate: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGenerate, input),
     exportMarkdown: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesExportMarkdown, input),
+    getDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetDocument, input),
+    saveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveDocument, input),
   },
   recordings: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recordingsList),
@@ -51,11 +53,15 @@ const desktopApi: DesktopApi = {
     updateTranscript: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsUpdateTranscript, input),
     deleteTranscript: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsDeleteTranscript, input),
     deleteClick: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsDeleteClick, input),
+    updateClick: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsUpdateClick, input),
+    retryProcessing: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsRetryProcessing, input),
   },
   recording: {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.recordingListSources),
     start: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingStart, input),
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.recordingStop),
+    pause: () => ipcRenderer.invoke(IPC_CHANNELS.recordingPause),
+    resume: () => ipcRenderer.invoke(IPC_CHANNELS.recordingResume),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.recordingGetState),
     selectRegion: (input) => ipcRenderer.invoke(IPC_CHANNELS.regionSelect, input),
     onStateChanged: (listener) => {
@@ -86,6 +92,20 @@ const desktopApi: DesktopApi = {
       ipcRenderer.on(IPC_CHANNELS.captureStopRequested, handler);
 
       return () => ipcRenderer.removeListener(IPC_CHANNELS.captureStopRequested, handler);
+    },
+    onPauseRequested: (listener) => {
+      const handler = () => listener();
+
+      ipcRenderer.on(IPC_CHANNELS.capturePauseRequested, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.capturePauseRequested, handler);
+    },
+    onResumeRequested: (listener) => {
+      const handler = () => listener();
+
+      ipcRenderer.on(IPC_CHANNELS.captureResumeRequested, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.captureResumeRequested, handler);
     },
   },
   region: {

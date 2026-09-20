@@ -3,7 +3,13 @@ import type { StartRecordingInput } from "@path/shared";
 import { useRendererDispatch } from "./useRendererDispatch";
 import { useRendererSelector } from "./useRendererSelector";
 import { useRendererStore } from "./useRendererStore";
-import { loadCaptureSources, startRecording, stopRecording } from "../state/RecordingSlice";
+import {
+  loadCaptureSources,
+  pauseRecording,
+  resumeRecording,
+  startRecording,
+  stopRecording,
+} from "../state/RecordingSlice";
 
 /** Exposes the shared recording commands and the latest authoritative runtime snapshot. */
 export function useRecording() {
@@ -21,6 +27,8 @@ export function useRecording() {
   );
 
   const stop = useCallback(() => dispatch(stopRecording()), [dispatch]);
+  const pause = useCallback(() => dispatch(pauseRecording()), [dispatch]);
+  const resume = useCallback(() => dispatch(resumeRecording()), [dispatch]);
 
   return {
     snapshot: {
@@ -33,5 +41,7 @@ export function useRecording() {
     loadSources,
     start,
     stop,
+    pause,
+    resume,
   };
 }

@@ -19,6 +19,7 @@ import type {
   DesktopSettings,
   GeneratedGuide,
   GeneralSettings,
+  PersistedGuide,
   TranscriptSegment,
 } from "./Contracts";
 
@@ -46,6 +47,8 @@ export const IPC_CHANNELS = {
 
   guidesGenerate: "guides:generate",
   guidesExportMarkdown: "guides:export-markdown",
+  guidesGetDocument: "guides:get-document",
+  guidesSaveDocument: "guides:save-document",
 
   recordingsList: "recordings:list",
   recordingsGet: "recordings:get",
@@ -61,15 +64,21 @@ export const IPC_CHANNELS = {
   recordingsUpdateTranscript: "recordings:update-transcript",
   recordingsDeleteTranscript: "recordings:delete-transcript",
   recordingsDeleteClick: "recordings:delete-click",
+  recordingsUpdateClick: "recordings:update-click",
+  recordingsRetryProcessing: "recordings:retry-processing",
 
   recordingListSources: "recording:list-sources",
   recordingStart: "recording:start",
   recordingStop: "recording:stop",
+  recordingPause: "recording:pause",
+  recordingResume: "recording:resume",
   recordingGetState: "recording:get-state",
   recordingStateChanged: "recording:state-changed",
 
   captureStartRequested: "capture:start-requested",
   captureStopRequested: "capture:stop-requested",
+  capturePauseRequested: "capture:pause-requested",
+  captureResumeRequested: "capture:resume-requested",
   captureReady: "capture:ready",
   captureAppendChunk: "capture:append-chunk",
   captureComplete: "capture:complete",
@@ -159,6 +168,14 @@ export const updateTranscriptInputSchema = activityItemInputSchema.extend({
   text: z.string().trim().min(1).max(10_000),
 });
 
+export const updateClickDescriptionInputSchema = activityItemInputSchema.extend({
+  description: z.string().trim().min(1).max(2_000),
+});
+
+export const saveGuideDocumentInputSchema = recordingIdInputSchema.extend({
+  markdown: z.string().max(10_000_000),
+});
+
 export const exportMarkdownInputSchema = z.strictObject({
   suggestedName: z.string().trim().min(1).max(120),
   markdown: z.string().max(10_000_000),
@@ -215,6 +232,8 @@ export interface DesktopApi {
   guides: {
     generate(input: z.infer<typeof generateGuideInputSchema>): Promise<GeneratedGuide>;
     exportMarkdown(input: z.infer<typeof exportMarkdownInputSchema>): Promise<boolean>;
+    getDocument(input: RecordingIdInput): Promise<PersistedGuide | null>;
+    saveDocument(input: z.infer<typeof saveGuideDocumentInputSchema>): Promise<PersistedGuide>;
   };
 
   recordings: {
@@ -234,12 +253,16 @@ export interface DesktopApi {
     ): Promise<TranscriptSegment>;
     deleteTranscript(input: z.infer<typeof activityItemInputSchema>): Promise<void>;
     deleteClick(input: z.infer<typeof activityItemInputSchema>): Promise<void>;
+    updateClick(input: z.infer<typeof updateClickDescriptionInputSchema>): Promise<ClickEvent>;
+    retryProcessing(input: RecordingIdInput): Promise<void>;
   };
 
   recording: {
     listSources(): Promise<CaptureSource[]>;
     start(input: StartRecordingInput): Promise<RecordingRuntimeState>;
     stop(): Promise<RecordingRuntimeState>;
+    pause(): Promise<RecordingRuntimeState>;
+    resume(): Promise<RecordingRuntimeState>;
     getState(): Promise<RecordingRuntimeState>;
     selectRegion(
       input: z.infer<typeof selectRegionInputSchema>,
@@ -255,6 +278,8 @@ export interface DesktopApi {
     fail(message: string): Promise<void>;
     onStartRequested(listener: (input: CaptureWorkerStart) => void): () => void;
     onStopRequested(listener: () => void): () => void;
+    onPauseRequested(listener: () => void): () => void;
+    onResumeRequested(listener: () => void): () => void;
   };
 
   // Selection coordinates are relative to the selector window until main resolves its display origin.

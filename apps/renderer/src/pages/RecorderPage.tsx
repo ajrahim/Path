@@ -24,7 +24,7 @@ type PopoverMode = "full-screen" | CaptureMode;
 export default function RecorderPage() {
   const t = useTranslations("recording");
   const locale = useLocale();
-  const { snapshot, loadSources, start: startCapture, stop } = useRecording();
+  const { snapshot, loadSources, start: startCapture, stop, resume } = useRecording();
   const [expanded, setExpanded] = useState(true);
   const [mode, setMode] = useState<PopoverMode>("full-screen");
   const [sourceId, setSourceId] = useState("");
@@ -40,7 +40,10 @@ export default function RecorderPage() {
   const sourceType = mode === "window" ? "window" : "screen";
   const sources = snapshot.sources.filter((source) => source.type === sourceType);
   const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? null;
-  const active = ["preparing", "recording", "stopping", "processing"].includes(snapshot.status);
+  const active = ["preparing", "recording", "paused", "stopping", "processing"].includes(
+    snapshot.status,
+  );
+
   const optionsVisible = !active && expanded;
 
   useEffect(() => {
@@ -82,13 +85,19 @@ export default function RecorderPage() {
           </span>
           <div>
             <strong>
-              {snapshot.status === "recording"
+              {snapshot.status === "recording" || snapshot.status === "paused"
                 ? formatDuration(snapshot.elapsedMs, "00:00")
                 : t(snapshot.status === "processing" ? "processing" : "preparing")}
             </strong>
           </div>
           <div className="recorder-summary-actions">
-            {snapshot.status === "recording" && (
+            {snapshot.status === "paused" && (
+              <Button size="sm" onClick={() => void resume()}>
+                <Play size={13} />
+                {t("resume")}
+              </Button>
+            )}
+            {(snapshot.status === "recording" || snapshot.status === "paused") && (
               <Button size="sm" disabled={snapshot.elapsedMs < 2_000} onClick={() => void stop()}>
                 <Square size={13} />
                 {t("stop")}

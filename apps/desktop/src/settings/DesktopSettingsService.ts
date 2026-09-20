@@ -96,6 +96,7 @@ export class DesktopSettingsService {
     return this.get();
   }
 
+  /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
   async updateGuideInstructions(guideInstructions: string): Promise<DesktopSettings> {
     this.current.guideInstructions = guideInstructions;
     await this.persist();

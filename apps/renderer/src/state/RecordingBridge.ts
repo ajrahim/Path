@@ -62,7 +62,7 @@ export function connectRecordingBridge(
   void refreshRuntime();
   const timer = setInterval(() => {
     if (
-      ["preparing", "recording", "stopping", "processing"].includes(
+      ["preparing", "recording", "paused", "stopping", "processing"].includes(
         store.getState().recording.runtime.status,
       )
     ) {

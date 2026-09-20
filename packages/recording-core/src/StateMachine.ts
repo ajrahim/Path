@@ -27,13 +27,18 @@ export type RecordingEvent =
   | "TRANSCRIBED"
   | "EVENTS_INDEXED"
   | "FAIL"
-  | "RESET";
+  | "RESET"
+  | "RETRY_PROCESSING";
 
 // Missing edges are invalid operations, rather than implicit no-op transitions.
 const transitions: Partial<
   Record<RecordingState, Partial<Record<RecordingEvent, RecordingState>>>
 > = {
-  IDLE: { PREPARE: "PREPARING", SELECT_REGION: "SELECTING_REGION" },
+  IDLE: {
+    PREPARE: "PREPARING",
+    SELECT_REGION: "SELECTING_REGION",
+    RETRY_PROCESSING: "PROCESSING_VIDEO",
+  },
   SELECTING_REGION: { REGION_SELECTED: "PREPARING", RESET: "IDLE" },
   PREPARING: { PREPARED: "RECORDING", FAIL: "FAILED" },
   RECORDING: { PAUSE: "PAUSED", STOP: "STOPPING", FAIL: "FAILED" },
@@ -46,8 +51,8 @@ const transitions: Partial<
   },
   TRANSCRIBING: { TRANSCRIBED: "INDEXING_EVENTS", TRANSCRIPTION_FAILED: "READY", FAIL: "FAILED" },
   INDEXING_EVENTS: { EVENTS_INDEXED: "READY", FAIL: "FAILED" },
-  READY: { RESET: "IDLE" },
-  FAILED: { RESET: "IDLE" },
+  READY: { RESET: "IDLE", RETRY_PROCESSING: "PROCESSING_VIDEO" },
+  FAILED: { RESET: "IDLE", RETRY_PROCESSING: "PROCESSING_VIDEO" },
 };
 
 /** Resolve one legal lifecycle transition without mutating state or performing capture work. */

@@ -96,6 +96,42 @@ export const stopRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk
   { condition: (_, { getState }) => getState().recording.commandRequestId === null },
 );
 
+export const pauseRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk>(
+  "recording/pause",
+  async (_, { extra, getState, rejectWithValue }) => {
+    const desktop = extra.getDesktopApi();
+
+    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+
+    const { connectionId, revision } = getState().recording;
+
+    try {
+      return { runtime: await desktop.recording.pause(), connectionId, revision };
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : "Unable to pause recording");
+    }
+  },
+  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+);
+
+export const resumeRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk>(
+  "recording/resume",
+  async (_, { extra, getState, rejectWithValue }) => {
+    const desktop = extra.getDesktopApi();
+
+    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+
+    const { connectionId, revision } = getState().recording;
+
+    try {
+      return { runtime: await desktop.recording.resume(), connectionId, revision };
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : "Unable to resume recording");
+    }
+  },
+  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+);
+
 // The desktop remains authoritative; the slice reconciles its events, reads, and command replies.
 const recordingSlice = createSlice({
   name: "recording",
@@ -153,33 +189,57 @@ const recordingSlice = createSlice({
           state.sourceError = action.payload ?? "Unable to list capture sources";
         }
       })
-      .addMatcher(isAnyOf(startRecording.pending, stopRecording.pending), (state, action) => {
-        state.commandRequestId = action.meta.requestId;
-        state.commandRevision = state.revision;
-      })
-      .addMatcher(isAnyOf(startRecording.fulfilled, stopRecording.fulfilled), (state, action) => {
-        if (state.commandRequestId !== action.meta.requestId) return;
+      .addMatcher(
+        isAnyOf(
+          startRecording.pending,
+          stopRecording.pending,
+          pauseRecording.pending,
+          resumeRecording.pending,
+        ),
+        (state, action) => {
+          state.commandRequestId = action.meta.requestId;
+          state.commandRevision = state.revision;
+        },
+      )
+      .addMatcher(
+        isAnyOf(
+          startRecording.fulfilled,
+          stopRecording.fulfilled,
+          pauseRecording.fulfilled,
+          resumeRecording.fulfilled,
+        ),
+        (state, action) => {
+          if (state.commandRequestId !== action.meta.requestId) return;
 
-        state.commandRequestId = null;
-        // A pushed event supersedes an older command response, just as it supersedes a poll.
-        if (
-          state.connectionId !== action.payload.connectionId ||
-          state.revision !== action.payload.revision
-        ) {
-          return;
-        }
+          state.commandRequestId = null;
+          // A pushed event supersedes an older command response, just as it supersedes a poll.
+          if (
+            state.connectionId !== action.payload.connectionId ||
+            state.revision !== action.payload.revision
+          ) {
+            return;
+          }
 
-        state.runtime = action.payload.runtime;
-        state.revision += 1;
-      })
-      .addMatcher(isAnyOf(startRecording.rejected, stopRecording.rejected), (state, action) => {
-        if (state.commandRequestId !== action.meta.requestId) return;
+          state.runtime = action.payload.runtime;
+          state.revision += 1;
+        },
+      )
+      .addMatcher(
+        isAnyOf(
+          startRecording.rejected,
+          stopRecording.rejected,
+          pauseRecording.rejected,
+          resumeRecording.rejected,
+        ),
+        (state, action) => {
+          if (state.commandRequestId !== action.meta.requestId) return;
 
-        state.commandRequestId = null;
-        if (!action.meta.aborted && state.commandRevision === state.revision) {
-          state.runtime.error = action.payload ?? "Unable to update recording state";
-        }
-      });
+          state.commandRequestId = null;
+          if (!action.meta.aborted && state.commandRevision === state.revision) {
+            state.runtime.error = action.payload ?? "Unable to update recording state";
+          }
+        },
+      );
   },
 });
 

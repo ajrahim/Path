@@ -10,7 +10,7 @@ const RECORDER_POPOVER_EXPANDED_HEIGHT = 230;
 
 function getTrayIconPath(status: RecordingRuntimeStatus = "idle"): string {
   const fileName =
-    status === "recording"
+    status === "recording" || status === "paused"
       ? "tray-recording.png"
       : status === "processing" || status === "stopping"
         ? "tray-processing.png"

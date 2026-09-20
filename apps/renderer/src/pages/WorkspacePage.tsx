@@ -1,9 +1,10 @@
 import { RENDERER_ROUTES } from "@path/shared";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/router";
-import { GuidePane } from "@/components/GuidePane";
+import { Button } from "@/components/Button";
+import { GuidePane, type GuidePaneState } from "@/components/GuidePane";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { useRecordingHistory } from "@/hooks/useRecordingHistory";
 import { RecordingPane } from "@/components/RecordingPane";
@@ -29,9 +30,17 @@ export default function WorkspacePage() {
   const [titleSaving, setTitleSaving] = useState(false);
   const isTitleSavingRef = useRef(false);
   const [titleError, setTitleError] = useState(false);
-  const recordingActive = ["preparing", "recording", "stopping", "processing"].includes(
+  const [pendingSelectionId, setPendingSelectionId] = useState<string | null>(null);
+  const [switchSaving, setSwitchSaving] = useState(false);
+  const guideStateRef = useRef<GuidePaneState | null>(null);
+  const discardDialogRef = useRef<HTMLDialogElement>(null);
+  const recordingActive = ["preparing", "recording", "paused", "stopping", "processing"].includes(
     recordingState.status,
   );
+
+  const handleGuideStateChange = useCallback((state: GuidePaneState | null) => {
+    guideStateRef.current = state;
+  }, []);
 
   const hasPendingRecordings = snapshot.recordings.some(
     (recording) => recording.status === "recording" || recording.status === "processing",
@@ -60,6 +69,62 @@ export default function WorkspacePage() {
 
     return () => clearInterval(timer);
   }, [recordingActive, hasPendingRecordings, refresh]);
+
+  useEffect(() => {
+    if (!pendingSelectionId) return;
+
+    const dialog = discardDialogRef.current;
+
+    dialog?.showModal();
+    dialog?.querySelector<HTMLButtonElement>("[data-cancel-switch]")?.focus();
+
+    return () => dialog?.close();
+  }, [pendingSelectionId]);
+
+  function requestSelect(id: string): void {
+    if (id === activeSelectedId) return;
+
+    // An unsaved guide draft belongs to the current recording; confirm before leaving it.
+    if (guideStateRef.current?.isDirty) {
+      setPendingSelectionId(id);
+
+      return;
+    }
+
+    setSelectedId(id);
+  }
+
+  async function saveAndSwitch(): Promise<void> {
+    if (!pendingSelectionId || switchSaving) return;
+
+    setSwitchSaving(true);
+
+    try {
+      const saved = await guideStateRef.current?.save();
+
+      // A failed save keeps the dialog open; the guide pane already shows the error.
+      if (saved === false) return;
+
+      setSelectedId(pendingSelectionId);
+      setPendingSelectionId(null);
+    } finally {
+      setSwitchSaving(false);
+    }
+  }
+
+  function discardAndSwitch(): void {
+    if (!pendingSelectionId) return;
+
+    setSelectedId(pendingSelectionId);
+    setPendingSelectionId(null);
+  }
+
+  function openSettings(): void {
+    const desktop = getDesktopApi();
+
+    if (desktop) void desktop.app.openSettings();
+    else void router.push(RENDERER_ROUTES.settings);
+  }
 
   function resize(event: React.PointerEvent<HTMLDivElement>, target: DragTarget): void {
     if (event.buttons !== 1) return;
@@ -170,17 +235,12 @@ export default function WorkspacePage() {
       >
         <HistorySidebar
           selectedId={activeSelectedId}
-          onSelect={setSelectedId}
+          onSelect={requestSelect}
           onDeleted={(id) => {
             if (id === activeSelectedId) setSelectedId(null);
           }}
           onNewRecording={() => setSourceDialogOpen(true)}
-          onOpenSettings={() => {
-            const desktop = getDesktopApi();
-
-            if (desktop) void desktop.app.openSettings();
-            else void router.push(RENDERER_ROUTES.settings);
-          }}
+          onOpenSettings={openSettings}
         />
         <div
           className="resize-handle"
@@ -195,6 +255,8 @@ export default function WorkspacePage() {
         <RecordingPane
           key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
           recording={selected}
+          onNewRecording={() => setSourceDialogOpen(true)}
+          onOpenSettings={openSettings}
         />
         <div
           className="resize-handle"
@@ -206,18 +268,51 @@ export default function WorkspacePage() {
           onPointerMove={(event) => resize(event, "guide")}
           onKeyDown={(event) => resizeWithKeyboard(event, "guide")}
         />
-        <GuidePane key={`guide-${selected?.id ?? "empty"}`} recording={selected} />
+        <GuidePane
+          key={`guide-${selected?.id ?? "empty"}`}
+          recording={selected}
+          onGuideStateChange={handleGuideStateChange}
+        />
       </div>
       <SourceDialog
         key={sourceDialogOpen ? "open" : "closed"}
         open={sourceDialogOpen}
         onClose={() => setSourceDialogOpen(false)}
         onStarted={(recordingId) => {
-          if (recordingId) setSelectedId(recordingId);
+          if (recordingId) requestSelect(recordingId);
 
           void refresh();
         }}
       />
+      <dialog
+        ref={discardDialogRef}
+        className="recording-delete-dialog"
+        aria-labelledby="guide-discard-title"
+        aria-describedby="guide-discard-description"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!switchSaving) setPendingSelectionId(null);
+        }}
+      >
+        <h2 id="guide-discard-title">{t("guide.discardTitle")}</h2>
+        <p id="guide-discard-description">{t("guide.discardDescription")}</p>
+        <footer>
+          <Button
+            data-cancel-switch
+            variant="secondary"
+            disabled={switchSaving}
+            onClick={() => setPendingSelectionId(null)}
+          >
+            {t("actions.cancel")}
+          </Button>
+          <Button variant="ghost" disabled={switchSaving} onClick={discardAndSwitch}>
+            {t("guide.discard")}
+          </Button>
+          <Button disabled={switchSaving} onClick={() => void saveAndSwitch()}>
+            {switchSaving ? t("guide.saving") : t("guide.saveAndSwitch")}
+          </Button>
+        </footer>
+      </dialog>
     </div>
   );
 }

@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PersistedGuide } from "@path/shared";
 import { useGuideDocument } from "../src/hooks/useGuideDocument";
 
 const mocks = vi.hoisted(() => ({
   generate: vi.fn<(input: { id: string; instructions: string }) => Promise<{ markdown: string }>>(),
   exportMarkdown: vi.fn<(input: { suggestedName: string; markdown: string }) => Promise<boolean>>(),
+  getDocument: vi.fn<(input: { id: string }) => Promise<PersistedGuide | null>>(),
+  saveDocument: vi.fn<(input: { id: string; markdown: string }) => Promise<PersistedGuide>>(),
   translate: (key: string) => key,
   desktopAvailable: true,
 }));
@@ -15,7 +18,14 @@ vi.mock("next-intl", () => ({ useTranslations: () => mocks.translate }));
 vi.mock("@/lib/Desktop", () => ({
   getDesktopApi: () =>
     mocks.desktopAvailable
-      ? { guides: { generate: mocks.generate, exportMarkdown: mocks.exportMarkdown } }
+      ? {
+          guides: {
+            generate: mocks.generate,
+            exportMarkdown: mocks.exportMarkdown,
+            getDocument: mocks.getDocument,
+            saveDocument: mocks.saveDocument,
+          },
+        }
       : null,
 }));
 
@@ -25,6 +35,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.generate.mockReset();
   mocks.exportMarkdown.mockReset();
+  mocks.getDocument.mockReset();
+  mocks.saveDocument.mockReset();
+  mocks.getDocument.mockResolvedValue(null);
+  mocks.saveDocument.mockImplementation(async (input) => ({
+    recordingId: input.id,
+    title: recording.title,
+    markdown: input.markdown,
+    updatedAt: new Date().toISOString(),
+  }));
   mocks.desktopAvailable = true;
 });
 
@@ -285,6 +304,75 @@ describe("guide document workflow", () => {
 
     expect(input.selectionStart).toBe(insertionEnd);
     expect(input.selectionEnd).toBe(insertionEnd);
+  });
+
+  it("loads the persisted document and tracks dirty state through save", async () => {
+    mocks.getDocument.mockResolvedValue({
+      recordingId: recording.id,
+      title: recording.title,
+      markdown: "# Saved guide",
+      updatedAt: "2026-09-20T00:00:00.000Z",
+    });
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(mocks.getDocument).toHaveBeenCalledWith({ id: recording.id });
+    expect(result.current.markdown).toBe("# Saved guide");
+    expect(result.current.isDirty).toBe(false);
+
+    act(() => result.current.editMarkdown("# Edited guide"));
+
+    expect(result.current.isDirty).toBe(true);
+
+    let saved: boolean | undefined;
+
+    await act(async () => {
+      saved = await result.current.saveDocument();
+    });
+
+    expect(saved).toBe(true);
+    expect(mocks.saveDocument).toHaveBeenCalledWith({
+      id: recording.id,
+      markdown: "# Edited guide",
+    });
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reports a failed save without clearing the draft", async () => {
+    mocks.saveDocument.mockRejectedValue(new Error("Disk unavailable"));
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.editMarkdown("# Draft"));
+
+    let saved: boolean | undefined;
+
+    await act(async () => {
+      saved = await result.current.saveDocument();
+    });
+
+    expect(saved).toBe(false);
+    expect(result.current.error).toBe("Disk unavailable");
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.markdown).toBe("# Draft");
+  });
+
+  it("marks a failed generation as retryable until the next edit", async () => {
+    mocks.generate.mockRejectedValue(new Error("No model"));
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.generateGuide("Instructions"));
+
+    expect(result.current.error).toBe("No model");
+    expect(result.current.canRetryGenerate).toBe(true);
+
+    act(() => result.current.editMarkdown("Manual fix"));
+
+    expect(result.current.canRetryGenerate).toBe(false);
   });
 
   it("aborts pending image readers when the recording is unmounted", async () => {

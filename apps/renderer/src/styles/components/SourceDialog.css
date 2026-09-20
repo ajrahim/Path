@@ -586,10 +586,10 @@
 
 .source-option-toggle {
   position: relative;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   min-height: 40px;
-  padding: 0 6px;
+  padding: 0 10px;
   border-radius: 6px;
   color: var(--muted-ink);
   cursor: pointer;
@@ -607,24 +607,14 @@
   color: var(--primary);
 }
 
-.source-option-toggle > .source-option-tooltip {
-  position: absolute;
-  z-index: 1;
-  bottom: 100%;
-  left: 0;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--surface-raised);
+.source-option-toggle > .source-option-label {
   font-size: 12px;
-  font-weight: 400;
-  pointer-events: none;
-  visibility: hidden;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.source-option-toggle:hover > .source-option-tooltip,
-.source-option-toggle:focus-within > .source-option-tooltip {
-  visibility: visible;
+.source-option-toggle:has(input:checked) > .source-option-label {
+  color: var(--ink);
 }
 
 .source-dialog > footer {

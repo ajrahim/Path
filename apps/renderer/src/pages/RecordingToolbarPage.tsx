@@ -1,4 +1,4 @@
-import { GripHorizontal, MousePointer2, Square } from "lucide-react";
+import { GripHorizontal, MousePointer2, Pause, Play, Square } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/Button";
 import { formatDuration } from "@/lib/Format";
@@ -6,17 +6,23 @@ import { useRecording } from "../hooks/useRecording";
 
 export default function RecordingToolbarPage() {
   const t = useTranslations("recording");
-  const { snapshot, stop } = useRecording();
+  const { snapshot, stop, pause, resume } = useRecording();
+  const paused = snapshot.status === "paused";
 
   return (
     <main className="recording-toolbar" aria-label={t("toolbarLabel")}>
       <span className="recording-toolbar-drag" title={t("dragToolbar")}>
         <GripHorizontal size={16} />
       </span>
-      <span className="recording-toolbar-dot" aria-hidden="true" />
+      <span
+        className={
+          paused ? "recording-toolbar-dot recording-toolbar-dot-paused" : "recording-toolbar-dot"
+        }
+        aria-hidden="true"
+      />
       <div className="recording-toolbar-copy">
         <strong>{formatDuration(snapshot.elapsedMs, "00:00")}</strong>
-        <span>{t("recordingActive")}</span>
+        <span>{paused ? t("paused") : t("recordingActive")}</span>
       </div>
       {snapshot.captureClicks && (
         <span className="recording-toolbar-clicks">
@@ -24,10 +30,36 @@ export default function RecordingToolbarPage() {
           {t("clicksActive")}
         </span>
       )}
+      {paused ? (
+        <Button
+          className="recording-toolbar-stop"
+          size="sm"
+          title={t("resumeRecording")}
+          onClick={() => void resume()}
+        >
+          <Play size={12} />
+          {t("resume")}
+        </Button>
+      ) : (
+        <Button
+          className="recording-toolbar-stop"
+          size="sm"
+          variant="secondary"
+          title={t("pauseRecording")}
+          disabled={snapshot.status !== "recording"}
+          onClick={() => void pause()}
+        >
+          <Pause size={12} />
+          {t("pause")}
+        </Button>
+      )}
       <Button
         className="recording-toolbar-stop"
         size="sm"
-        disabled={snapshot.status !== "recording" || snapshot.elapsedMs < 2_000}
+        disabled={
+          (snapshot.status !== "recording" && snapshot.status !== "paused") ||
+          snapshot.elapsedMs < 2_000
+        }
         onClick={() => void stop()}
       >
         <Square size={12} />

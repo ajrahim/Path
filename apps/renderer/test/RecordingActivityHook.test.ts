@@ -11,6 +11,7 @@ const bridge = vi.hoisted(() => ({
   listTranscript: vi.fn(),
   analyzeClicks: vi.fn(),
   updateTranscript: vi.fn(),
+  updateClick: vi.fn(),
   deleteTranscript: vi.fn(),
   deleteClick: vi.fn(),
   revealScreenshot: vi.fn(),
@@ -46,6 +47,17 @@ beforeEach(() => {
       ...transcriptSegment(recordingId, id),
       text,
     }),
+  );
+  bridge.updateClick.mockImplementation(
+    async ({
+      recordingId,
+      id,
+      description,
+    }: {
+      recordingId: string;
+      id: string;
+      description: string;
+    }) => ({ ...capturedClick(recordingId, id), actionDescription: description }),
   );
   bridge.deleteTranscript.mockResolvedValue(undefined);
   bridge.deleteClick.mockResolvedValue(undefined);
@@ -194,6 +206,49 @@ describe("recording activity lifecycle", () => {
 
       expect(await edit).toBe("stale");
     });
+  });
+
+  it("saves an edited click description for the owning recording", async () => {
+    const { result } = renderActivity();
+
+    await waitFor(() => expect(result.current.analyzingClicks).toBe(false));
+
+    let edit: Promise<"saved" | "failed" | "stale">;
+
+    await act(async () => {
+      edit = result.current.saveClickDescription(capturedClick("recording-a"), "Open settings");
+
+      expect(await edit).toBe("saved");
+    });
+
+    expect(bridge.updateClick).toHaveBeenCalledExactlyOnceWith({
+      recordingId: "recording-a",
+      id: "click-1",
+      description: "Open settings",
+    });
+    expect(result.current.clicks[0].actionDescription).toBe("Open settings");
+    expect(result.current.pendingIds).toEqual([]);
+
+    await act(async () => {
+      expect(
+        await result.current.saveClickDescription(capturedClick("other-recording"), "Wrong target"),
+      ).toBe("stale");
+    });
+
+    expect(bridge.updateClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries click analysis after a failure without duplicating in-flight work", async () => {
+    bridge.analyzeClicks.mockRejectedValueOnce(new Error("Analyzer unavailable"));
+    const { result } = renderActivity();
+
+    await waitFor(() => expect(result.current.error).toBe("Analyzer unavailable"));
+    await act(() => result.current.retryAnalysis());
+    await waitFor(() => expect(result.current.clicks[0]?.actionDescription).toBe("Menu"));
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.analyzingClicks).toBe(false);
+    expect(bridge.analyzeClicks).toHaveBeenCalledTimes(2);
   });
 
   it("reports analysis and mutation failures while clearing pending state", async () => {

@@ -40,6 +40,7 @@ type ActivityAction =
   | { type: "transcript-updated"; segment: TranscriptSegment }
   | { type: "transcript-removed"; id: string }
   | { type: "click-removed"; id: string }
+  | { type: "click-updated"; click: ClickEvent }
   | { type: "error"; error: string | null };
 
 interface ActivitySession {
@@ -51,9 +52,11 @@ interface ActivitySession {
 interface RecordingActivity extends ActivityState {
   selectActivity(key: string | null): void;
   saveTranscript(segment: TranscriptSegment, text: string): Promise<"saved" | "failed" | "stale">;
+  saveClickDescription(click: ClickEvent, text: string): Promise<"saved" | "failed" | "stale">;
   removeTranscript(segment: TranscriptSegment): Promise<void>;
   removeClick(click: ClickEvent): Promise<boolean>;
   revealScreenshot(click: ClickEvent): Promise<void>;
+  retryAnalysis(): Promise<void>;
 }
 
 function initialState(scope: ActivityScope): ActivitySnapshot {
@@ -153,6 +156,12 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
         clicks: state.clicks.filter((click) => click.id !== action.id),
         selectedActivityKey:
           state.selectedActivityKey === `click-${action.id}` ? null : state.selectedActivityKey,
+      };
+
+    case "click-updated":
+      return {
+        ...state,
+        clicks: state.clicks.map((click) => (click.id === action.click.id ? action.click : click)),
       };
 
     case "error":
@@ -289,6 +298,71 @@ export function useRecordingActivity({
     }
   }
 
+  async function saveClickDescription(
+    click: ClickEvent,
+    text: string,
+  ): Promise<"saved" | "failed" | "stale"> {
+    const session = currentSession(click.recordingId);
+    const desktop = getDesktopApi();
+
+    if (!session || !desktop) return "stale";
+
+    try {
+      const updated = await queueWrite(session, click.id, () =>
+        desktop.recordings.updateClick({
+          recordingId: click.recordingId,
+          id: click.id,
+          description: text,
+        }),
+      );
+
+      if (!isCurrent(session)) return "stale";
+
+      if (updated.id !== click.id || updated.recordingId !== click.recordingId) {
+        throw new Error(messages.editFailed);
+      }
+
+      dispatch({ type: "click-updated", click: updated });
+
+      return "saved";
+    } catch (error) {
+      if (!isCurrent(session)) return "stale";
+
+      dispatch({ type: "error", error: errorMessage(error, messages.editFailed) });
+
+      return "failed";
+    }
+  }
+
+  async function retryAnalysis(): Promise<void> {
+    const session = sessionRef.current;
+    const desktop = getDesktopApi();
+
+    // Analysis only reruns for its own recording while no analysis is already in flight.
+    if (!session || !isCurrent(session) || !scope.recordingId || !desktop) return;
+
+    if (scope.status !== "ready" || snapshot.analyzingClicks) return;
+
+    dispatch({ type: "analysis-started" });
+    dispatch({ type: "error", error: null });
+
+    try {
+      const result = await desktop.recordings.analyzeClicks({ id: scope.recordingId });
+
+      if (!isCurrent(session)) return;
+
+      dispatch({
+        type: "analyzed",
+        clicks: result.clicks,
+        error: result.failedCount > 0 && result.analyzedCount === 0 ? analysisFailed : null,
+      });
+    } catch (error) {
+      if (isCurrent(session)) {
+        dispatch({ type: "analysis-failed", error: errorMessage(error, analysisFailed) });
+      }
+    }
+  }
+
   async function removeTranscript(segment: TranscriptSegment): Promise<void> {
     const session = currentSession(segment.recordingId);
     const desktop = getDesktopApi();
@@ -363,8 +437,10 @@ export function useRecordingActivity({
     error: state.error,
     selectActivity: (key) => dispatch({ type: "select", key }),
     saveTranscript,
+    saveClickDescription,
     removeTranscript,
     removeClick,
     revealScreenshot,
+    retryAnalysis,
   };
 }

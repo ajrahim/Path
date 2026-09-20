@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesktopApi, RecordingRuntimeState, StartRecordingInput } from "@path/shared";
 import { createRendererStore } from "../src/state/RendererStore";
 import { connectRecordingBridge } from "../src/state/RecordingBridge";
-import { loadCaptureSources, startRecording, stopRecording } from "../src/state/RecordingSlice";
+import {
+  loadCaptureSources,
+  pauseRecording,
+  resumeRecording,
+  startRecording,
+  stopRecording,
+} from "../src/state/RecordingSlice";
 
 const idle: RecordingRuntimeState = {
   status: "idle",
@@ -33,6 +39,8 @@ function recordingHarness() {
     listSources: vi.fn().mockResolvedValue([]),
     start: vi.fn().mockResolvedValue(recording),
     stop: vi.fn().mockResolvedValue(idle),
+    pause: vi.fn().mockResolvedValue({ ...recording, status: "paused" as const }),
+    resume: vi.fn().mockResolvedValue(recording),
     selectRegion: vi.fn(),
   };
 
@@ -179,6 +187,25 @@ describe("recording commands", () => {
       ...recording,
       error: "Preparation failed",
     });
+  });
+
+  it("applies pause and resume replies to the shared runtime snapshot", async () => {
+    const { recordingApi, desktop, store } = recordingHarness();
+
+    disconnect = connectRecordingBridge(store, desktop);
+    await store.dispatch(startRecording(startInput));
+
+    expect(store.getState().recording.runtime.status).toBe("recording");
+
+    await store.dispatch(pauseRecording());
+
+    expect(recordingApi.pause).toHaveBeenCalledTimes(1);
+    expect(store.getState().recording.runtime.status).toBe("paused");
+
+    await store.dispatch(resumeRecording());
+
+    expect(recordingApi.resume).toHaveBeenCalledTimes(1);
+    expect(store.getState().recording.runtime).toEqual(recording);
   });
 
   it("keeps source discovery isolated and ignores superseded source requests", async () => {

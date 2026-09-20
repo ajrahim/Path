@@ -1,14 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, or } from "drizzle-orm";
 import type {
   CaptureMode,
   CaptureRegion,
   ClickEvent,
+  PersistedGuide,
   RecordingSession,
   RecordingSummary,
   TranscriptSegment,
 } from "@path/shared";
 import type { PathDatabase } from "./Connection";
-import { clickEvents, recordings, transcriptSegments, type RecordingRow } from "./Schema";
+import {
+  clickEvents,
+  documents,
+  recordings,
+  transcriptSegments,
+  type RecordingRow,
+} from "./Schema";
 
 class RecordingNotFoundError extends Error {
   constructor(id: string) {
@@ -288,6 +296,90 @@ export class RecordingRepository {
       .returning({ id: clickEvents.id });
 
     if (deleted.length === 0) throw new Error(`Click event not found: ${id}`);
+  }
+
+  async updateClickDescription(
+    recordingId: string,
+    id: string,
+    actionDescription: string,
+  ): Promise<ClickEvent> {
+    const [click] = await this.db
+      .update(clickEvents)
+      .set({ actionDescription })
+      .where(and(eq(clickEvents.recordingId, recordingId), eq(clickEvents.id, id)))
+      .returning();
+
+    if (!click) throw new Error(`Click event not found: ${id}`);
+
+    return click;
+  }
+
+  async getDocument(recordingId: string): Promise<PersistedGuide | null> {
+    const [document] = await this.db
+      .select()
+      .from(documents)
+      .where(eq(documents.recordingId, recordingId))
+      .orderBy(desc(documents.updatedAt))
+      .limit(1);
+
+    if (!document) return null;
+
+    return {
+      recordingId: document.recordingId,
+      title: document.title,
+      markdown: document.markdown,
+      updatedAt: document.updatedAt,
+    };
+  }
+
+  /** One Markdown document per recording; a later save replaces the earlier draft. */
+  async saveDocument(recordingId: string, markdown: string): Promise<PersistedGuide> {
+    const session = await this.get(recordingId);
+
+    if (!session) throw new RecordingNotFoundError(recordingId);
+
+    const existing = await this.getDocument(recordingId);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const [updated] = await this.db
+        .update(documents)
+        .set({ title: session.title, markdown, updatedAt: now })
+        .where(eq(documents.recordingId, recordingId))
+        .returning();
+
+      if (!updated) throw new Error(`Guide document not found for recording: ${recordingId}`);
+
+      return {
+        recordingId: updated.recordingId,
+        title: updated.title,
+        markdown: updated.markdown,
+        updatedAt: updated.updatedAt,
+      };
+    }
+
+    const [created] = await this.db
+      .insert(documents)
+      .values({
+        id: randomUUID(),
+        recordingId,
+        title: session.title,
+        format: "help-guide",
+        language: "en",
+        markdown,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    if (!created) throw new Error("Failed to save guide document");
+
+    return {
+      recordingId: created.recordingId,
+      title: created.title,
+      markdown: created.markdown,
+      updatedAt: created.updatedAt,
+    };
   }
 
   /** Foreign-key cascades remove activity rows; this does not delete filesystem assets. */

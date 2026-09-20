@@ -16,11 +16,14 @@ export class RecordingWindowController {
     const previousStatus = this.previousStatus;
 
     this.previousStatus = state.status;
+    const capturing = state.status === "recording" || state.status === "paused";
+    const wasCapturing = previousStatus === "recording" || previousStatus === "paused";
 
-    if (state.status === "recording") {
+    if (capturing && !wasCapturing) {
       this.enterRecordingMode();
     } else if (
-      previousStatus === "recording" &&
+      !capturing &&
+      wasCapturing &&
       ["stopping", "processing", "ready", "failed"].includes(state.status)
     ) {
       this.leaveRecordingMode();
@@ -28,7 +31,7 @@ export class RecordingWindowController {
   }
 
   restoreMainWindow(force = false): void {
-    if (!force && this.previousStatus === "recording") {
+    if (!force && (this.previousStatus === "recording" || this.previousStatus === "paused")) {
       if (!this.mainWindow.isMinimized()) this.mainWindow.minimize();
       if (!this.toolbarWindow.isVisible()) this.toolbarWindow.showInactive();
 

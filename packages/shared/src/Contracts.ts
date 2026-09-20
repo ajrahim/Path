@@ -44,6 +44,7 @@ export interface GeneralSettings {
 export interface DesktopSettings {
   general: GeneralSettings;
   recordingsDirectory: string;
+  /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
   guideInstructions: string;
   localVisionModel: string;
   aiModelSelection: AiModelSelection;
@@ -86,7 +87,7 @@ export interface CaptureWorkerStart extends StartRecordingInput {
 }
 
 export type RecordingRuntimeStatus =
-  "idle" | "preparing" | "recording" | "stopping" | "processing" | "ready" | "failed";
+  "idle" | "preparing" | "recording" | "paused" | "stopping" | "processing" | "ready" | "failed";
 
 /** Live main-process state. Elapsed time uses the session clock, not wall-clock dates. */
 export interface RecordingRuntimeState {
@@ -177,6 +178,14 @@ export interface ClickAnalysisResult {
 export interface GeneratedGuide {
   title: string;
   markdown: string;
+}
+
+/** One durable Markdown document per recording; the editor draft syncs to this row on save. */
+export interface PersistedGuide {
+  recordingId: string;
+  title: string;
+  markdown: string;
+  updatedAt: string;
 }
 
 export interface AppInfo {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile } from "node:fs/promises";
+import { appendFile, stat } from "node:fs/promises";
 import {
   BrowserWindow,
   desktopCapturer,
@@ -177,6 +177,34 @@ export class RecordingController {
     }
   }
 
+  async pause(): Promise<RecordingRuntimeState> {
+    if (this.state !== "RECORDING") {
+      return this.getState();
+    }
+
+    this.state = transitionRecordingState(this.state, "PAUSE");
+    this.clock?.pause();
+    await this.clickCapture.pause();
+    this.emitState();
+    this.captureWorker.webContents.send(IPC_CHANNELS.capturePauseRequested);
+
+    return this.getState();
+  }
+
+  async resume(): Promise<RecordingRuntimeState> {
+    if (this.state !== "PAUSED") {
+      return this.getState();
+    }
+
+    this.state = transitionRecordingState(this.state, "RESUME");
+    this.clock?.resume();
+    await this.clickCapture.resume();
+    this.emitState();
+    this.captureWorker.webContents.send(IPC_CHANNELS.captureResumeRequested);
+
+    return this.getState();
+  }
+
   async stop(): Promise<RecordingRuntimeState> {
     if (this.state !== "RECORDING" && this.state !== "PAUSED") {
       return this.getState();
@@ -248,16 +276,11 @@ export class RecordingController {
     await this.recordings.markProcessing(this.active.id, durationMs, this.active.rawVideoPath);
 
     try {
-      await this.mediaProcessor.finalize(this.active.rawVideoPath, this.active.finalVideoPath);
-      const thumbnailPath = this.assets.thumbnailPath(this.active.id);
-      let finalThumbnailPath: string | undefined;
-
-      try {
-        await this.mediaProcessor.extractThumbnail(this.active.finalVideoPath, thumbnailPath);
-        finalThumbnailPath = thumbnailPath;
-      } catch (thumbnailError) {
-        console.warn("Failed to generate video thumbnail", thumbnailError);
-      }
+      const finalThumbnailPath = await this.finalizeVideoFiles(
+        this.active.id,
+        this.active.rawVideoPath,
+        this.active.finalVideoPath,
+      );
 
       await this.processTranscript(this.active);
       await this.processClickActions(this.active);
@@ -278,6 +301,145 @@ export class RecordingController {
       }
     } catch (error) {
       await this.captureFailed(error instanceof Error ? error.message : "Video processing failed");
+    }
+  }
+
+  /** Reprocesses a failed recording from its retained capture without a new recording session. */
+  async retryProcessing(recordingId: string): Promise<void> {
+    if (this.active) {
+      throw new Error("Finish the active recording before retrying");
+    }
+
+    if (this.state !== "IDLE" && this.state !== "READY" && this.state !== "FAILED") {
+      throw new Error("Processing can only be retried when no recording is active");
+    }
+
+    const session = await this.recordings.get(recordingId);
+
+    if (!session) throw new Error(`Recording not found: ${recordingId}`);
+
+    if (session.status !== "failed") {
+      throw new Error("Only failed recordings can be reprocessed");
+    }
+
+    // The stored path may reference the raw capture or an earlier managed root.
+    const rawVideoPath =
+      session.videoPath?.endsWith(".webm") === true
+        ? session.videoPath
+        : this.assets.videoPath(session.id);
+
+    if (!this.assets.isManagedFile(rawVideoPath)) {
+      throw new Error("The original capture is outside the managed recording directories");
+    }
+
+    try {
+      await stat(rawVideoPath);
+    } catch {
+      throw new Error("The original capture is no longer available");
+    }
+
+    this.state = transitionRecordingState(this.state, "RETRY_PROCESSING");
+    this.error = null;
+    this.emitState();
+
+    const durationMs = session.durationMs ?? 0;
+    const finalVideoPath = this.assets.finalVideoPath(session.id);
+
+    await this.recordings.markProcessing(session.id, durationMs, rawVideoPath);
+
+    try {
+      const finalThumbnailPath = await this.finalizeVideoFiles(
+        session.id,
+        rawVideoPath,
+        finalVideoPath,
+      );
+
+      await this.retryTranscript(session.id, rawVideoPath, durationMs);
+      await this.analyzeClicks(session.id);
+      await this.recordings.markReady(
+        session.id,
+        new Date().toISOString(),
+        finalVideoPath,
+        finalThumbnailPath,
+      );
+      this.emitState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Video processing failed";
+
+      await this.recordings.markFailed(session.id);
+      this.error = message;
+      this.state = transitionRecordingState(this.state, "FAIL");
+      this.emitState();
+
+      throw error;
+    }
+  }
+
+  private async finalizeVideoFiles(
+    recordingId: string,
+    rawVideoPath: string,
+    finalVideoPath: string,
+  ): Promise<string | undefined> {
+    await this.mediaProcessor.finalize(rawVideoPath, finalVideoPath);
+    const thumbnailPath = this.assets.thumbnailPath(recordingId);
+
+    try {
+      await this.mediaProcessor.extractThumbnail(finalVideoPath, thumbnailPath);
+
+      return thumbnailPath;
+    } catch (thumbnailError) {
+      console.warn("Failed to generate video thumbnail", thumbnailError);
+
+      return undefined;
+    }
+  }
+
+  private async retryTranscript(
+    recordingId: string,
+    rawVideoPath: string,
+    durationMs: number,
+  ): Promise<void> {
+    const session = await this.recordings.get(recordingId);
+
+    // A completed transcript survives a later video failure; only missing work reruns.
+    if (session?.transcriptStatus === "ready") {
+      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
+
+      return;
+    }
+
+    if (!this.transcriptProvider) {
+      await this.recordings.markTranscriptFailed(recordingId);
+      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
+
+      return;
+    }
+
+    this.state = transitionRecordingState(this.state, "VIDEO_PROCESSED");
+    this.emitState();
+    const audioPath = this.assets.audioPath(recordingId);
+
+    await this.recordings.markTranscriptProcessing(recordingId, audioPath);
+
+    try {
+      await this.mediaProcessor.extractAudio(rawVideoPath, audioPath);
+
+      const transcript = await this.transcriptProvider.transcribe({
+        recordingId,
+        path: audioPath,
+        mimeType: "audio/wav",
+        durationMs,
+      });
+
+      await this.recordings.replaceTranscript(recordingId, transcript.segments);
+      await this.recordings.markTranscriptReady(recordingId);
+      this.state = transitionRecordingState(this.state, "TRANSCRIBED");
+      this.state = transitionRecordingState(this.state, "EVENTS_INDEXED");
+    } catch (error) {
+      // A transcription failure is recorded separately so the captured video remains usable.
+      console.error("Local transcription failed", error);
+      await this.recordings.markTranscriptFailed(recordingId);
+      this.state = transitionRecordingState(this.state, "TRANSCRIPTION_FAILED");
     }
   }
 
@@ -456,7 +618,7 @@ export class RecordingController {
       SELECTING_REGION: "preparing",
       PREPARING: "preparing",
       RECORDING: "recording",
-      PAUSED: "recording",
+      PAUSED: "paused",
       STOPPING: "stopping",
       PROCESSING_VIDEO: "processing",
       TRANSCRIBING: "processing",

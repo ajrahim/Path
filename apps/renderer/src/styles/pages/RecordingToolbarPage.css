@@ -5,7 +5,7 @@ body:has(.recording-toolbar) {
 
 .recording-toolbar {
   display: grid;
-  grid-template-columns: 22px 10px minmax(70px, 1fr) auto auto;
+  grid-template-columns: 22px 10px minmax(70px, 1fr) auto auto auto;
   align-items: center;
   gap: 9px;
   width: calc(100vw - 12px);
@@ -85,4 +85,8 @@ body:has(.recording-toolbar) {
 
 .recording-toolbar {
   border-radius: 12px;
+}
+
+.recording-toolbar-dot-paused {
+  background: #e8a13c;
 }

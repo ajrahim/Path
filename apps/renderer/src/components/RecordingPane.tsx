@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
 import {
   Captions,
+  Check,
   FileVideo2,
   FolderOpen,
   Gauge,
+  ImagePlus,
+  Mic,
   MousePointer2,
   Pause,
   Play,
+  Plus,
+  RotateCcw,
   Search,
+  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -15,14 +21,27 @@ import { useLocale, useTranslations } from "next-intl";
 import type { ClickEvent, RecordingSummary, TranscriptSegment } from "@path/shared";
 import { mergeTimeline } from "@path/timeline";
 import { formatClickTimestamp, formatPlayerTime } from "@/lib/Format";
+import { getDesktopApi } from "@/lib/Desktop";
+import { dispatchGuideImage, screenshotUrlToDataUrl } from "@/lib/GuideImageBus";
+import { Button } from "./Button";
 import { ScreenshotAction } from "./ScreenshotAction";
 import { ScreenshotImage } from "./ScreenshotImage";
 import { cn } from "@/lib/ClassNames";
+import { useAiModels } from "../hooks/useAiModels";
+import { useRecordingHistory } from "../hooks/useRecordingHistory";
 import { useRecordingMedia } from "../hooks/useRecordingMedia";
 import { useRecordingPlayback } from "../hooks/useRecordingPlayback";
 import { useRecordingActivity } from "../hooks/useRecordingActivity";
 
-export function RecordingPane({ recording }: { recording: RecordingSummary | null }) {
+export function RecordingPane({
+  recording,
+  onNewRecording,
+  onOpenSettings,
+}: {
+  recording: RecordingSummary | null;
+  onNewRecording(): void;
+  onOpenSettings(): void;
+}) {
   const t = useTranslations();
   const locale = useLocale();
   const recordingId = recording?.id ?? null;
@@ -54,9 +73,11 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
     analyzingClicks,
     selectActivity: setSelectedActivityKey,
     saveTranscript: updateTranscript,
+    saveClickDescription: updateClickDescription,
     removeTranscript,
     removeClick: deleteClick,
     revealScreenshot,
+    retryAnalysis,
   } = useRecordingActivity({
     recordingId,
     status: recordingStatus,
@@ -68,10 +89,15 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
     },
   });
 
+  const { refresh } = useRecordingHistory();
   const [showHotspots, setShowHotspots] = useState(true);
   const [openScreenshot, setOpenScreenshot] = useState<{ click: ClickEvent; url: string } | null>(
     null,
   );
+
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const [hoverScreenshot, setHoverScreenshot] = useState<{
     click: ClickEvent;
@@ -127,6 +153,11 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
           .includes(normalizedQuery),
   );
 
+  const canRetryAnalysis =
+    recording?.status === "ready" &&
+    !analyzingClicks &&
+    clicks.some((click) => click.screenshotPath && !click.actionDescription?.trim());
+
   function selectClick(click: ClickEvent): void {
     setSelectedActivityKey(`click-${click.id}`);
     const time = click.timestampMs / 1_000;
@@ -162,11 +193,71 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
     if (result === "failed" && editor.isConnected) editor.textContent = segment.text;
   }
 
+  async function saveClickDescription(
+    click: ClickEvent,
+    nextText: string,
+    editor: HTMLElement,
+  ): Promise<void> {
+    const current = clickActionDescription(t, click) ?? clickLabel(t, click);
+    const text = nextText.replace(/\s+/g, " ").trim();
+
+    if (!text) {
+      editor.textContent = current;
+
+      return;
+    }
+
+    if (text === current) return;
+
+    const result = await updateClickDescription(click, text);
+
+    // A failed edit may complete after the user has switched away from this editor.
+    if (result === "failed" && editor.isConnected) editor.textContent = current;
+  }
+
   async function removeClick(click: ClickEvent): Promise<void> {
     if (!(await deleteClick(click))) return;
 
     setOpenScreenshot((current) => (current?.click.id === click.id ? null : current));
     setHoverScreenshot((current) => (current?.click.id === click.id ? null : current));
+  }
+
+  async function retryProcessing(): Promise<void> {
+    const desktop = getDesktopApi();
+
+    if (!recording || !desktop || retrying) return;
+
+    setRetrying(true);
+    setRetryError(null);
+
+    try {
+      await desktop.recordings.retryProcessing({ id: recording.id });
+      refresh();
+    } catch (error) {
+      setRetryError(
+        error instanceof Error && error.message ? error.message : t("recording.retryFailed"),
+      );
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function insertViewerScreenshot(): Promise<void> {
+    if (!openScreenshot) return;
+
+    setViewerError(null);
+
+    try {
+      const dataUrl = await screenshotUrlToDataUrl(openScreenshot.url);
+
+      dispatchGuideImage(
+        dataUrl,
+        clickActionDescription(t, openScreenshot.click) ?? clickLabel(t, openScreenshot.click),
+      );
+      setOpenScreenshot(null);
+    } catch {
+      setViewerError(t("guide.imageInsertFailed"));
+    }
   }
 
   return (
@@ -251,6 +342,8 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
               </button>
             </div>
           </>
+        ) : !recording ? (
+          <OnboardingEmptyState onNewRecording={onNewRecording} onOpenSettings={onOpenSettings} />
         ) : (
           <div className="video-empty-state">
             <div className="video-empty-visual">
@@ -259,7 +352,21 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
             </div>
             <div className="video-empty-copy">
               <strong>{emptyVideoLabel}</strong>
-              {!recording && <p>{t("recording.emptyVideoDescription")}</p>}
+              {recordingStatus === "failed" && (
+                <>
+                  <div className="onboarding-actions">
+                    <Button size="sm" disabled={retrying} onClick={() => void retryProcessing()}>
+                      <RotateCcw size={14} />
+                      {retrying ? t("recording.processing") : t("recording.retryProcessing")}
+                    </Button>
+                  </div>
+                  {retryError && (
+                    <p className="video-empty-error" role="alert">
+                      {retryError}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -273,6 +380,12 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
                 ? t("recording.analyzingClicks")
                 : t("recording.activityCount", { count: timeline.length })}
             </span>
+            {canRetryAnalysis && (
+              <button type="button" className="activity-retry" onClick={() => void retryAnalysis()}>
+                <RotateCcw size={13} />
+                {t("recording.retryAnalysis")}
+              </button>
+            )}
           </div>
           <label className="transcript-search">
             <Search size={14} />
@@ -321,9 +434,37 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
                       <MousePointer2 size={17} />
                     </span>
                     <span className="activity-copy">
-                      <strong>
+                      <span
+                        className="activity-click-editor"
+                        contentEditable
+                        suppressContentEditableWarning
+                        role="textbox"
+                        aria-multiline="false"
+                        aria-label={t("recording.editClickDescription")}
+                        onFocus={() => setSelectedActivityKey(`click-${entry.click.id}`)}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                          }
+
+                          if (event.key === "Escape") {
+                            event.currentTarget.textContent =
+                              clickActionDescription(t, entry.click) ?? clickLabel(t, entry.click);
+                            event.currentTarget.blur();
+                          }
+                        }}
+                        onBlur={(event) =>
+                          void saveClickDescription(
+                            entry.click,
+                            event.currentTarget.innerText,
+                            event.currentTarget,
+                          )
+                        }
+                      >
                         {clickActionDescription(t, entry.click) ?? clickLabel(t, entry.click)}
-                      </strong>
+                      </span>
                       {entry.click.actionDescription && <small>{clickLabel(t, entry.click)}</small>}
                     </span>
                   </button>
@@ -332,6 +473,7 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
                       click={entry.click}
                       onOpen={(url) => {
                         selectClick(entry.click);
+                        setViewerError(null);
                         setOpenScreenshot({ click: entry.click, url });
                       }}
                       onPreview={(url, anchor) => {
@@ -466,6 +608,14 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
                 <button
                   className="screenshot-reveal-button"
                   type="button"
+                  onClick={() => void insertViewerScreenshot()}
+                >
+                  <ImagePlus size={15} />
+                  <span>{t("guide.insertScreenshot")}</span>
+                </button>
+                <button
+                  className="screenshot-reveal-button"
+                  type="button"
                   onClick={() => void revealScreenshot(openScreenshot.click)}
                 >
                   <FolderOpen size={15} />
@@ -485,10 +635,75 @@ export function RecordingPane({ recording }: { recording: RecordingSummary | nul
               url={openScreenshot.url}
               showHotspot={showHotspots}
             />
+            {viewerError && (
+              <p className="screenshot-viewer-error" role="alert">
+                {viewerError}
+              </p>
+            )}
           </div>
         </div>
       )}
     </main>
+  );
+}
+
+function OnboardingEmptyState({
+  onNewRecording,
+  onOpenSettings,
+}: {
+  onNewRecording(): void;
+  onOpenSettings(): void;
+}) {
+  const t = useTranslations();
+  const { models, selection, isLoading } = useAiModels();
+  const hasModels = models.api.length > 0 || models.local.length > 0;
+
+  return (
+    <div className="video-empty-state">
+      <div className="video-empty-visual">
+        <span />
+        <FileVideo2 aria-hidden="true" size={24} />
+      </div>
+      <div className="video-empty-copy">
+        <strong>{t("recording.onboardingTitle")}</strong>
+        <p>{t("recording.onboardingDescription")}</p>
+        <div className="onboarding-actions">
+          <Button size="sm" onClick={onNewRecording}>
+            <Plus size={14} />
+            {t("recording.newRecording")}
+          </Button>
+        </div>
+        <ul className="onboarding-checklist">
+          <li>
+            <Mic aria-hidden="true" size={14} />
+            <span>{t("recording.onboardingMic")}</span>
+          </li>
+          <li>
+            {isLoading ? (
+              <Gauge aria-hidden="true" size={14} />
+            ) : hasModels ? (
+              <Check aria-hidden="true" size={14} />
+            ) : (
+              <Settings aria-hidden="true" size={14} />
+            )}
+            {isLoading ? (
+              <span>{t("navigation.checkingAiModels")}</span>
+            ) : hasModels ? (
+              <span>
+                {t("recording.onboardingReady")}: {selection?.modelName ?? t("navigation.aiModel")}
+              </span>
+            ) : (
+              <span className="onboarding-model-missing">
+                <span>{t("recording.onboardingNeedsModel")}</span>
+                <button type="button" onClick={onOpenSettings}>
+                  {t("recording.configureKeys")}
+                </button>
+              </span>
+            )}
+          </li>
+        </ul>
+      </div>
+    </div>
   );
 }
 

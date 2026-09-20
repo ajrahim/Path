@@ -18,6 +18,7 @@ interface ClickCaptureSession {
 // Turns native input into ordered screenshot evidence tied to one recording clock.
 export class ClickCaptureCoordinator {
   private session: ClickCaptureSession | null = null;
+  private paused = false;
   private screenshotQueue = Promise.resolve();
 
   constructor(
@@ -28,12 +29,28 @@ export class ClickCaptureCoordinator {
 
   async start(session: ClickCaptureSession): Promise<void> {
     this.session = session;
+    this.paused = false;
     await this.inputCapture.start((event) => this.record(event));
   }
 
   async stop(): Promise<void> {
     await this.inputCapture.stop();
     this.session = null;
+    this.paused = false;
+  }
+
+  async pause(): Promise<void> {
+    if (!this.session || this.paused) return;
+
+    this.paused = true;
+    await this.inputCapture.stop();
+  }
+
+  async resume(): Promise<void> {
+    if (!this.session || !this.paused) return;
+
+    this.paused = false;
+    await this.inputCapture.start((event) => this.record(event));
   }
 
   async flush(): Promise<void> {
@@ -43,7 +60,7 @@ export class ClickCaptureCoordinator {
   private record(event: GlobalMouseDownEvent): void {
     const session = this.session;
 
-    if (!session) return;
+    if (!session || this.paused) return;
 
     const click = this.createClick(session, event);
 

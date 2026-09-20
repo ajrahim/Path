@@ -1324,3 +1324,124 @@ html[data-theme="dark"] .activity-entry.selected {
   border-color: var(--border-strong);
   background: var(--accent-soft);
 }
+
+.activity-click-editor {
+  display: block;
+  min-width: 0;
+  min-height: 20px;
+  border-radius: 4px;
+  outline: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+
+.activity-click-editor:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.activity-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.activity-retry:hover {
+  background: var(--surface-hover);
+  color: var(--primary);
+}
+
+.video-empty-state {
+  justify-content: safe center;
+  overflow-y: auto;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.onboarding-checklist {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #cccccc;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.onboarding-checklist svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--primary-on-dark);
+}
+
+.onboarding-model-missing {
+  display: grid;
+  gap: 4px;
+}
+
+.onboarding-model-missing button {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary-on-dark);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.video-empty-copy .video-empty-error {
+  max-width: 340px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.screenshot-viewer {
+  position: relative;
+}
+
+.screenshot-viewer-error {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}

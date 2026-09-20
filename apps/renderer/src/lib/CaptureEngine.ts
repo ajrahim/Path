@@ -154,8 +154,20 @@ export class CaptureEngine {
   }
 
   stop(): void {
-    if (this.recorder?.state === "recording") {
+    if (this.recorder?.state === "recording" || this.recorder?.state === "paused") {
       this.recorder.stop();
+    }
+  }
+
+  pause(): void {
+    if (this.recorder?.state === "recording") {
+      this.recorder.pause();
+    }
+  }
+
+  resume(): void {
+    if (this.recorder?.state === "paused") {
+      this.recorder.resume();
     }
   }
 

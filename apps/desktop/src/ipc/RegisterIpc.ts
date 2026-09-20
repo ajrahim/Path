@@ -5,6 +5,8 @@ import {
   clickAssetInputSchema,
   exportMarkdownInputSchema,
   generateGuideInputSchema,
+  saveGuideDocumentInputSchema,
+  updateClickDescriptionInputSchema,
   aiProviderInputSchema,
   activityItemInputSchema,
   IPC_CHANNELS,
@@ -99,7 +101,9 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.settingsChooseRecordingsDirectory, async (event) => {
     // An active capture must keep the same managed root until its assets finish processing.
     if (
-      ["preparing", "recording", "stopping", "processing"].includes(recording.getState().status)
+      ["preparing", "recording", "paused", "stopping", "processing"].includes(
+        recording.getState().status,
+      )
     ) {
       throw new Error("The recording location cannot be changed while a recording is active");
     }
@@ -211,6 +215,16 @@ export function registerIpcHandlers({
 
     return true;
   });
+  ipcMain.handle(IPC_CHANNELS.guidesGetDocument, (_event, input: unknown) => {
+    const { id } = recordingIdInputSchema.parse(input);
+
+    return recordings.getDocument(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.guidesSaveDocument, (_event, input: unknown) => {
+    const { id, markdown } = saveGuideDocumentInputSchema.parse(input);
+
+    return recordings.saveDocument(id, markdown);
+  });
 
   ipcMain.handle(IPC_CHANNELS.recordingsList, () => recordings.list());
   ipcMain.handle(IPC_CHANNELS.recordingsGet, (_event, input: unknown) => {
@@ -304,6 +318,16 @@ export function registerIpcHandlers({
 
     return recordings.deleteTranscript(recordingId, id);
   });
+  ipcMain.handle(IPC_CHANNELS.recordingsUpdateClick, (_event, input: unknown) => {
+    const { recordingId, id, description } = updateClickDescriptionInputSchema.parse(input);
+
+    return recordings.updateClickDescription(recordingId, id, description);
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsRetryProcessing, (_event, input: unknown) => {
+    const { id } = recordingIdInputSchema.parse(input);
+
+    return recording.retryProcessing(id);
+  });
   ipcMain.handle(IPC_CHANNELS.recordingsDeleteClick, async (_event, input: unknown) => {
     const { recordingId, id } = activityItemInputSchema.parse(input);
     const click = await recordings.getClick(recordingId, id);
@@ -321,6 +345,8 @@ export function registerIpcHandlers({
     recording.start(startRecordingInputSchema.parse(input)),
   );
   ipcMain.handle(IPC_CHANNELS.recordingStop, () => recording.stop());
+  ipcMain.handle(IPC_CHANNELS.recordingPause, () => recording.pause());
+  ipcMain.handle(IPC_CHANNELS.recordingResume, () => recording.resume());
   ipcMain.handle(IPC_CHANNELS.recordingGetState, () => recording.getState());
 
   // Only the dedicated capture worker may acknowledge capture or submit media bytes.

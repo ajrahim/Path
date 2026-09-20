@@ -15,10 +15,14 @@ export default function CapturePage() {
     });
 
     const removeStopListener = desktop.capture.onStopRequested(() => engine.stop());
+    const removePauseListener = desktop.capture.onPauseRequested(() => engine.pause());
+    const removeResumeListener = desktop.capture.onResumeRequested(() => engine.resume());
 
     return () => {
       removeStartListener();
       removeStopListener();
+      removePauseListener();
+      removeResumeListener();
       engine.stop();
     };
   }, []);

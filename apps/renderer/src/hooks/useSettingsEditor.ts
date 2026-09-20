@@ -9,12 +9,7 @@ import type {
 import { getDesktopApi } from "@/lib/Desktop";
 
 type SettingsOperation =
-  | "general"
-  | "directory"
-  | "open-directory"
-  | "instructions"
-  | `key-${AiProvider}`
-  | `remove-${AiProvider}`;
+  "general" | "directory" | "open-directory" | `key-${AiProvider}` | `remove-${AiProvider}`;
 
 interface KeyEditor {
   provider: AiProvider | null;
@@ -25,7 +20,6 @@ interface SettingsEditorState {
   settings: DesktopSettings | null;
   keyStatus: AiProviderKeyStatus;
   version: string;
-  instructions: string;
   keyEditor: KeyEditor;
   busy: "loading" | SettingsOperation | null;
   error: string | null;
@@ -47,7 +41,6 @@ type SettingsAction =
       update: SettingsUpdate | null;
       notice: SettingsEditorState["notice"];
     }
-  | { type: "instructions-changed"; instructions: string }
   | { type: "key-editor-toggled"; provider: AiProvider }
   | { type: "key-draft-changed"; draft: string }
   | { type: "notice-dismissed"; id: number };
@@ -56,7 +49,6 @@ const initialState: SettingsEditorState = {
   settings: null,
   keyStatus: { anthropic: false, openai: false, google: false },
   version: "",
-  instructions: "",
   keyEditor: { provider: null, draft: "" },
   busy: "loading",
   error: null,
@@ -72,7 +64,6 @@ function reduceSettings(state: SettingsEditorState, action: SettingsAction): Set
         settings: action.settings,
         keyStatus: action.keyStatus,
         version: action.version,
-        instructions: action.settings.guideInstructions,
         busy: null,
       };
 
@@ -97,9 +88,6 @@ function reduceSettings(state: SettingsEditorState, action: SettingsAction): Set
         notice: action.notice,
       };
     }
-
-    case "instructions-changed":
-      return { ...state, instructions: action.instructions };
 
     case "key-editor-toggled":
       return {
@@ -126,10 +114,8 @@ interface SettingsEditor extends Omit<SettingsEditorState, "notice"> {
   updateGeneral(general: GeneralSettings): Promise<void>;
   chooseDirectory(): Promise<void>;
   openDirectory(): Promise<void>;
-  saveInstructions(): Promise<void>;
   saveKey(): Promise<void>;
   removeKey(provider: AiProvider): Promise<void>;
-  changeInstructions(instructions: string): void;
   toggleKeyEditor(provider: AiProvider): void;
   changeKeyDraft(draft: string): void;
 }
@@ -275,23 +261,6 @@ export function useSettingsEditor(): SettingsEditor {
     });
   }
 
-  async function saveInstructions(): Promise<void> {
-    const desktop = getDesktopApi();
-
-    if (!desktop) return;
-
-    await mutate({
-      operation: "instructions",
-      successMessage: t("instructionsSaved"),
-      failureMessage: t("saveError"),
-      run: async () => ({
-        settings: await desktop.settings.updateGuideInstructions({
-          guideInstructions: state.instructions,
-        }),
-      }),
-    });
-  }
-
   async function saveKey(): Promise<void> {
     const desktop = getDesktopApi();
     const { provider, draft } = state.keyEditor;
@@ -334,11 +303,8 @@ export function useSettingsEditor(): SettingsEditor {
     updateGeneral,
     chooseDirectory,
     openDirectory,
-    saveInstructions,
     saveKey,
     removeKey,
-    changeInstructions: (instructions: string) =>
-      dispatch({ type: "instructions-changed", instructions }),
     toggleKeyEditor: (provider: AiProvider) => dispatch({ type: "key-editor-toggled", provider }),
     changeKeyDraft: (draft: string) => dispatch({ type: "key-draft-changed", draft }),
   };

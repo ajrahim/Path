@@ -5,9 +5,7 @@ import {
   FolderOpen,
   KeyRound,
   LoaderCircle,
-  Save,
   Settings2,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -30,7 +28,6 @@ export default function SettingsPage() {
     settings,
     keyStatus,
     version,
-    instructions,
     keyEditor,
     busy,
     notice,
@@ -40,10 +37,8 @@ export default function SettingsPage() {
     updateGeneral,
     chooseDirectory,
     openDirectory,
-    saveInstructions,
     saveKey,
     removeKey,
-    changeInstructions,
     toggleKeyEditor,
     changeKeyDraft,
   } = useSettingsEditor();
@@ -89,14 +84,6 @@ export default function SettingsPage() {
             >
               <FolderOpen size={16} />
               {t("settings.storage")}
-            </a>
-            <a
-              href="#instructions"
-              aria-current={activeSection === "instructions" ? "location" : undefined}
-              onClick={() => setActiveSection("instructions")}
-            >
-              <Sparkles size={16} />
-              {t("settings.instructions")}
             </a>
             <a
               href="#keys"
@@ -172,36 +159,6 @@ export default function SettingsPage() {
                 </Button>
               </div>
               <p className="settings-note">{t("settings.storageNote")}</p>
-            </div>
-          </section>
-
-          <section id="instructions" className="settings-section">
-            <SectionHeading
-              icon={Sparkles}
-              title={t("settings.instructions")}
-              description={t("settings.instructionsDescription")}
-            />
-            <div className="settings-card settings-instructions-card">
-              <label htmlFor="guide-instructions">{t("settings.guideInstructions")}</label>
-              <textarea
-                id="guide-instructions"
-                value={instructions}
-                maxLength={10_000}
-                onChange={(event) => changeInstructions(event.target.value)}
-                placeholder={t("guide.instructionsPlaceholder")}
-              />
-              <div className="settings-editor-footer">
-                <span>{t("settings.instructionsHint")}</span>
-                <Button
-                  onClick={() => void saveInstructions()}
-                  disabled={
-                    isBusy || instructions.trim() === (settings?.guideInstructions.trim() ?? "")
-                  }
-                >
-                  <Save size={14} />
-                  {t("actions.save")}
-                </Button>
-              </div>
             </div>
           </section>
 

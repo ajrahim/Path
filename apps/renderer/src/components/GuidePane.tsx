@@ -1,22 +1,54 @@
-import { useEffect, useRef } from "react";
-import { Copy, Download, ImagePlus, Pencil, Save, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Copy,
+  Download,
+  Eye,
+  ImagePlus,
+  Pencil,
+  RotateCcw,
+  Save,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { RecordingSummary } from "@path/shared";
 import { Button } from "@/components/Button";
+import { renderMarkdownToHtml } from "@/lib/RenderMarkdown";
 import { InstructionFlowSelect } from "./InstructionFlowSelect";
 import { useInstructionFlows } from "../hooks/useInstructionFlows";
 import { useGuideDocument } from "../hooks/useGuideDocument";
 
-export function GuidePane({ recording }: { recording: RecordingSummary | null }) {
+export interface GuidePaneState {
+  isDirty: boolean;
+  save(): Promise<boolean>;
+}
+
+export function GuidePane({
+  recording,
+  onGuideStateChange,
+}: {
+  recording: RecordingSummary | null;
+  onGuideStateChange?(state: GuidePaneState | null): void;
+}) {
   const t = useTranslations();
   const flows = useInstructionFlows();
-  const { markdownInputRef, ...guide } = useGuideDocument(recording);
+  const { markdownInputRef, isDirty, saveDocument, ...guide } = useGuideDocument(recording);
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [overwriteOpen, setOverwriteOpen] = useState(false);
   const flowSelectRef = useRef<HTMLButtonElement>(null);
   const flowNameRef = useRef<HTMLInputElement>(null);
   const flowDialogRef = useRef<HTMLFormElement>(null);
   const instructionsOpen = flows.editor !== null;
   const error = guide.error ?? flows.error;
   const { closeEditor } = flows;
+
+  // The workspace keeps only the latest dirty flag and saver for its discard guard.
+  useEffect(() => {
+    onGuideStateChange?.({ isDirty, save: saveDocument });
+
+    return () => onGuideStateChange?.(null);
+  }, [isDirty, saveDocument, onGuideStateChange]);
 
   useEffect(() => {
     if (!instructionsOpen) return;
@@ -58,6 +90,26 @@ export function GuidePane({ recording }: { recording: RecordingSummary | null })
     };
   }, [instructionsOpen, closeEditor]);
 
+  function requestGenerate(): void {
+    // Generating replaces the draft, so an existing document needs explicit confirmation.
+    if (guide.markdown.trim()) {
+      setOverwriteOpen(true);
+    } else {
+      void guide.generateGuide(flows.selectedFlow.instructions);
+    }
+  }
+
+  function confirmGenerate(): void {
+    setOverwriteOpen(false);
+    void guide.generateGuide(flows.selectedFlow.instructions);
+  }
+
+  let saveStatus = "";
+
+  if (guide.saving) saveStatus = t("guide.saving");
+  else if (isDirty) saveStatus = t("guide.unsaved");
+  else if (guide.markdown) saveStatus = t("guide.saved");
+
   return (
     <>
       <aside className="guide-panel">
@@ -83,7 +135,7 @@ export function GuidePane({ recording }: { recording: RecordingSummary | null })
             <Button
               size="sm"
               disabled={!recording || guide.generating || !flows.loaded}
-              onClick={() => void guide.generateGuide(flows.selectedFlow.instructions)}
+              onClick={requestGenerate}
             >
               <Sparkles size={14} />
               {guide.generating ? t("guide.generating") : t("guide.generate")}
@@ -115,23 +167,57 @@ export function GuidePane({ recording }: { recording: RecordingSummary | null })
         >
           {recording ? (
             <>
-              <textarea
-                ref={markdownInputRef}
-                value={guide.markdown}
-                onChange={(event) => guide.editMarkdown(event.target.value)}
-                onPaste={(event) => {
-                  const images = [...event.clipboardData.files].filter((file) =>
-                    file.type.startsWith("image/"),
-                  );
+              <div className="markdown-mode-toggle" role="group" aria-label={t("guide.editor")}>
+                <button
+                  type="button"
+                  aria-pressed={mode === "edit"}
+                  className={mode === "edit" ? "markdown-mode-active" : undefined}
+                  onClick={() => setMode("edit")}
+                >
+                  <Pencil aria-hidden="true" size={13} />
+                  {t("guide.editor")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={mode === "preview"}
+                  className={mode === "preview" ? "markdown-mode-active" : undefined}
+                  onClick={() => setMode("preview")}
+                >
+                  <Eye aria-hidden="true" size={13} />
+                  {t("guide.preview")}
+                </button>
+                {saveStatus && <span className="markdown-save-status">{saveStatus}</span>}
+              </div>
+              {mode === "edit" ? (
+                <textarea
+                  ref={markdownInputRef}
+                  value={guide.markdown}
+                  disabled={guide.loading}
+                  onChange={(event) => guide.editMarkdown(event.target.value)}
+                  onPaste={(event) => {
+                    const images = [...event.clipboardData.files].filter((file) =>
+                      file.type.startsWith("image/"),
+                    );
 
-                  if (images.length === 0) return;
+                    if (images.length === 0) return;
 
-                  event.preventDefault();
-                  void guide.insertImages(images);
-                }}
-                aria-label={t("guide.editor")}
-                placeholder={t("guide.markdownPlaceholder")}
-              />
+                    event.preventDefault();
+                    void guide.insertImages(images);
+                  }}
+                  aria-label={t("guide.editor")}
+                  placeholder={t("guide.markdownPlaceholder")}
+                />
+              ) : (
+                <div
+                  className="markdown-preview"
+                  aria-label={t("guide.preview")}
+                  dangerouslySetInnerHTML={{
+                    __html: guide.markdown.trim()
+                      ? renderMarkdownToHtml(guide.markdown)
+                      : `<p class="markdown-preview-empty">${t("guide.previewEmpty")}</p>`,
+                  }}
+                />
+              )}
               <div className="markdown-editor-footer">
                 <span className="markdown-image-hint">
                   <ImagePlus aria-hidden="true" size={13} />
@@ -148,6 +234,15 @@ export function GuidePane({ recording }: { recording: RecordingSummary | null })
                     onClick={() => void guide.copyMarkdown()}
                   >
                     <Copy aria-hidden="true" size={14} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!isDirty || guide.saving || guide.generating}
+                    onClick={() => void saveDocument()}
+                  >
+                    <Save size={13} />
+                    {guide.saving ? t("guide.saving") : t("guide.save")}
                   </Button>
                   <Button
                     size="sm"
@@ -171,11 +266,54 @@ export function GuidePane({ recording }: { recording: RecordingSummary | null })
           )}
           {error && (
             <p className="markdown-image-error" role="alert">
-              {error}
+              <span>{error}</span>
+              {guide.canRetryGenerate && (
+                <button
+                  type="button"
+                  className="markdown-error-retry"
+                  onClick={() => void guide.generateGuide(flows.selectedFlow.instructions)}
+                >
+                  <RotateCcw aria-hidden="true" size={12} />
+                  {t("guide.retry")}
+                </button>
+              )}
             </p>
           )}
         </div>
       </aside>
+      {overwriteOpen && (
+        <div
+          className="modal-backdrop guide-instructions-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOverwriteOpen(false);
+          }}
+        >
+          <div
+            className="guide-instructions-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="guide-overwrite-title"
+          >
+            <header className="prompt-editor-header">
+              <Sparkles aria-hidden="true" size={20} />
+              <div>
+                <h2 id="guide-overwrite-title">{t("guide.overwriteTitle")}</h2>
+                <p>{t("guide.overwriteDescription")}</p>
+              </div>
+            </header>
+            <footer>
+              <Button variant="secondary" onClick={() => setOverwriteOpen(false)}>
+                {t("actions.cancel")}
+              </Button>
+              <Button onClick={confirmGenerate}>
+                <Sparkles aria-hidden="true" size={14} />
+                {t("guide.replace")}
+              </Button>
+            </footer>
+          </div>
+        </div>
+      )}
       {flows.editor && (
         <div
           className="modal-backdrop guide-instructions-backdrop"

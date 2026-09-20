@@ -14,6 +14,6 @@ Source baseline: 2026-09-14.
 
 - **Click Analysis:** Maximum 200 clicks analyzed per recording session.
 - **Document Context:** Up to 300 chronological activity entries included in generation prompts; cloud AI completion requests 2,048 tokens.
-- **Markdown Drafts:** Markdown is exported or copied directly; per-recording drafts are not autosaved in SQLite.
+- **Markdown Drafts:** Per-recording Markdown is saved explicitly to the SQLite `documents` table with discard/overwrite confirmation; there is no background autosave.
 - **Transcription:** Local whisper.cpp runs on Windows x64 using pinned `ggml-tiny.en.bin`.
 - **Packaging:** Windows NSIS executable installer generated via `npm run package` (`release/Path-<version>.exe`).

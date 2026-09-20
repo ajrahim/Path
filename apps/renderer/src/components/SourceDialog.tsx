@@ -164,29 +164,25 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
         )}
         <footer>
           <div className="source-footer-options">
-            <label className="switch-row source-option-toggle">
+            <label className="switch-row source-option-toggle" title={t("microphoneHint")}>
               <Mic size={18} aria-hidden="true" />
+              <span className="source-option-label">{t("microphone")}</span>
               <input
                 type="checkbox"
                 aria-label={t("microphone")}
                 checked={includeMicrophone}
                 onChange={(event) => setIncludeMicrophone(event.target.checked)}
               />
-              <span className="source-option-tooltip" aria-hidden="true">
-                {t("microphone")}
-              </span>
             </label>
-            <label className="switch-row source-option-toggle">
+            <label className="switch-row source-option-toggle" title={t("captureClicksHint")}>
               <MousePointer2 size={18} aria-hidden="true" />
+              <span className="source-option-label">{t("captureClicks")}</span>
               <input
                 type="checkbox"
                 aria-label={t("captureClicks")}
                 checked={captureClicks}
                 onChange={(event) => setCaptureClicks(event.target.checked)}
               />
-              <span className="source-option-tooltip" aria-hidden="true">
-                {t("captureClicks")}
-              </span>
             </label>
           </div>
           <div className="source-dialog-actions">
