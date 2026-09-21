@@ -249,7 +249,7 @@
   width: min(360px, calc(100% - 40px));
   place-items: center;
   align-content: center;
-  gap: 18px;
+  gap: 12px;
   text-align: center;
 }
 
@@ -1247,7 +1247,7 @@ button.activity-entry {
   font-size: 12.5px;
   line-height: 1.35;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .video-empty-state {
@@ -1376,26 +1376,19 @@ html[data-theme="dark"] .activity-entry.selected {
   margin-top: 6px;
 }
 
-.onboarding-checklist {
-  display: grid;
-  gap: 8px;
-  max-width: 360px;
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.onboarding-checklist li {
+.onboarding-warning {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  max-width: 360px;
+  margin-top: 10px;
   color: #cccccc;
   font-size: 12px;
   line-height: 1.5;
   text-align: left;
 }
 
-.onboarding-checklist svg {
+.onboarding-warning svg {
   flex: 0 0 auto;
   margin-top: 2px;
   color: var(--primary-on-dark);

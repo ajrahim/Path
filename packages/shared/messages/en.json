@@ -186,13 +186,9 @@
     "dragToolbar": "Drag recording controls",
     "recordingActive": "Recording",
     "clicksActive": "Clicks on",
-    "onboardingTitle": "Start your first walkthrough",
-    "onboardingDescription": "Record your screen, narrate as you go, and turn it into a polished guide.",
+    "onboardingTitle": "Create your first walkthrough",
     "newRecording": "New recording",
-    "onboardingMic": "Turn on Include microphone when starting to narrate; your voice becomes a transcript.",
-    "onboardingModel": "AI model",
     "configureKeys": "Configure API keys",
-    "onboardingReady": "Ready to record",
     "onboardingNeedsModel": "Select a model above or configure API keys in Settings"
   },
   "guide": {

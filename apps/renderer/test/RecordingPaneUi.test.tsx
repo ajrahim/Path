@@ -26,6 +26,13 @@ const bridge = vi.hoisted(() => ({
 
 vi.mock("@/lib/Desktop", () => ({ getDesktopApi: () => ({ recordings: bridge }) }));
 
+const aiModels = vi.hoisted(() => ({
+  models: { api: [] as string[], local: [] as string[] },
+  isLoading: false,
+}));
+
+vi.mock("../src/hooks/useAiModels", () => ({ useAiModels: () => aiModels }));
+
 class TestResizeObserver implements ResizeObserver {
   observe = vi.fn();
   unobserve = vi.fn();
@@ -74,6 +81,8 @@ const sampleTranscript: TranscriptSegment[] = [
 
 beforeEach(() => {
   vi.resetAllMocks();
+  aiModels.models = { api: [], local: [] };
+  aiModels.isLoading = false;
   vi.stubGlobal("ResizeObserver", TestResizeObserver);
 
   bridge.listClicks.mockResolvedValue(sampleClicks);
@@ -140,6 +149,34 @@ function renderRecordingPane(props: Partial<Parameters<typeof RecordingPane>[0]>
 }
 
 describe("RecordingPane UI interactions", () => {
+  it.each(["local", "api", "loading"] as const)(
+    "keeps the empty state minimal when models are %s",
+    (state) => {
+      if (state === "loading") aiModels.isLoading = true;
+      else aiModels.models[state] = ["test-model"];
+
+      const onNewRecording = vi.fn();
+      const view = renderRecordingPane({ recording: null, onNewRecording });
+
+      expect(screen.getByText("Create your first walkthrough")).toBeTruthy();
+      expect(view.container.querySelector(".video-empty-copy")?.textContent).toBe(
+        `${messages.recording.onboardingTitle}${messages.recording.newRecording}`,
+      );
+      fireEvent.click(screen.getByRole("button", { name: messages.recording.newRecording }));
+      expect(onNewRecording).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps model setup accessible when no models are available", () => {
+    const onOpenSettings = vi.fn();
+
+    renderRecordingPane({ recording: null, onOpenSettings });
+
+    expect(screen.getByText(messages.recording.onboardingNeedsModel)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.recording.configureKeys }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+  });
+
   it("filters timeline entries between All, Clicks, and Speech", async () => {
     const view = renderRecordingPane();
 

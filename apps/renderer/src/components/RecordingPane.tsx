@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Captions,
-  Check,
   FileVideo2,
   FolderOpen,
   Gauge,
   ImagePlus,
-  Mic,
   MousePointer2,
   Pause,
   Play,
@@ -817,7 +815,7 @@ function OnboardingEmptyState({
   onOpenSettings(): void;
 }) {
   const t = useTranslations();
-  const { models, selection, isLoading } = useAiModels();
+  const { models, isLoading } = useAiModels();
   const hasModels = models.api.length > 0 || models.local.length > 0;
 
   return (
@@ -828,42 +826,23 @@ function OnboardingEmptyState({
       </div>
       <div className="video-empty-copy">
         <strong>{t("recording.onboardingTitle")}</strong>
-        <p>{t("recording.onboardingDescription")}</p>
         <div className="onboarding-actions">
           <Button size="sm" onClick={onNewRecording}>
             <Plus size={14} />
             {t("recording.newRecording")}
           </Button>
         </div>
-        <ul className="onboarding-checklist">
-          <li>
-            <Mic aria-hidden="true" size={14} />
-            <span>{t("recording.onboardingMic")}</span>
-          </li>
-          <li>
-            {isLoading ? (
-              <Gauge aria-hidden="true" size={14} />
-            ) : hasModels ? (
-              <Check aria-hidden="true" size={14} />
-            ) : (
-              <Settings aria-hidden="true" size={14} />
-            )}
-            {isLoading ? (
-              <span>{t("navigation.checkingAiModels")}</span>
-            ) : hasModels ? (
-              <span>
-                {t("recording.onboardingReady")}: {selection?.modelName ?? t("navigation.aiModel")}
-              </span>
-            ) : (
-              <span className="onboarding-model-missing">
-                <span>{t("recording.onboardingNeedsModel")}</span>
-                <button type="button" onClick={onOpenSettings}>
-                  {t("recording.configureKeys")}
-                </button>
-              </span>
-            )}
-          </li>
-        </ul>
+        {!isLoading && !hasModels && (
+          <div className="onboarding-warning">
+            <Settings aria-hidden="true" size={14} />
+            <span className="onboarding-model-missing">
+              <span>{t("recording.onboardingNeedsModel")}</span>
+              <button type="button" onClick={onOpenSettings}>
+                {t("recording.configureKeys")}
+              </button>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
