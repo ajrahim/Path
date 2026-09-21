@@ -51,11 +51,11 @@
     "jsdom": "^27.4.0",
     "knip": "6.35.1",
     "playwright-core": "^1.62.1",
-    "prettier": "3.9.6",
+    "prettier": "3.9.8",
     "typescript": "^5.9.2",
     "typescript-eslint": "8.70.0",
     "vitest": "4.1.11",
-    "wait-on": "^8.0.4"
+    "wait-on": "^9.1.0"
   },
   "engines": {
     "node": ">=22.14.0"
