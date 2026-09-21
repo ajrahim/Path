@@ -18,12 +18,12 @@ export function createMainWindow({
   const window = new BrowserWindow({
     width: 1480,
     height: 900,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 1180,
+    minHeight: 720,
     show: false,
     icon: windowIcon && !windowIcon.isEmpty() ? windowIcon : iconPath,
     autoHideMenuBar: true,
-    backgroundColor: "#f3f3f3",
+    backgroundColor: "#f3f4f6",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     titleBarOverlay:
       process.platform === "win32"

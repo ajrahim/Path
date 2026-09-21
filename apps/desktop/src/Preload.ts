@@ -66,6 +66,8 @@ const desktopApi: DesktopApi = {
     stop: () => ipcRenderer.invoke(IPC_CHANNELS.recordingStop),
     pause: () => ipcRenderer.invoke(IPC_CHANNELS.recordingPause),
     resume: () => ipcRenderer.invoke(IPC_CHANNELS.recordingResume),
+    setClickTracking: (enabled) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingSetClickTracking, enabled),
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.recordingGetState),
     selectRegion: (input) => ipcRenderer.invoke(IPC_CHANNELS.regionSelect, input),
     onStateChanged: (listener) => {

@@ -44,9 +44,9 @@ body:has(.recorder-popover) {
 }
 
 .recorder-state-active {
-  border-color: #f0b8b3;
-  background: #fff0ee;
-  color: #cf3d35;
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .recorder-summary > div {

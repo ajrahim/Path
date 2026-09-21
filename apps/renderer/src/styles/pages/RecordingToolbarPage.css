@@ -5,24 +5,24 @@ body:has(.recording-toolbar) {
 
 .recording-toolbar {
   display: grid;
-  grid-template-columns: 22px 10px minmax(70px, 1fr) auto auto auto;
+  grid-template-columns: 18px 9px minmax(0, 1fr) 32px auto auto;
   align-items: center;
-  gap: 9px;
+  gap: 6px;
+  box-sizing: border-box;
   width: calc(100vw - 12px);
   height: calc(100dvh - 12px);
   margin: 6px;
-  padding: 0 8px 0 7px;
-  border: 1px solid rgb(214 200 187 / 94%);
-  border-radius: 8px;
-  background: rgb(255 255 255 / 98%);
-  box-shadow: none;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-float);
   -webkit-app-region: drag;
   user-select: none;
 }
 
 .recording-toolbar-drag {
   display: grid;
-  width: 22px;
   height: 30px;
   place-items: center;
   color: var(--faint-ink);
@@ -34,7 +34,10 @@ body:has(.recording-toolbar) {
   height: 9px;
   border-radius: 50%;
   background: #df443c;
-  box-shadow: none;
+}
+
+.recording-toolbar-dot-paused {
+  background: #e8a13c;
 }
 
 .recording-toolbar-copy {
@@ -49,44 +52,29 @@ body:has(.recording-toolbar) {
   font-weight: 600;
 }
 
-.recording-toolbar-copy span,
-.recording-toolbar-clicks {
-  color: var(--muted-ink);
-  font-size: 9px;
-}
-
-.recording-toolbar-clicks {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.recording-toolbar-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--muted-ink);
+  font-size: 11px;
 }
 
+.recording-toolbar-clicks,
 .recording-toolbar-stop {
   -webkit-app-region: no-drag;
 }
 
-.recording-toolbar {
-  border: 1px solid var(--border);
-  box-shadow: none;
-}
-
-.recording-toolbar {
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: var(--shadow-float);
-}
-
-.recording-toolbar-copy span,
 .recording-toolbar-clicks {
-  font-size: 12px;
+  color: var(--muted-ink);
 }
 
-.recording-toolbar {
-  border-radius: 12px;
+.recording-toolbar-clicks[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.recording-toolbar-dot-paused {
-  background: #e8a13c;
+.recording-toolbar-stop {
+  gap: 5px;
+  padding-inline: 9px;
 }

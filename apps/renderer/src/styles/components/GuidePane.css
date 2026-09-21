@@ -128,7 +128,7 @@
   place-items: center;
   border-radius: 8px;
   background: var(--accent-soft);
-  color: var(--primary);
+  color: var(--accent);
   box-shadow: none;
 }
 
@@ -188,8 +188,8 @@
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #f5e3de;
-  color: #a3483e;
+  background: var(--danger-soft);
+  color: var(--danger);
   font-size: 9px;
 }
 
@@ -225,7 +225,7 @@
 .guide-empty-state > span {
   border-radius: 4px;
   background: var(--accent-soft);
-  color: var(--primary);
+  color: var(--accent);
 }
 
 .markdown-image-error {
@@ -286,7 +286,7 @@
 }
 
 .guide-instructions-dialog textarea:focus {
-  border-color: var(--primary);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px rgb(24 90 189 / 16%);
 }
 
@@ -476,7 +476,7 @@
 .markdown-mode-toggle button.markdown-mode-active {
   border-color: var(--border);
   background: var(--surface-raised);
-  color: var(--primary);
+  color: var(--accent);
   box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
 }
 
@@ -573,7 +573,7 @@
 }
 
 .markdown-preview a {
-  color: var(--primary);
+  color: var(--accent);
 }
 
 .markdown-preview hr {
@@ -738,7 +738,17 @@ html[data-theme="dark"] .guide-panel {
 
 .markdown-editor-surface textarea {
   resize: none;
-  caret-color: var(--primary);
+  caret-color: var(--accent);
+}
+
+.markdown-editor-surface textarea::placeholder {
+  color: var(--faint-ink);
+  opacity: 0.45;
+  transition: opacity 140ms ease;
+}
+
+.markdown-editor-surface textarea:is(:hover, :focus)::placeholder {
+  opacity: 1;
 }
 
 .markdown-editor-surface textarea:focus-visible {
@@ -793,31 +803,4 @@ html[data-theme="dark"] .guide-panel {
 .markdown-editor-surface > .markdown-image-error {
   height: auto;
   bottom: 76px;
-}
-
-@media (max-width: 1050px) {
-  .guide-panel {
-    height: 700px;
-    box-shadow: 0 -8px 24px rgb(18 35 58 / 9%);
-  }
-
-  html[data-theme="dark"] .guide-panel {
-    box-shadow: 0 -8px 24px rgb(0 0 0 / 30%);
-  }
-}
-
-@media (max-width: 600px) {
-  .markdown-editor-surface textarea,
-  .markdown-preview {
-    padding: 18px;
-  }
-
-  .markdown-editor-footer {
-    flex-wrap: wrap;
-    padding: 12px;
-  }
-
-  .markdown-editor-actions {
-    margin-left: auto;
-  }
 }

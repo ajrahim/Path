@@ -3,6 +3,7 @@ import { stat, writeFile } from "node:fs/promises";
 import type { RecordingRepository, ProjectRepository } from "@path/database";
 import {
   clickAssetInputSchema,
+  clickTrackingInputSchema,
   projectChangeInputSchema,
   exportMarkdownInputSchema,
   generateGuideInputSchema,
@@ -355,6 +356,9 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.recordingStop, () => recording.stop());
   ipcMain.handle(IPC_CHANNELS.recordingPause, () => recording.pause());
   ipcMain.handle(IPC_CHANNELS.recordingResume, () => recording.resume());
+  ipcMain.handle(IPC_CHANNELS.recordingSetClickTracking, (_, input: unknown) =>
+    recording.setClickTracking(clickTrackingInputSchema.parse(input)),
+  );
   ipcMain.handle(IPC_CHANNELS.recordingGetState, () => recording.getState());
 
   // Only the dedicated capture worker may acknowledge capture or submit media bytes.

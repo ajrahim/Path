@@ -159,22 +159,3 @@
     padding: 18px 14px;
   }
 }
-
-@media (max-width: 600px) {
-  .workspace-welcome {
-    padding: 36px 20px;
-  }
-  .workspace-welcome-intro {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 24px;
-    margin-bottom: 32px;
-  }
-  .workspace-welcome-visual {
-    width: 132px;
-    flex-basis: 140px;
-  }
-  .workspace-welcome-options {
-    grid-template-columns: 1fr;
-  }
-}

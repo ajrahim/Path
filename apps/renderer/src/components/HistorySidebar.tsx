@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
-  ArrowUpDown,
+  ListFilter,
   Check,
   ChevronDown,
   ChevronRight,
@@ -468,44 +468,44 @@ export function HistorySidebar({
               <X size={13} aria-hidden="true" />
             </button>
           )}
-        </div>
-        <div className="sort-control">
-          <button
-            type="button"
-            className="sort-trigger"
-            title={t("history.sort")}
-            aria-label={t("history.sort")}
-            aria-haspopup="menu"
-            aria-expanded={sortOpen}
-            onClick={() => setSortOpen((value) => !value)}
-          >
-            <ArrowUpDown aria-hidden="true" size={14} />
-          </button>
-          {sortOpen && (
-            <div className="sort-dropdown" role="menu" aria-label={t("history.sort")}>
-              {(
-                [
-                  ["newest", t("history.sortNewest")],
-                  ["oldest", t("history.sortOldest")],
-                  ["title", t("history.sortTitle")],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={sortMode === value}
-                  key={value}
-                  onClick={() => {
-                    setSortMode(value);
-                    setSortOpen(false);
-                  }}
-                >
-                  <span>{label}</span>
-                  {sortMode === value && <Check aria-hidden="true" size={14} />}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="sort-control">
+            <button
+              type="button"
+              className="sort-trigger"
+              title={t("history.sort")}
+              aria-label={t("history.sort")}
+              aria-haspopup="menu"
+              aria-expanded={sortOpen}
+              onClick={() => setSortOpen((value) => !value)}
+            >
+              <ListFilter aria-hidden="true" size={15} />
+            </button>
+            {sortOpen && (
+              <div className="sort-dropdown" role="menu" aria-label={t("history.sort")}>
+                {(
+                  [
+                    ["newest", t("history.sortNewest")],
+                    ["oldest", t("history.sortOldest")],
+                    ["title", t("history.sortTitle")],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={sortMode === value}
+                    key={value}
+                    onClick={() => {
+                      setSortMode(value);
+                      setSortOpen(false);
+                    }}
+                  >
+                    <span>{label}</span>
+                    {sortMode === value && <Check aria-hidden="true" size={14} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -601,7 +601,6 @@ export function HistorySidebar({
                     >
                       <Folder size={16} aria-hidden="true" />
                       <span title={project.name}>{project.name}</span>
-                      <small>({members.length})</small>
                     </button>
                     <HistoryMenu
                       label={t("projects.projectActions", { name: project.name })}

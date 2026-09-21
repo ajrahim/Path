@@ -336,6 +336,45 @@ describe("RecordingPane UI interactions", () => {
     });
   });
 
+  it("keeps the redesigned transport synchronized while seeking, playing, and changing speed", async () => {
+    const view = renderRecordingPane();
+
+    await waitFor(() => {
+      expect(view.container.querySelector("video")).not.toBeNull();
+    });
+
+    const video = view.container.querySelector("video")!;
+    const slider = screen.getByRole("slider", { name: messages.recording.title });
+
+    fireEvent.change(slider, { target: { value: "12" } });
+    expect(video.currentTime).toBe(12);
+    expect(slider.getAttribute("aria-valuetext")).toBe("00:12 / 00:30");
+
+    video.currentTime = 18;
+    fireEvent.timeUpdate(video);
+    expect((slider as HTMLInputElement).value).toBe("18");
+    expect(slider.getAttribute("aria-valuetext")).toBe("00:18 / 00:30");
+
+    fireEvent.click(screen.getByRole("button", { name: "Playback speed: 1×" }));
+    expect(video.playbackRate).toBe(1.5);
+    expect(screen.getByRole("button", { name: "Playback speed: 1.5×" })).toBeTruthy();
+
+    // jsdom does not implement scrolling the activity row into view during playback.
+    for (const entry of view.container.querySelectorAll(".activity-entry")) {
+      entry.scrollIntoView = vi.fn();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: messages.recording.play }));
+    expect(video.paused).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: messages.recording.pause }));
+    expect(video.paused).toBe(true);
+
+    fireEvent.click(
+      view.container.querySelector<HTMLButtonElement>(".timeline-click-markers button")!,
+    );
+    expect(video.currentTime).toBe(sampleClicks[0].timestampMs / 1000);
+  });
+
   it("handles playback keyboard shortcuts with Space, ArrowLeft, and ArrowRight", async () => {
     const view = renderRecordingPane();
 

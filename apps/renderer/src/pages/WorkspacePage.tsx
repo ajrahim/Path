@@ -1,6 +1,6 @@
 import { RENDERER_ROUTES } from "@path/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/router";
 import { Button } from "@/components/Button";
@@ -25,6 +25,7 @@ export default function WorkspacePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
   const [guideWidth, setGuideWidth] = useState(440);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
   const [titleSaving, setTitleSaving] = useState(false);
   const isTitleSavingRef = useRef(false);
   const [titleError, setTitleError] = useState(false);
@@ -186,6 +187,22 @@ export default function WorkspacePage() {
         <div className="brand">
           <span className="brand-mark" />
           {t("app.name")}
+          <span className="brand-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={t("navigation.toggleSidebar")}
+            title={t(sidebarVisible ? "navigation.hideSidebar" : "navigation.showSidebar")}
+            aria-expanded={sidebarVisible}
+            aria-controls="workspace-sidebar"
+            onClick={() => setSidebarVisible((visible) => !visible)}
+          >
+            {sidebarVisible ? (
+              <PanelLeftClose size={17} aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen size={17} aria-hidden="true" />
+            )}
+          </button>
         </div>
         <div className="workspace-title">
           {selected ? (
@@ -229,16 +246,18 @@ export default function WorkspacePage() {
           <ThemeToggle />
         </div>
       </header>
-      <div className="workspace-grid">
-        <HistorySidebar
-          selectedId={activeSelectedId}
-          onSelect={requestSelect}
-          onDeleted={(id) => {
-            if (id === activeSelectedId) setSelectedId(null);
-          }}
-          onNewRecording={() => setSourceDialogOpen(true)}
-          onOpenSettings={openSettings}
-        />
+      <div className={`workspace-grid${sidebarVisible ? "" : " workspace-sidebar-hidden"}`}>
+        <div id="workspace-sidebar" className="workspace-sidebar" hidden={!sidebarVisible}>
+          <HistorySidebar
+            selectedId={activeSelectedId}
+            onSelect={requestSelect}
+            onDeleted={(id) => {
+              if (id === activeSelectedId) setSelectedId(null);
+            }}
+            onNewRecording={() => setSourceDialogOpen(true)}
+            onOpenSettings={openSettings}
+          />
+        </div>
         <div
           ref={workspaceRef}
           className={`recording-workspace${showWelcome ? " recording-workspace-empty" : ""}`}

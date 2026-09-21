@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+export const clickTrackingInputSchema = z.boolean();
 import type {
   AiModel,
   AiModelSelection,
@@ -76,6 +78,7 @@ export const IPC_CHANNELS = {
   recordingStop: "recording:stop",
   recordingPause: "recording:pause",
   recordingResume: "recording:resume",
+  recordingSetClickTracking: "recording:set-click-tracking",
   recordingGetState: "recording:get-state",
   recordingStateChanged: "recording:state-changed",
 
@@ -288,6 +291,7 @@ export interface DesktopApi {
     stop(): Promise<RecordingRuntimeState>;
     pause(): Promise<RecordingRuntimeState>;
     resume(): Promise<RecordingRuntimeState>;
+    setClickTracking(enabled: boolean): Promise<RecordingRuntimeState>;
     getState(): Promise<RecordingRuntimeState>;
     selectRegion(
       input: z.infer<typeof selectRegionInputSchema>,

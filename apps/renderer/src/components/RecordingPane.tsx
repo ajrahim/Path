@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Captions,
   FileVideo2,
@@ -417,15 +417,30 @@ export function RecordingPane({
             </div>
             <div className="video-controls">
               <button
+                type="button"
+                className="video-play-toggle"
                 title={t(playing ? "recording.pause" : "recording.play")}
                 onClick={togglePlayback}
               >
-                {playing ? <Pause size={17} /> : <Play size={17} />}
+                {playing ? (
+                  <Pause size={18} aria-hidden="true" />
+                ) : (
+                  <Play size={18} aria-hidden="true" />
+                )}
               </button>
-              <span>
-                {formatPlayerTime(currentTime)} / {formatPlayerTime(duration)}
-              </span>
-              <div className="video-scrubber">
+              <div className="video-time">
+                <span className="video-current-time">{formatPlayerTime(currentTime)}</span>
+                <span className="video-time-divider">/</span>
+                <span className="video-duration">{formatPlayerTime(duration)}</span>
+              </div>
+              <div
+                className="video-scrubber"
+                style={
+                  {
+                    "--playback-progress": `${duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0}%`,
+                  } as CSSProperties
+                }
+              >
                 <input
                   type="range"
                   min={0}
@@ -438,10 +453,12 @@ export function RecordingPane({
                     seek(time);
                   }}
                   aria-label={t("recording.title")}
+                  aria-valuetext={`${formatPlayerTime(currentTime)} / ${formatPlayerTime(duration)}`}
                 />
                 <div className="timeline-click-markers">
                   {clicks.map((click) => (
                     <button
+                      type="button"
                       key={click.id}
                       style={{
                         left: `${Math.min(100, (click.timestampMs / Math.max(1, duration * 1_000)) * 100)}%`,
@@ -452,9 +469,15 @@ export function RecordingPane({
                   ))}
                 </div>
               </div>
-              <button title={t("recording.speed")} onClick={cyclePlaybackRate}>
-                <Gauge size={15} />
-                {playbackRate}x
+              <button
+                type="button"
+                className="video-speed-toggle"
+                title={t("recording.speedHint")}
+                aria-label={t("recording.speedValue", { rate: playbackRate })}
+                onClick={cyclePlaybackRate}
+              >
+                <Gauge size={14} aria-hidden="true" />
+                <span>{playbackRate}×</span>
               </button>
             </div>
           </>

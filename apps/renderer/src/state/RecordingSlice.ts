@@ -132,6 +132,26 @@ export const resumeRecording = createAsyncThunk<RuntimeReply, void, RecordingThu
   { condition: (_, { getState }) => getState().recording.commandRequestId === null },
 );
 
+export const setRecordingClickTracking = createAsyncThunk<RuntimeReply, boolean, RecordingThunk>(
+  "recording/setClickTracking",
+  async (enabled, { extra, getState, rejectWithValue }) => {
+    const desktop = extra.getDesktopApi();
+
+    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+
+    const { connectionId, revision } = getState().recording;
+
+    try {
+      return { runtime: await desktop.recording.setClickTracking(enabled), connectionId, revision };
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : "Unable to toggle click tracking",
+      );
+    }
+  },
+  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+);
+
 // The desktop remains authoritative; the slice reconciles its events, reads, and command replies.
 const recordingSlice = createSlice({
   name: "recording",
@@ -195,6 +215,7 @@ const recordingSlice = createSlice({
           stopRecording.pending,
           pauseRecording.pending,
           resumeRecording.pending,
+          setRecordingClickTracking.pending,
         ),
         (state, action) => {
           state.commandRequestId = action.meta.requestId;
@@ -207,6 +228,7 @@ const recordingSlice = createSlice({
           stopRecording.fulfilled,
           pauseRecording.fulfilled,
           resumeRecording.fulfilled,
+          setRecordingClickTracking.fulfilled,
         ),
         (state, action) => {
           if (state.commandRequestId !== action.meta.requestId) return;
@@ -230,6 +252,7 @@ const recordingSlice = createSlice({
           stopRecording.rejected,
           pauseRecording.rejected,
           resumeRecording.rejected,
+          setRecordingClickTracking.rejected,
         ),
         (state, action) => {
           if (state.commandRequestId !== action.meta.requestId) return;

@@ -45,6 +45,7 @@ export class RecordingController {
   private active: ActiveRecording | null = null;
   private clock: SessionClock | null = null;
   private writeQueue = Promise.resolve();
+  private clickCaptureQueue = Promise.resolve();
   private error: string | null = null;
   private stateListener: ((state: RecordingRuntimeState) => void) | null = null;
   private preparationTimer: NodeJS.Timeout | null = null;
@@ -184,7 +185,7 @@ export class RecordingController {
 
     this.state = transitionRecordingState(this.state, "PAUSE");
     this.clock?.pause();
-    await this.clickCapture.pause();
+    await this.syncClickCapture();
     this.emitState();
     this.captureWorker.webContents.send(IPC_CHANNELS.capturePauseRequested);
 
@@ -198,7 +199,7 @@ export class RecordingController {
 
     this.state = transitionRecordingState(this.state, "RESUME");
     this.clock?.resume();
-    await this.clickCapture.resume();
+    await this.syncClickCapture();
     this.emitState();
     this.captureWorker.webContents.send(IPC_CHANNELS.captureResumeRequested);
 
@@ -216,7 +217,7 @@ export class RecordingController {
     }
 
     this.state = transitionRecordingState(this.state, "STOP");
-    await this.clickCapture.stop();
+    await this.syncClickCapture();
     this.emitState();
     this.captureWorker.webContents.send(IPC_CHANNELS.captureStopRequested);
 
@@ -232,18 +233,50 @@ export class RecordingController {
     this.state = transitionRecordingState(this.state, "PREPARED");
     this.emitState();
 
-    if (this.active?.input.captureClicks) {
-      try {
+    try {
+      await this.syncClickCapture();
+    } catch (error) {
+      await this.captureFailed(error instanceof Error ? error.message : "Click capture failed");
+    }
+  }
+
+  async setClickTracking(enabled: boolean): Promise<RecordingRuntimeState> {
+    if (!this.active || (this.state !== "RECORDING" && this.state !== "PAUSED")) {
+      return this.getState();
+    }
+
+    this.active.input.captureClicks = enabled;
+    try {
+      await this.syncClickCapture();
+    } catch (error) {
+      this.active.input.captureClicks = false;
+      this.error = error instanceof Error ? error.message : "Click capture failed";
+      await this.syncClickCapture();
+    }
+
+    this.emitState();
+
+    return this.getState();
+  }
+
+  private syncClickCapture(): Promise<void> {
+    // Serialize native hook changes so a pending enable cannot outlive pause or stop.
+    const update = this.clickCaptureQueue.then(async () => {
+      await this.clickCapture.stop();
+      if (this.state === "RECORDING" && this.active?.input.captureClicks && this.clock) {
         await this.clickCapture.start({
           recordingId: this.active.id,
           clock: this.clock,
           input: this.active.input,
           source: this.active.source,
         });
-      } catch (error) {
-        await this.captureFailed(error instanceof Error ? error.message : "Click capture failed");
       }
-    }
+    });
+
+    // Callers handle failures; keep subsequent cleanup commands runnable.
+    this.clickCaptureQueue = update.catch(() => {});
+
+    return update;
   }
 
   appendChunk(chunk: Uint8Array): Promise<void> {
@@ -488,7 +521,7 @@ export class RecordingController {
   }
 
   private async processClickActions(active: ActiveRecording): Promise<void> {
-    if (!active.input.captureClicks || !this.clickActionAnalyzer) return;
+    if (!this.clickActionAnalyzer) return;
 
     await this.analyzeClicks(active.id);
   }
@@ -585,6 +618,7 @@ export class RecordingController {
   async captureFailed(message: string): Promise<void> {
     this.clearPreparationTimer();
     this.error = message;
+    await this.clickCaptureQueue;
     await this.clickCapture.stop();
     const failedRecording = this.active;
 

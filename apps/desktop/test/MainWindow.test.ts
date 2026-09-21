@@ -32,6 +32,8 @@ describe("main window appearance", () => {
 
     const options = vi.mocked(BrowserWindow).mock.calls[0]?.[0];
 
+    expect(options?.minWidth).toBe(1180);
+    expect(options?.minHeight).toBe(720);
     expect(options?.icon).toEqual(expect.objectContaining({ path: "assets/app-icon.ico" }));
     expect(options?.titleBarStyle).toBe(process.platform === "darwin" ? "hiddenInset" : "hidden");
     expect(options?.titleBarOverlay).toEqual(

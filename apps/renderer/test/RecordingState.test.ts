@@ -41,6 +41,7 @@ function recordingHarness() {
     stop: vi.fn().mockResolvedValue(idle),
     pause: vi.fn().mockResolvedValue({ ...recording, status: "paused" as const }),
     resume: vi.fn().mockResolvedValue(recording),
+    setClickTracking: vi.fn().mockResolvedValue(recording),
     selectRegion: vi.fn(),
   };
 

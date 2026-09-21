@@ -7,6 +7,7 @@ import {
   loadCaptureSources,
   pauseRecording,
   resumeRecording,
+  setRecordingClickTracking,
   startRecording,
   stopRecording,
 } from "../state/RecordingSlice";
@@ -30,6 +31,11 @@ export function useRecording() {
   const pause = useCallback(() => dispatch(pauseRecording()), [dispatch]);
   const resume = useCallback(() => dispatch(resumeRecording()), [dispatch]);
 
+  const setClickTracking = useCallback(
+    (enabled: boolean) => dispatch(setRecordingClickTracking(enabled)),
+    [dispatch],
+  );
+
   return {
     snapshot: {
       ...state.runtime,
@@ -43,5 +49,6 @@ export function useRecording() {
     stop,
     pause,
     resume,
+    setClickTracking,
   };
 }

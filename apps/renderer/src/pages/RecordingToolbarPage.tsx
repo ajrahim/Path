@@ -6,7 +6,7 @@ import { useRecording } from "../hooks/useRecording";
 
 export default function RecordingToolbarPage() {
   const t = useTranslations("recording");
-  const { snapshot, stop, pause, resume } = useRecording();
+  const { snapshot, stop, pause, resume, setClickTracking } = useRecording();
   const paused = snapshot.status === "paused";
 
   return (
@@ -24,12 +24,18 @@ export default function RecordingToolbarPage() {
         <strong>{formatDuration(snapshot.elapsedMs, "00:00")}</strong>
         <span>{paused ? t("paused") : t("recordingActive")}</span>
       </div>
-      {snapshot.captureClicks && (
-        <span className="recording-toolbar-clicks">
-          <MousePointer2 size={14} />
-          {t("clicksActive")}
-        </span>
-      )}
+      <Button
+        className="recording-toolbar-clicks"
+        size="icon"
+        variant="ghost"
+        title={t("toggleClickTracking")}
+        aria-label={t("toggleClickTracking")}
+        aria-pressed={snapshot.captureClicks}
+        disabled={snapshot.isChangingRecording || (snapshot.status !== "recording" && !paused)}
+        onClick={() => void setClickTracking(!snapshot.captureClicks)}
+      >
+        <MousePointer2 size={16} />
+      </Button>
       {paused ? (
         <Button
           className="recording-toolbar-stop"
