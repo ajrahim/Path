@@ -48,7 +48,6 @@ function toSession(row: RecordingRow): RecordingSession {
     captureRegion: row.captureRegionJson,
     videoPath: row.videoPath,
     audioPath: row.audioPath,
-    transcriptStatus: row.transcriptStatus,
     guideStatus: row.guideStatus,
   };
 }

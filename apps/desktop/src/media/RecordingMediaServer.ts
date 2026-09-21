@@ -129,7 +129,13 @@ export class RecordingMediaServer {
           return void response.writeHead(404).end();
         }
 
-        const image = await stat(click.screenshotPath);
+        let image;
+
+        try {
+          image = await stat(click.screenshotPath);
+        } catch {
+          return void response.writeHead(404).end();
+        }
 
         response.setHeader("Cache-Control", "private, no-store");
         response.setHeader("Content-Length", image.size);
@@ -182,7 +188,14 @@ export class RecordingMediaServer {
         return void response.writeHead(404).end();
       }
 
-      const file = await stat(recording.videoPath);
+      let file;
+
+      try {
+        file = await stat(recording.videoPath);
+      } catch {
+        return void response.writeHead(404).end();
+      }
+
       const range = parseRange(request.headers.range, file.size);
 
       if (request.headers.range && !range) {

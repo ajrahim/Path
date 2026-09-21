@@ -5,7 +5,7 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Need                                  | Read                                                              |
 | ------------------------------------- | ----------------------------------------------------------------- |
 | Required coding and change rules      | [Engineering contract](instructions/Engineering.md)               |
-| Where code and styles belong          | [Architecture and ownership](Architecture.md)                     |
+| Where code and styles belong          | [Architecture and ownership](instructions/Architecture.md)        |
 | Hooks, contexts and shared state      | [Renderer state ownership](instructions/StateManagement.md)       |
 | Which checks to run                   | [Verification](instructions/Verification.md)                      |
 | A bounded implementation task         | [Implementation prompt](prompts/Implement.md)                     |
@@ -13,8 +13,8 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Current capabilities and limitations  | [Current state](memory-bank/CurrentState.md)                      |
 | Reasons behind durable choices        | [Decisions](memory-bank/Decisions.md)                             |
 | Recording and document behavior       | [Recording workflow specification](../specs/RecordingWorkflow.md) |
-| Recording library Projects            | [Project grouping behavior](RecordingProjects.md)                 |
-| Welcome screen and document shortcuts | [Workspace welcome](WorkspaceWelcome.md)                          |
+| Recording library Projects            | [Project grouping behavior](specs/RecordingProjects.md)           |
+| Welcome screen and document shortcuts | [Workspace welcome](specs/WorkspaceWelcome.md)                    |
 | Feature specification creation        | [Create spec skill](../.github/skills/spec-create/SKILL.md)       |
 | Spec implementation workflow          | [Implement spec skill](../.github/skills/spec-implement/SKILL.md) |
 | Spec review & verification            | [Review spec skill](../.github/skills/spec-review/SKILL.md)       |

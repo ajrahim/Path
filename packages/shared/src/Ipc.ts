@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-export const clickTrackingInputSchema = z.boolean();
 import type {
   AiModel,
   AiModelSelection,
@@ -98,6 +97,8 @@ export const IPC_CHANNELS = {
 } as const;
 
 // Strict schemas bound renderer-controlled values before the desktop touches native services.
+export const clickTrackingInputSchema = z.boolean();
+
 export const setAiProviderKeyInputSchema = z.strictObject({
   provider: z.enum(["anthropic", "openai", "google"]),
   key: z.string().trim().min(1).max(1_000),

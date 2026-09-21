@@ -11,9 +11,11 @@ import { SessionClock, transitionRecordingState, type RecordingState } from "@pa
 import type { RecordingRepository } from "@path/database";
 import {
   IPC_CHANNELS,
+  MINIMUM_RECORDING_DURATION_MS,
   type CaptureSource,
   type CaptureWorkerStart,
   type ClickAnalysisResult,
+  type ClickEvent,
   type RecordingRuntimeState,
   type StartRecordingInput,
 } from "@path/shared";
@@ -36,7 +38,8 @@ interface ActiveRecording {
   source: CaptureSource;
 }
 
-const MINIMUM_RECORDING_DURATION_MS = 2_000;
+const CAPTURE_START_TIMEOUT_MS = 15_000;
+const MAX_RECORDING_CHUNK_BYTES = 32 * 1024 * 1024;
 const MAX_CLICK_ANALYSES_PER_RECORDING = 200;
 
 // Owns recording transitions while adapters handle capture, media files, and analysis.
@@ -158,8 +161,10 @@ export class RecordingController {
       // A worker that never acknowledges startup must not leave the UI preparing forever.
       this.preparationTimer = setTimeout(() => {
         this.captureWorker.webContents.send(IPC_CHANNELS.captureStopRequested);
-        void this.captureFailed("Screen capture did not start within 15 seconds");
-      }, 15_000);
+        void this.captureFailed(
+          `Screen capture did not start within ${CAPTURE_START_TIMEOUT_MS / 1_000} seconds`,
+        );
+      }, CAPTURE_START_TIMEOUT_MS);
 
       return this.getState();
     } catch (error) {
@@ -284,7 +289,7 @@ export class RecordingController {
       throw new Error("No active recording accepts media chunks");
     }
 
-    if (chunk.byteLength > 32 * 1024 * 1024) {
+    if (chunk.byteLength > MAX_RECORDING_CHUNK_BYTES) {
       throw new Error("Recording chunk is too large");
     }
 
@@ -339,6 +344,12 @@ export class RecordingController {
 
   /** Reprocesses a failed recording from its retained capture without a new recording session. */
   async retryProcessing(recordingId: string): Promise<void> {
+    // A finished session lingers in memory; only an unfinished capture blocks a retry.
+    if (this.state === "READY" || this.state === "FAILED") {
+      this.state = transitionRecordingState(this.state, "RESET");
+      this.clearActiveSession();
+    }
+
     if (this.active) {
       throw new Error("Finish the active recording before retrying");
     }
@@ -577,16 +588,15 @@ export class RecordingController {
           normalizedY: click.normalizedY,
           previousSteps: clicks
             .filter(
-              (candidate) =>
+              (candidate): candidate is ClickEvent & { actionDescription: string } =>
                 candidate.timestampMs < click.timestampMs &&
-                candidate.actionDescription &&
-                candidate.actionDescription !== "Unknown control" &&
+                candidate.actionDescription !== null &&
                 !needsClickActionAnalysis(candidate.actionDescription),
             )
             .slice(-5)
             .map((candidate) => ({
               button: candidate.button,
-              description: candidate.actionDescription!,
+              description: candidate.actionDescription,
             })),
           transcriptContext: transcript
             .filter((segment) => segment.startMs <= click.timestampMs)

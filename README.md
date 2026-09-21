@@ -94,7 +94,7 @@ scripts/             Repository tooling
 tests/               Interactive Electron checks
 ```
 
-Start with [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [architecture map](.agents/Architecture.md). The renderer accesses native capabilities through a typed preload API; it does not import filesystem, SQLite, credentials, or native input implementations.
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the [architecture map](.agents/instructions/Architecture.md). The renderer accesses native capabilities through a typed preload API; it does not import filesystem, SQLite, credentials, or native input implementations.
 
 Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, `src/state`, and `src/lib` folders. Authored source, test, fixture, and script basenames use PascalCase; class files match their main exported class, and each hook has its own `useCamelCase` file. Framework/config names, public package entries, data, and generated files follow the exceptions in the [engineering contract](.agents/instructions/Engineering.md#2-readability-control-flow-and-naming). Next uses `src/pages` directly: PascalCase filenames define their routes, `_app.tsx` and `_document.tsx` provide the shared shell, and `index.tsx` exposes the workspace at `/`. Shared `RENDERER_ROUTES` values keep Electron and browser navigation aligned. The preload declaration remains at `src/Desktop.d.ts`. `src/styles/index.css` loads styles in order: Tailwind, shared defaults from `global.css`, component rules from `styles/components`, and page rules from `styles/pages`. See the [renderer conventions](apps/renderer/AGENTS.md) for ownership and routing.
 

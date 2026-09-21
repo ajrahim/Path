@@ -12,6 +12,7 @@ import {
   aiProviderInputSchema,
   activityItemInputSchema,
   IPC_CHANNELS,
+  isActiveRecordingStatus,
   recorderPopoverExpandedInputSchema,
   recordingIdInputSchema,
   renameRecordingInputSchema,
@@ -104,11 +105,7 @@ export function registerIpcHandlers({
   });
   ipcMain.handle(IPC_CHANNELS.settingsChooseRecordingsDirectory, async (event) => {
     // An active capture must keep the same managed root until its assets finish processing.
-    if (
-      ["preparing", "recording", "paused", "stopping", "processing"].includes(
-        recording.getState().status,
-      )
-    ) {
+    if (isActiveRecordingStatus(recording.getState().status)) {
       throw new Error("The recording location cannot be changed while a recording is active");
     }
 

@@ -1,5 +1,5 @@
 import { nanoid } from "@reduxjs/toolkit";
-import type { DesktopApi, RecordingRuntimeState } from "@path/shared";
+import { isActiveRecordingStatus, type DesktopApi, type RecordingRuntimeState } from "@path/shared";
 import {
   connectionClosed,
   connectionOpened,
@@ -61,11 +61,7 @@ export function connectRecordingBridge(
 
   void refreshRuntime();
   const timer = setInterval(() => {
-    if (
-      ["preparing", "recording", "paused", "stopping", "processing"].includes(
-        store.getState().recording.runtime.status,
-      )
-    ) {
+    if (isActiveRecordingStatus(store.getState().recording.runtime.status)) {
       void refreshRuntime();
     }
   }, 500);

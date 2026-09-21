@@ -38,6 +38,9 @@ import { OllamaClickActionAnalyzer } from "./ai/OllamaClickActionAnalyzer";
 import { SelectedAiService } from "./ai/SelectedAiService";
 import { resolveUserDataDirectory } from "./storage/UserDataDirectory";
 
+// A ready recording smaller than this never held decodable media; re-mark it failed on startup.
+const MINIMUM_READY_MEDIA_BYTES = 1_024;
+
 app.setName("Path");
 const userDataDirectory = resolveUserDataDirectory(
   app.getPath("appData"),
@@ -105,7 +108,7 @@ if (!hasSingleInstanceLock) {
       try {
         const media = await stat(session.videoPath);
 
-        if (media.size < 1_024) await recordings.markFailed(recording.id);
+        if (media.size < MINIMUM_READY_MEDIA_BYTES) await recordings.markFailed(recording.id);
       } catch {
         await recordings.markFailed(recording.id);
       }

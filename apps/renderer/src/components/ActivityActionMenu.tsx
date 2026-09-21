@@ -63,7 +63,10 @@ export function ActivityActionMenu({
         aria-expanded={Boolean(position)}
         aria-controls={position ? id : undefined}
         onClick={() => {
-          const rect = triggerRef.current!.getBoundingClientRect();
+          const rect = triggerRef.current?.getBoundingClientRect();
+
+          if (!rect) return;
+
           const height = (onInsert && onRemove ? 2 : 1) * 36 + 10;
 
           setPosition(

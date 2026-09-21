@@ -1,4 +1,9 @@
-import type { AiModelSelection, AiProvider, AvailableAiModels } from "@path/shared";
+import {
+  aiProviders,
+  type AiModelSelection,
+  type AiProvider,
+  type AvailableAiModels,
+} from "@path/shared";
 import type { DesktopSettingsService } from "../settings/DesktopSettingsService";
 import type { AiCredentialStore } from "../storage/AiCredentialStore";
 import { listProviderModels } from "./ProviderModels";
@@ -16,8 +21,11 @@ interface ApiTextResponse {
 
 const API_REQUEST_INTERVAL_MS = 750;
 const GOOGLE_REQUEST_INTERVAL_MS = 13_000;
+const API_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_API_REQUEST_ATTEMPTS = 3;
 const MAX_RETRY_DELAY_MS = 120_000;
+const MAX_CLICK_ANALYSIS_TOKENS = 128;
+const MAX_DOCUMENT_TOKENS = 2_048;
 
 export class AiRateLimitError extends Error {
   readonly retryAfterMs: number;
@@ -48,7 +56,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
     ]);
 
     const apiGroups = await Promise.all(
-      (["anthropic", "openai", "google"] as const).map(async (provider) => {
+      aiProviders.map(async (provider) => {
         if (!status[provider]) return [];
 
         const key = await this.credentials.get(provider);
@@ -82,7 +90,12 @@ export class SelectedAiService implements ClickActionAnalyzer {
     }
 
     const prepared = await prepareClickAction(input);
-    const result = await this.requestApi(selection, prepared.prompt, 128, prepared.imageBase64);
+    const result = await this.requestApi(
+      selection,
+      prepared.prompt,
+      MAX_CLICK_ANALYSIS_TOKENS,
+      prepared.imageBase64,
+    );
 
     return normalizeClickDescription(result.text, input.button);
   }
@@ -96,7 +109,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
       return this.ollama.generateText(prompt);
     }
 
-    return (await this.requestApi(selection, prompt, 2_048)).text;
+    return (await this.requestApi(selection, prompt, MAX_DOCUMENT_TOKENS)).text;
   }
 
   private async requestApi(
@@ -283,7 +296,7 @@ async function requestJson(url: string, init: RequestInit): Promise<unknown> {
     let response: Response;
 
     try {
-      response = await fetch(url, { ...init, signal: AbortSignal.timeout(120_000) });
+      response = await fetch(url, { ...init, signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS) });
     } catch (error) {
       if (
         attempt + 1 >= MAX_API_REQUEST_ATTEMPTS ||

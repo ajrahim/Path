@@ -1,5 +1,6 @@
 import { GripHorizontal, MousePointer2, Pause, Play, Square } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { MINIMUM_RECORDING_DURATION_MS } from "@path/shared";
 import { Button } from "@/components/Button";
 import { formatDuration } from "@/lib/Format";
 import { useRecording } from "../hooks/useRecording";
@@ -64,7 +65,7 @@ export default function RecordingToolbarPage() {
         size="sm"
         disabled={
           (snapshot.status !== "recording" && snapshot.status !== "paused") ||
-          snapshot.elapsedMs < 2_000
+          snapshot.elapsedMs < MINIMUM_RECORDING_DURATION_MS
         }
         onClick={() => void stop()}
       >

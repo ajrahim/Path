@@ -109,6 +109,11 @@ export class CaptureEngine {
 
       this.disposeCrop = videoCapture.dispose;
 
+      // Region captures record a canvas crop whose tracks are distinct from the display stream.
+      if (input.captureMode === "region") {
+        this.tracks.push(...videoCapture.stream.getTracks());
+      }
+
       const microphone = input.includeMicrophone
         ? await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true },

@@ -38,6 +38,10 @@ const MAX_IMAGE_WIDTH = 1_280;
 const MAX_IMAGE_HEIGHT = 960;
 const MAX_DESCRIPTION_WORDS = 24;
 const MAX_DESCRIPTION_LENGTH = 180;
+const OLLAMA_DISCOVERY_TIMEOUT_MS = 10_000;
+const OLLAMA_CHAT_TIMEOUT_MS = 120_000;
+const MAX_CLICK_DESCRIPTION_TOKENS = 80;
+const MAX_DOCUMENT_TOKENS = 2_048;
 const UNKNOWN_CONTROL = "Unknown control";
 const NON_ANSWER_PATTERN =
   /\b(?:cannot|can't|unable|no screenshot|need (?:the|a) screenshot|screenshot (?:was not|is not|isn't|were not)|image (?:was not|is not|isn't)|not provided|unavailable|lack access|identify the ui control)\b/i;
@@ -67,7 +71,7 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
 
   async listModels(): Promise<AiModel[]> {
     const response = await fetch(`${this.endpoint}/api/tags`, {
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(OLLAMA_DISCOVERY_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -89,7 +93,7 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
           const details = await fetch(`${this.endpoint}/api/show`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(OLLAMA_DISCOVERY_TIMEOUT_MS),
             body: JSON.stringify({ model: name }),
           });
 
@@ -111,20 +115,22 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
 
   async analyze(input: ClickActionAnalysisInput): Promise<string> {
     const prepared = await prepareClickAction(input);
-    const response = await this.chat(prepared.prompt, 80, [prepared.imageBase64]);
+    const response = await this.chat(prepared.prompt, MAX_CLICK_DESCRIPTION_TOKENS, [
+      prepared.imageBase64,
+    ]);
 
     return normalizeClickDescription(response, input.button);
   }
 
   async generateText(prompt: string): Promise<string> {
-    return this.chat(prompt, 2_048);
+    return this.chat(prompt, MAX_DOCUMENT_TOKENS);
   }
 
   private async chat(prompt: string, maxTokens: number, images?: string[]): Promise<string> {
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(OLLAMA_CHAT_TIMEOUT_MS),
       body: JSON.stringify({
         model: this.model,
         stream: false,

@@ -12,7 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import type { CaptureMode } from "@path/shared";
+import { isActiveRecordingStatus, type CaptureMode } from "@path/shared";
 import { Button } from "@/components/Button";
 import { getDesktopApi } from "@/lib/Desktop";
 import { formatDefaultRecordingTitle, formatDuration } from "@/lib/Format";
@@ -40,9 +40,7 @@ export default function RecorderPage() {
   const sourceType = mode === "window" ? "window" : "screen";
   const sources = snapshot.sources.filter((source) => source.type === sourceType);
   const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? null;
-  const active = ["preparing", "recording", "paused", "stopping", "processing"].includes(
-    snapshot.status,
-  );
+  const active = isActiveRecordingStatus(snapshot.status);
 
   const optionsVisible = !active && expanded;
 

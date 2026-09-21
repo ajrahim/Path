@@ -1,4 +1,4 @@
-import { RENDERER_ROUTES } from "@path/shared";
+import { RENDERER_ROUTES, isActiveRecordingStatus } from "@path/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -34,9 +34,7 @@ export default function WorkspacePage() {
   const guideStateRef = useRef<GuidePaneState | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const discardDialogRef = useRef<HTMLDialogElement>(null);
-  const recordingActive = ["preparing", "recording", "paused", "stopping", "processing"].includes(
-    recordingState.status,
-  );
+  const recordingActive = isActiveRecordingStatus(recordingState.status);
 
   const handleGuideStateChange = useCallback((state: GuidePaneState | null) => {
     guideStateRef.current = state;

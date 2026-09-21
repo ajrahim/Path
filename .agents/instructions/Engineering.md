@@ -8,7 +8,7 @@ The app's only product name is **Path**. Use `@path/*` workspace names and `PATH
 
 ## 1. Architecture and folder structure
 
-- Follow the [architecture map](../architecture.md). Organize directories by clear architectural responsibilities and domain ownership:
+- Follow the [architecture map](Architecture.md). Organize directories by clear architectural responsibilities and domain ownership:
   - `apps/desktop/`: Electron process composition, window orchestration, native capture, local AI service, and secure credential storage.
   - `apps/renderer/`: Statically exported Next.js Pages Router application, browser UI, and local workflow state.
   - `packages/shared/`: Browser-safe contracts, Zod boundary schemas, IPC channels, and translation catalogs.
@@ -70,4 +70,4 @@ Trace the requested behavior through its owners before editing. Make the smalles
 
 Edit source, then regenerate outputs. Do not hand-edit `node_modules/`, `dist/`, `.next/`, `out/`, `release/`, coverage, or TypeScript build caches. Database migrations are versioned source history: add a migration for a schema change rather than rewriting an applied migration.
 
-Follow [verification](verification.md), inspect the final diff, and report what changed, what actually passed, and what remains unverified. A successful build does not prove native capture, model readiness, cross-platform support, or release signing. Do not commit personal paths, local media, credentials, model caches, or generated installers. Publishing and licensing decisions must come from the repository owner, not an inferred cleanup task.
+Follow [verification](Verification.md), inspect the final diff, and report what changed, what actually passed, and what remains unverified. A successful build does not prove native capture, model readiness, cross-platform support, or release signing. Do not commit personal paths, local media, credentials, model caches, or generated installers. Publishing and licensing decisions must come from the repository owner, not an inferred cleanup task.

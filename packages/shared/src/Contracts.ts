@@ -98,6 +98,23 @@ export interface RecordingRuntimeState {
   error: string | null;
 }
 
+/**
+ * Stop controls stay disarmed below this media-relative age so an accidental
+ * early stop cannot discard a capture; the desktop ignores earlier requests too.
+ */
+export const MINIMUM_RECORDING_DURATION_MS = 2_000;
+
+/** Preparing, capturing, paused, and transitional states all own an unfinished session. */
+export function isActiveRecordingStatus(status: RecordingRuntimeStatus): boolean {
+  return (
+    status === "preparing" ||
+    status === "recording" ||
+    status === "paused" ||
+    status === "stopping" ||
+    status === "processing"
+  );
+}
+
 export interface RegionSelectionContext {
   displayId: string;
   width: number;

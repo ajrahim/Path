@@ -13,11 +13,9 @@ export class AiCredentialStore {
     const credentials = await this.read();
 
     // Renderer callers need presence flags, never decrypted key material.
-    return {
-      anthropic: Boolean(credentials.anthropic),
-      openai: Boolean(credentials.openai),
-      google: Boolean(credentials.google),
-    };
+    return Object.fromEntries(
+      aiProviders.map((provider) => [provider, Boolean(credentials[provider])]),
+    ) as AiProviderKeyStatus;
   }
 
   async set(provider: AiProvider, key: string): Promise<AiProviderKeyStatus> {
