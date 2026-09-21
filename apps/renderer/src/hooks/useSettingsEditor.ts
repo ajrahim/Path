@@ -8,6 +8,8 @@ import type {
 } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
 
+const SETTINGS_NOTICE_MS = 3_000;
+
 type SettingsOperation =
   "general" | "directory" | "open-directory" | `key-${AiProvider}` | `remove-${AiProvider}`;
 
@@ -173,7 +175,7 @@ export function useSettingsEditor(): SettingsEditor {
 
     const timer = window.setTimeout(
       () => dispatch({ type: "notice-dismissed", id: notice.id }),
-      3_000,
+      SETTINGS_NOTICE_MS,
     );
 
     return () => window.clearTimeout(timer);

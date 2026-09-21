@@ -4,11 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PNG } from "pngjs";
-import {
-  needsClickActionAnalysis,
-  normalizeClickDescription,
-  OllamaClickActionAnalyzer,
-} from "../src/ai/OllamaClickActionAnalyzer";
+import { OllamaClickActionAnalyzer } from "../src/ai/OllamaClickActionAnalyzer";
 
 const temporaryFiles: string[] = [];
 
@@ -26,13 +22,6 @@ afterEach(async () => {
 });
 
 describe("OllamaClickActionAnalyzer", () => {
-  it("retries missing and legacy invalid descriptions only", () => {
-    expect(needsClickActionAnalysis(null)).toBe(true);
-    expect(needsClickActionAnalysis("I need the screenshot to identify the UI control")).toBe(true);
-    expect(needsClickActionAnalysis("Submit button")).toBe(false);
-    expect(needsClickActionAnalysis("Unknown control")).toBe(false);
-  });
-
   it("lists only installed models that support vision", async () => {
     // An installed model is not necessarily capable of receiving screenshots.
     const fetchMock = vi.fn(async (input: string, request?: RequestInit) => {
@@ -213,8 +202,29 @@ describe("OllamaClickActionAnalyzer", () => {
     ["middle", "Browser tab", "The user middle-clicks the Browser tab."],
   ] as const)(
     "expands a terse %s-click response into a guide sentence",
-    (button, response, expected) => {
-      expect(normalizeClickDescription(response, button)).toBe(expected);
+    async (button, response, expected) => {
+      const screenshotPath = join(tmpdir(), `${randomUUID()}.png`);
+
+      temporaryFiles.push(screenshotPath);
+      await writeFile(screenshotPath, createPng());
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ message: { content: response } }), { status: 200 }),
+          ),
+      );
+
+      await expect(
+        new OllamaClickActionAnalyzer().analyze({
+          screenshotPath,
+          timestampMs: 1_000,
+          button,
+          normalizedX: 0.5,
+          normalizedY: 0.5,
+        }),
+      ).resolves.toBe(expected);
     },
   );
 });

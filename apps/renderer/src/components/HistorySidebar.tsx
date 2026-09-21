@@ -27,6 +27,8 @@ import { useAppVersion } from "../hooks/useAppVersion";
 import { useRecordingHistory } from "../hooks/useRecordingHistory";
 import { HistoryMenu } from "./HistoryMenu";
 import { ProjectDialog, type ProjectDialogAction } from "./ProjectDialog";
+import { RecordingDeleteDialog } from "./RecordingDeleteDialog";
+import { RecordingRenameField } from "./RecordingRenameField";
 import { useRecordingProjects } from "../hooks/useRecordingProjects";
 import { useRecordingThumbnailUrl } from "../hooks/useRecordingThumbnailUrl";
 
@@ -136,10 +138,8 @@ export function HistorySidebar({
   const [sortOpen, setSortOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameLocation, setRenameLocation] = useState("all");
-  const [draftTitle, setDraftTitle] = useState("");
   const [hasRenameError, setHasRenameError] = useState(false);
   const [isSavingRename, setIsSavingRename] = useState(false);
-  const isRenamingRef = useRef(false);
   const projectLibrary = useRecordingProjects();
   const [projectAction, setProjectAction] = useState<ProjectDialogAction | null>(null);
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -148,23 +148,6 @@ export function HistorySidebar({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveError, setMoveError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RecordingSummary | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const deleteDialogRef = useRef<HTMLDialogElement>(null);
-  const deletingRef = useRef(false);
-
-  useEffect(() => {
-    if (!pendingDelete) return;
-
-    const dialog = deleteDialogRef.current;
-
-    dialog?.showModal();
-
-    // Start on the reversible choice when the native modal receives keyboard focus.
-    dialog?.querySelector<HTMLButtonElement>("[data-cancel-delete]")?.focus();
-
-    return () => dialog?.close();
-  }, [pendingDelete]);
 
   useEffect(() => {
     const request = refresh();
@@ -204,55 +187,33 @@ export function HistorySidebar({
   );
 
   function beginRename(recording: RecordingSummary, location: string): void {
-    if (isRenamingRef.current || snapshot.mutationRequestIds[recording.id]) return;
+    if (isSavingRename || snapshot.mutationRequestIds[recording.id]) return;
 
     setRenamingId(recording.id);
     setRenameLocation(location);
-    setDraftTitle(recording.title);
     setHasRenameError(false);
   }
 
-  async function saveRename(id: string): Promise<void> {
-    if (!draftTitle.trim() || isRenamingRef.current || snapshot.mutationRequestIds[id]) return;
+  async function saveRename(id: string, title: string): Promise<void> {
+    if (isSavingRename || snapshot.mutationRequestIds[id]) return;
 
-    // Enter and blur can arrive before React renders the pending state.
-    isRenamingRef.current = true;
     setIsSavingRename(true);
     setHasRenameError(false);
 
     try {
-      await rename(id, draftTitle.trim());
+      await rename(id, title);
       setRenamingId(null);
     } catch {
       setHasRenameError(true);
     } finally {
-      isRenamingRef.current = false;
       setIsSavingRename(false);
     }
   }
 
-  function requestDelete(recording: RecordingSummary): void {
-    setDeleteError(null);
-    setPendingDelete(recording);
-  }
-
-  async function confirmDelete(): Promise<void> {
-    if (!pendingDelete || deletingRef.current) return;
-
-    deletingRef.current = true;
-    setDeleting(true);
-    setDeleteError(null);
-
-    try {
-      await remove(pendingDelete.id);
-      onDeleted(pendingDelete.id);
-      setPendingDelete(null);
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : t("history.deleteError"));
-    } finally {
-      deletingRef.current = false;
-      setDeleting(false);
-    }
+  async function confirmDelete(recording: RecordingSummary): Promise<void> {
+    await remove(recording.id);
+    onDeleted(recording.id);
+    setPendingDelete(null);
   }
 
   function dropHandlers(projectId: string | null) {
@@ -350,24 +311,11 @@ export function HistorySidebar({
           <span className="history-copy">
             <span className="history-title-line">
               {isRenaming ? (
-                <input
-                  className="rename-input"
-                  disabled={isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id])}
-                  value={draftTitle}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => setDraftTitle(event.target.value)}
-                  onBlur={() => {
-                    if (draftTitle.trim()) void saveRename(recording.id);
-                    else setRenamingId(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      void saveRename(recording.id);
-                    }
-
-                    if (event.key === "Escape") setRenamingId(null);
-                  }}
-                  autoFocus
+                <RecordingRenameField
+                  recording={recording}
+                  pending={isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id])}
+                  onSave={(title) => saveRename(recording.id, title)}
+                  onCancel={() => setRenamingId(null)}
                 />
               ) : (
                 <strong title={recording.title}>{recording.title}</strong>
@@ -415,7 +363,7 @@ export function HistorySidebar({
                 {
                   label: t("actions.delete"),
                   icon: <Trash2 size={14} />,
-                  onSelect: () => requestDelete(recording),
+                  onSelect: () => setPendingDelete(recording),
                   danger: true,
                 },
               ]}
@@ -672,46 +620,13 @@ export function HistorySidebar({
           onClose={() => setProjectAction(null)}
         />
       )}
-      <dialog
-        ref={deleteDialogRef}
-        className="recording-delete-dialog"
-        aria-labelledby="recording-delete-title"
-        aria-describedby="recording-delete-description"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!deletingRef.current) setPendingDelete(null);
-          }
-        }}
-        onCancel={(event) => {
-          event.preventDefault();
-          if (!deletingRef.current) setPendingDelete(null);
-        }}
-      >
-        <h2 id="recording-delete-title">{t("history.deleteTitle")}</h2>
-        <p className="recording-delete-name">{pendingDelete?.title}</p>
-        <p id="recording-delete-description">{t("history.deleteDescription")}</p>
-        {deleteError && (
-          <p className="settings-inline-error" role="alert">
-            {deleteError}
-          </p>
-        )}
-        <footer>
-          <Button
-            data-cancel-delete
-            variant="secondary"
-            disabled={deleting}
-            onClick={() => setPendingDelete(null)}
-          >
-            {t("actions.cancel")}
-          </Button>
-          <Button variant="danger" disabled={deleting} onClick={() => void confirmDelete()}>
-            <Trash2 aria-hidden="true" size={15} />
-            {deleting ? t("history.deleting") : t("actions.delete")}
-          </Button>
-        </footer>
-      </dialog>
+      {pendingDelete && (
+        <RecordingDeleteDialog
+          recording={pendingDelete}
+          onConfirm={confirmDelete}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </aside>
   );
 }

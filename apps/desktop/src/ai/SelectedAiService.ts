@@ -1,5 +1,6 @@
 import {
   aiProviders,
+  normalizeClickDescription,
   type AiModelSelection,
   type AiProvider,
   type AvailableAiModels,
@@ -9,7 +10,6 @@ import type { AiCredentialStore } from "../storage/AiCredentialStore";
 import { listProviderModels } from "./ProviderModels";
 import type { OllamaClickActionAnalyzer } from "./OllamaClickActionAnalyzer";
 import {
-  normalizeClickDescription,
   prepareClickAction,
   type ClickActionAnalysisInput,
   type ClickActionAnalyzer,

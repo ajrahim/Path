@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef } from "react";
 import type { ClickEvent, RecordingStatus, TranscriptSegment } from "@path/shared";
-import { mergeTimeline } from "@path/timeline";
+import { clickActivityKey, mergeTimeline, transcriptActivityKey } from "@path/timeline";
 import { getDesktopApi } from "@/lib/Desktop";
 
 interface ActivityScope {
@@ -79,13 +79,11 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
 
     case "loaded": {
       const firstEntry = mergeTimeline(action.transcript, action.clicks)[0];
-      let selectedActivityKey: string | null = null;
-
-      if (firstEntry?.type === "click") selectedActivityKey = `click-${firstEntry.click.id}`;
-
-      if (firstEntry?.type === "transcript") {
-        selectedActivityKey = `transcript-${firstEntry.segment.id}`;
-      }
+      const selectedActivityKey = firstEntry
+        ? firstEntry.type === "click"
+          ? clickActivityKey(firstEntry.click.id)
+          : transcriptActivityKey(firstEntry.segment.id)
+        : null;
 
       return {
         ...state,
@@ -145,7 +143,7 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
         ...state,
         transcript: state.transcript.filter((segment) => segment.id !== action.id),
         selectedActivityKey:
-          state.selectedActivityKey === `transcript-${action.id}`
+          state.selectedActivityKey === transcriptActivityKey(action.id)
             ? null
             : state.selectedActivityKey,
       };
@@ -155,7 +153,9 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
         ...state,
         clicks: state.clicks.filter((click) => click.id !== action.id),
         selectedActivityKey:
-          state.selectedActivityKey === `click-${action.id}` ? null : state.selectedActivityKey,
+          state.selectedActivityKey === clickActivityKey(action.id)
+            ? null
+            : state.selectedActivityKey,
       };
 
     case "click-updated":

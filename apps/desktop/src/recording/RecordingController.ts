@@ -12,6 +12,7 @@ import type { RecordingRepository } from "@path/database";
 import {
   IPC_CHANNELS,
   MINIMUM_RECORDING_DURATION_MS,
+  needsClickActionAnalysis,
   type CaptureSource,
   type CaptureWorkerStart,
   type ClickAnalysisResult,
@@ -24,10 +25,7 @@ import messages from "@path/shared/messages/en.json";
 import type { MediaProcessor } from "../media/FfmpegMediaProcessor";
 import type { ClickCaptureCoordinator } from "./ClickCaptureCoordinator";
 import type { TranscriptProvider } from "@path/transcription";
-import {
-  needsClickActionAnalysis,
-  type ClickActionAnalyzer,
-} from "../ai/OllamaClickActionAnalyzer";
+import type { ClickActionAnalyzer } from "../ai/OllamaClickActionAnalyzer";
 import { AiRateLimitError } from "../ai/SelectedAiService";
 
 interface ActiveRecording {
@@ -320,8 +318,11 @@ export class RecordingController {
         this.active.finalVideoPath,
       );
 
-      await this.processTranscript(this.active);
-      await this.processClickActions(this.active);
+      await this.transcribeRecording(this.active.id, this.active.rawVideoPath, {
+        includeMicrophone: this.active.input.includeMicrophone,
+        durationMs: Math.round(this.clock?.elapsedMs() ?? 0),
+      });
+      await this.analyzeClicks(this.active.id);
       await this.recordings.markReady(
         this.active.id,
         new Date().toISOString(),
@@ -398,7 +399,7 @@ export class RecordingController {
         finalVideoPath,
       );
 
-      await this.retryTranscript(session.id, rawVideoPath, durationMs);
+      await this.transcribeRecording(session.id, rawVideoPath, { durationMs });
       await this.analyzeClicks(session.id);
       await this.recordings.markReady(
         session.id,
@@ -438,11 +439,19 @@ export class RecordingController {
     }
   }
 
-  private async retryTranscript(
+  private async transcribeRecording(
     recordingId: string,
     rawVideoPath: string,
-    durationMs: number,
+    options: { includeMicrophone?: boolean; durationMs: number },
   ): Promise<void> {
+    if (options.includeMicrophone === false) {
+      await this.recordings.replaceTranscript(recordingId, []);
+      await this.recordings.markTranscriptReady(recordingId);
+      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
+
+      return;
+    }
+
     const session = await this.recordings.get(recordingId);
 
     // A completed transcript survives a later video failure; only missing work reruns.
@@ -472,7 +481,7 @@ export class RecordingController {
         recordingId,
         path: audioPath,
         mimeType: "audio/wav",
-        durationMs,
+        durationMs: options.durationMs,
       });
 
       await this.recordings.replaceTranscript(recordingId, transcript.segments);
@@ -485,56 +494,6 @@ export class RecordingController {
       await this.recordings.markTranscriptFailed(recordingId);
       this.state = transitionRecordingState(this.state, "TRANSCRIPTION_FAILED");
     }
-  }
-
-  private async processTranscript(active: ActiveRecording): Promise<void> {
-    if (!active.input.includeMicrophone) {
-      await this.recordings.replaceTranscript(active.id, []);
-      await this.recordings.markTranscriptReady(active.id);
-      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
-
-      return;
-    }
-
-    if (!this.transcriptProvider) {
-      await this.recordings.markTranscriptFailed(active.id);
-      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
-
-      return;
-    }
-
-    this.state = transitionRecordingState(this.state, "VIDEO_PROCESSED");
-    this.emitState();
-    const audioPath = this.assets.audioPath(active.id);
-
-    await this.recordings.markTranscriptProcessing(active.id, audioPath);
-
-    try {
-      await this.mediaProcessor.extractAudio(active.rawVideoPath, audioPath);
-
-      const transcript = await this.transcriptProvider.transcribe({
-        recordingId: active.id,
-        path: audioPath,
-        mimeType: "audio/wav",
-        durationMs: Math.round(this.clock?.elapsedMs() ?? 0),
-      });
-
-      await this.recordings.replaceTranscript(active.id, transcript.segments);
-      await this.recordings.markTranscriptReady(active.id);
-      this.state = transitionRecordingState(this.state, "TRANSCRIBED");
-      this.state = transitionRecordingState(this.state, "EVENTS_INDEXED");
-    } catch (error) {
-      // A transcription failure is recorded separately so the captured video remains usable.
-      console.error("Local transcription failed", error);
-      await this.recordings.markTranscriptFailed(active.id);
-      this.state = transitionRecordingState(this.state, "TRANSCRIPTION_FAILED");
-    }
-  }
-
-  private async processClickActions(active: ActiveRecording): Promise<void> {
-    if (!this.clickActionAnalyzer) return;
-
-    await this.analyzeClicks(active.id);
   }
 
   analyzeClicks(recordingId: string): Promise<ClickAnalysisResult> {

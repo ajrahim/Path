@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClickEvent, TranscriptSegment } from "@path/shared";
-import { mergeTimeline } from "../src";
+import { activityKey, mergeTimeline } from "../src";
 
 function click(id: string, timestampMs: number): ClickEvent {
   return {
@@ -83,6 +83,12 @@ describe("mergeTimeline", () => {
       "click:5200",
       "transcript:7000",
       "click:8730",
+    ]);
+    expect(entries.map(activityKey)).toEqual([
+      "transcript-s1",
+      "click-click-1",
+      "transcript-s2",
+      "click-click-2",
     ]);
   });
 });
