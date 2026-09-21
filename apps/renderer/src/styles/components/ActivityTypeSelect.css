@@ -1,0 +1,105 @@
+.activity-type-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition:
+    border-color 120ms,
+    background 120ms;
+}
+.activity-type-trigger > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-type-trigger svg,
+.activity-type-menu svg {
+  flex-shrink: 0;
+}
+.activity-filter-icon,
+.activity-filter-check {
+  color: var(--accent);
+}
+.activity-filter-chevron {
+  color: var(--muted-ink);
+  transition: transform 120ms;
+}
+.activity-type-trigger[aria-expanded="true"] .activity-filter-chevron {
+  transform: rotate(180deg);
+}
+.activity-type-trigger:hover,
+.activity-type-trigger[aria-expanded="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface-raised));
+}
+.activity-type-trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.activity-type-menu {
+  position: fixed;
+  z-index: 150;
+  width: 184px;
+  max-height: min(440px, 60dvh);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 12px 28px rgb(0 0 0 / 14%),
+    0 2px 6px rgb(0 0 0 / 6%);
+}
+.activity-type-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+.activity-type-menu button > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.activity-type-menu button > svg:first-child {
+  color: var(--muted-ink);
+}
+.activity-type-menu button[aria-checked="true"] {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
+  font-weight: 600;
+}
+.activity-type-menu button:hover,
+.activity-type-menu button:focus-visible {
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
+}
+.activity-type-menu button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+html[data-theme="dark"] .activity-type-menu button[aria-checked="true"] {
+  background: var(--accent-soft);
+}

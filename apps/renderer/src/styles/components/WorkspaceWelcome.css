@@ -1,0 +1,180 @@
+.recording-workspace.recording-workspace-empty {
+  display: block;
+  overflow: auto;
+}
+
+.workspace-welcome {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 40px;
+}
+
+.workspace-welcome-content {
+  width: min(100%, 760px);
+}
+
+.workspace-welcome-intro {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+  margin-bottom: 52px;
+}
+
+.workspace-welcome-visual {
+  position: relative;
+  flex: 0 0 132px;
+  height: 140px;
+}
+
+.workspace-welcome-visual > span {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 86px;
+  height: 100px;
+  border-radius: 14px;
+  box-shadow: 0 5px 18px rgb(18 35 58 / 7%);
+}
+
+.welcome-document {
+  top: 3px;
+  left: 6px;
+  transform: rotate(-9deg);
+  background: var(--surface-hover);
+  color: var(--muted-ink);
+}
+
+.welcome-video {
+  right: 4px;
+  bottom: 6px;
+  transform: rotate(7deg);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.workspace-welcome-copy {
+  max-width: 420px;
+}
+
+.workspace-welcome h1 {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: clamp(24px, 2.3vw, 30px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.7px;
+}
+
+.workspace-welcome-copy p {
+  margin: 0 0 22px;
+  color: var(--muted-ink);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.workspace-welcome-hint {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-welcome-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workspace-welcome-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 22px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--ink);
+  text-align: left;
+}
+
+.workspace-welcome-option:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.workspace-welcome-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.workspace-welcome-option:disabled {
+  opacity: 0.5;
+}
+
+.welcome-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 9px;
+  color: var(--accent);
+}
+
+.welcome-option-arrow {
+  color: var(--muted-ink);
+}
+
+.workspace-welcome-option strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workspace-welcome-option > span:last-child {
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.workspace-welcome-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 16px 0 0;
+}
+
+@media (max-width: 1100px) {
+  .workspace-welcome {
+    padding: 40px 24px;
+  }
+  .workspace-welcome-intro {
+    gap: 24px;
+  }
+  .workspace-welcome-visual {
+    flex-basis: 108px;
+  }
+  .workspace-welcome-option {
+    padding: 18px 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .workspace-welcome {
+    padding: 36px 20px;
+  }
+  .workspace-welcome-intro {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .workspace-welcome-visual {
+    width: 132px;
+    flex-basis: 140px;
+  }
+  .workspace-welcome-options {
+    grid-template-columns: 1fr;
+  }
+}

@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Folder,
   FolderInput,
-  Video,
   LoaderCircle,
   MoreHorizontal,
   MonitorUp,
@@ -16,6 +15,8 @@ import {
   Search,
   Settings,
   Trash2,
+  Video,
+  X,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import type { RecordingSummary } from "@path/shared";
@@ -129,6 +130,7 @@ export function HistorySidebar({
 
   const { snapshot, refresh, rename, remove } = useRecordingHistory();
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase(locale));
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [sortOpen, setSortOpen] = useState(false);
@@ -140,6 +142,7 @@ export function HistorySidebar({
   const isRenamingRef = useRef(false);
   const projectLibrary = useRecordingProjects();
   const [projectAction, setProjectAction] = useState<ProjectDialogAction | null>(null);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -428,36 +431,44 @@ export function HistorySidebar({
   return (
     <aside className="history-panel">
       <div className="history-header">
-        <span className="section-label">{t("history.title")}</span>
-        <HistoryMenu
-          label={t("history.newRecording")}
-          className="history-new-recording"
-          items={[
-            { label: t("projects.recording"), icon: <Video size={15} />, onSelect: onNewRecording },
-            {
-              label: t("projects.project"),
-              icon: <Folder size={15} />,
-              onSelect: () => setProjectAction({ kind: "create" }),
-              disabled: projectLibrary.saving || projectLibrary.status !== "ready",
-            },
-          ]}
-        >
-          <Plus aria-hidden="true" size={14} />
+        <button type="button" className="history-new-recording" onClick={onNewRecording}>
+          <Video aria-hidden="true" size={15} />
           {t("history.newRecording")}
-          <ChevronDown aria-hidden="true" size={12} />
-        </HistoryMenu>
+        </button>
       </div>
 
       <div className="history-tools">
-        <label className="search-control">
+        <div className="search-control">
           <Search aria-hidden="true" size={14} />
-          <span className="sr-only">{t("history.search")}</span>
           <input
+            ref={searchInputRef}
+            aria-label={t("history.search")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
             placeholder={t("history.search")}
           />
-        </label>
+          {query && (
+            <button
+              type="button"
+              className="history-search-clear"
+              aria-label={t("history.clearSearch")}
+              title={t("history.clearSearch")}
+              onClick={() => {
+                setQuery("");
+                searchInputRef.current?.focus();
+              }}
+            >
+              <X size={13} aria-hidden="true" />
+            </button>
+          )}
+        </div>
         <div className="sort-control">
           <button
             type="button"
@@ -519,104 +530,122 @@ export function HistorySidebar({
           </p>
         )}
         <section className="history-projects" aria-label={t("projects.title")}>
-          <div className="history-section-label">{t("projects.title")}</div>
-          {projectLibrary.projects.length === 0 && (
+          <div className="history-projects-heading">
+            <button
+              type="button"
+              className="history-projects-disclosure"
+              aria-expanded={Boolean(deferredQuery) || projectsExpanded}
+              aria-controls="history-project-list"
+              onClick={() => setProjectsExpanded((expanded) => !expanded)}
+            >
+              {t("projects.title")}
+              {projectsExpanded || deferredQuery ? (
+                <ChevronDown size={12} aria-hidden="true" />
+              ) : (
+                <ChevronRight size={12} aria-hidden="true" />
+              )}
+            </button>
             <button
               type="button"
               className="history-create-project"
+              aria-label={t("projects.createAction")}
+              title={t("projects.createAction")}
               disabled={projectLibrary.saving || projectLibrary.status !== "ready"}
-              onClick={() => setProjectAction({ kind: "create" })}
+              onClick={() => {
+                setProjectsExpanded(true);
+                setProjectAction({ kind: "create" });
+              }}
             >
-              <Plus size={14} aria-hidden="true" />
-              {t("projects.createAction")}
+              <Plus size={15} aria-hidden="true" />
             </button>
-          )}
-          {projectLibrary.projects.map((project) => {
-            const matchesName = project.name.toLocaleLowerCase(locale).includes(deferredQuery);
-            const members = (
-              deferredQuery && matchesName
-                ? sortRecordings(snapshot.recordings, sortMode)
-                : visibleRecordings
-            ).filter((recording) => project.recordingIds.includes(recording.id));
+          </div>
+          <div id="history-project-list" hidden={!projectsExpanded && !deferredQuery}>
+            {projectLibrary.projects.map((project) => {
+              const matchesName = project.name.toLocaleLowerCase(locale).includes(deferredQuery);
+              const members = (
+                deferredQuery && matchesName
+                  ? sortRecordings(snapshot.recordings, sortMode)
+                  : visibleRecordings
+              ).filter((recording) => project.recordingIds.includes(recording.id));
 
-            if (deferredQuery && !matchesName && members.length === 0) return null;
-            const expanded = Boolean(deferredQuery) || !collapsedProjects.has(project.id);
+              if (deferredQuery && !matchesName && members.length === 0) return null;
+              const expanded = Boolean(deferredQuery) || !collapsedProjects.has(project.id);
 
-            return (
-              <section
-                key={project.id}
-                className={cn(
-                  "history-project",
-                  dropTarget === project.id && "project-drop-target",
-                )}
-                aria-label={project.name}
-                {...dropHandlers(project.id)}
-              >
-                <div className="history-project-heading">
-                  <button
-                    type="button"
-                    className="history-project-toggle"
-                    aria-expanded={expanded}
-                    aria-label={project.name}
-                    aria-controls={`project-${project.id}`}
-                    onClick={() =>
-                      setCollapsedProjects((current) => {
-                        const next = new Set(current);
+              return (
+                <section
+                  key={project.id}
+                  className={cn(
+                    "history-project",
+                    dropTarget === project.id && "project-drop-target",
+                  )}
+                  aria-label={project.name}
+                  {...dropHandlers(project.id)}
+                >
+                  <div className="history-project-heading">
+                    <button
+                      type="button"
+                      className="history-project-toggle"
+                      aria-expanded={expanded}
+                      aria-label={project.name}
+                      aria-controls={`project-${project.id}`}
+                      onClick={() =>
+                        setCollapsedProjects((current) => {
+                          const next = new Set(current);
 
-                        if (next.has(project.id)) next.delete(project.id);
-                        else next.add(project.id);
+                          if (next.has(project.id)) next.delete(project.id);
+                          else next.add(project.id);
 
-                        return next;
-                      })
-                    }
-                  >
-                    {expanded ? (
-                      <ChevronDown size={12} aria-hidden="true" />
-                    ) : (
-                      <ChevronRight size={12} aria-hidden="true" />
-                    )}
-                    <Folder size={16} aria-hidden="true" />
-                    <span title={project.name}>{project.name}</span>
-                    <small>{members.length}</small>
-                  </button>
-                  <HistoryMenu
-                    label={t("projects.projectActions", { name: project.name })}
-                    className="history-row-menu"
-                    disabled={projectLibrary.saving}
-                    items={[
-                      {
-                        label: t("actions.rename"),
-                        icon: <Pencil size={14} />,
-                        onSelect: () => setProjectAction({ kind: "rename", project }),
-                      },
-                      {
-                        label: t("projects.removeTitle"),
-                        icon: <Trash2 size={14} />,
-                        onSelect: () => setProjectAction({ kind: "remove", project }),
-                      },
-                    ]}
-                  >
-                    <MoreHorizontal size={15} aria-hidden="true" />
-                  </HistoryMenu>
-                </div>
-                {expanded && (
-                  <div id={`project-${project.id}`} className="history-project-recordings">
-                    {members.map((recording) => renderRecording(recording, project.id))}
-                    {members.length === 0 && (
-                      <p className="project-drop-hint">{t("projects.dropHere")}</p>
-                    )}
+                          return next;
+                        })
+                      }
+                    >
+                      <Folder size={16} aria-hidden="true" />
+                      <span title={project.name}>{project.name}</span>
+                      <small>({members.length})</small>
+                    </button>
+                    <HistoryMenu
+                      label={t("projects.projectActions", { name: project.name })}
+                      className="history-row-menu"
+                      disabled={projectLibrary.saving}
+                      items={[
+                        {
+                          label: t("actions.rename"),
+                          icon: <Pencil size={14} />,
+                          onSelect: () => setProjectAction({ kind: "rename", project }),
+                        },
+                        {
+                          label: t("projects.removeTitle"),
+                          icon: <Trash2 size={14} />,
+                          onSelect: () => setProjectAction({ kind: "remove", project }),
+                        },
+                      ]}
+                    >
+                      <MoreHorizontal size={15} aria-hidden="true" />
+                    </HistoryMenu>
                   </div>
-                )}
-              </section>
-            );
-          })}
+                  {expanded && (
+                    <div id={`project-${project.id}`} className="history-project-recordings">
+                      {members.map((recording) => renderRecording(recording, project.id))}
+                      {members.length === 0 && (
+                        <p className="project-drop-hint">{t("projects.dropHere")}</p>
+                      )}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
         </section>
         <section className="history-all" aria-label={t("projects.all")}>
           <div className="history-section-label">{t("projects.all")}</div>
           {snapshot.status !== "error" && visibleRecordings.length === 0 && (
             <div className="history-empty">
-              <MonitorUp aria-hidden="true" size={20} />
-              <span>{t("history.empty")}</span>
+              {deferredQuery ? (
+                <Search aria-hidden="true" size={20} />
+              ) : (
+                <MonitorUp aria-hidden="true" size={20} />
+              )}
+              <span>{t(deferredQuery ? "history.noMatches" : "history.empty")}</span>
             </div>
           )}
           {visibleRecordings.map((recording) => renderRecording(recording, "all"))}

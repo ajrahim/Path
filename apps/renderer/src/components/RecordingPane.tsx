@@ -21,6 +21,7 @@ import { formatClickTimestamp, formatPlayerTime } from "@/lib/Format";
 import { getDesktopApi } from "@/lib/Desktop";
 import { dispatchGuideImage, screenshotUrlToDataUrl } from "@/lib/GuideImageBus";
 import { Button } from "./Button";
+import { ActivityTypeSelect } from "./ActivityTypeSelect";
 import { ActivityActionMenu } from "./ActivityActionMenu";
 import { ScreenshotAction } from "./ScreenshotAction";
 import { ScreenshotImage } from "./ScreenshotImage";
@@ -500,28 +501,11 @@ export function RecordingPane({
             </span>
           </div>
           <div className="activity-header-actions">
-            <select
-              className="activity-type-select"
-              aria-label={t("recording.filterActivity")}
+            <ActivityTypeSelect
               value={timelineFilter}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                if (value === "all" || value === "clicks" || value === "speech") {
-                  setTimelineFilter(value);
-                }
-              }}
-            >
-              <option value="all">
-                {t("recording.filterAll")} ({allTimeline.length})
-              </option>
-              <option value="clicks">
-                {t("recording.filterClicks")} ({clicks.length})
-              </option>
-              <option value="speech">
-                {t("recording.filterSpeech")} ({transcript.length})
-              </option>
-            </select>
+              counts={{ all: allTimeline.length, clicks: clicks.length, speech: transcript.length }}
+              onChange={setTimelineFilter}
+            />
             {canRetryAnalysis && (
               <button
                 type="button"

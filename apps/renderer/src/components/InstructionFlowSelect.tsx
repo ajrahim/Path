@@ -1,5 +1,14 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import { BookOpen, Check, ChevronDown, FileCode2, FileText, Pencil, Plus } from "lucide-react";
+import {
+  BookOpen,
+  Check,
+  ChevronDown,
+  FileCode2,
+  FileText,
+  MessageSquareText,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BUILT_IN_FLOWS, type InstructionFlow } from "../lib/InstructionFlows";
 
@@ -29,7 +38,9 @@ export function InstructionFlowSelect({
       ? BookOpen
       : selectedFlow.id === "spec-document"
         ? FileCode2
-        : FileText;
+        : selectedFlow.id === "provide-feedback"
+          ? MessageSquareText
+          : FileText;
 
   useEffect(() => {
     if (!open) return;
@@ -60,14 +71,22 @@ export function InstructionFlowSelect({
 
   function renderOption(flow: InstructionFlow) {
     const FlowIcon =
-      flow.id === "help-guide" ? BookOpen : flow.id === "spec-document" ? FileCode2 : FileText;
+      flow.id === "help-guide"
+        ? BookOpen
+        : flow.id === "spec-document"
+          ? FileCode2
+          : flow.id === "provide-feedback"
+            ? MessageSquareText
+            : FileText;
 
     const label =
       flow.id === "help-guide"
         ? t("helpGuide")
         : flow.id === "spec-document"
           ? t("specDocument")
-          : flow.name;
+          : flow.id === "provide-feedback"
+            ? t("provideFeedback")
+            : flow.name;
 
     return (
       <button

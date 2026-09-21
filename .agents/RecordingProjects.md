@@ -1,6 +1,6 @@
 # Recording Projects
 
-The sidebar uses compact recording rows and a New menu with Recording and Project choices. The Projects section comes first, with a Create Project shortcut when empty. All follows and always includes every recording, including Project members. Projects are one level of collapsible folders. Drag a recording into a Project or use its Move to Project menu; choose Ungrouped in that menu to remove membership. Search finds recording titles across collapsed folders and shows a Project's contents when its name matches. Date, duration, and processing state remain available through recording tooltips and accessible labels.
+The sidebar uses compact recording rows and a direct New Recording button. The collapsible Projects section comes first, with an always-visible plus button to create a Project. All follows and always includes every recording, including Project members. Projects are one level of collapsible folders. Drag a recording into a Project or use its Move to Project menu; choose Ungrouped in that menu to remove membership. Search finds recording titles across collapsed folders and shows a Project's contents when its name matches. Date, duration, and processing state remain available through recording tooltips and accessible labels.
 
 Projects can be renamed and removed. Removing a Project deletes membership only, keeping its recordings in All. Recording deletion cascades its membership; no project operation edits media, transcripts, or documents.
 

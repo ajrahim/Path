@@ -71,7 +71,7 @@ interface InstructionFlows {
   loaded: boolean;
   error: string | null;
   editor: FlowEditor | null;
-  selectFlow(id: string): void;
+  selectFlow(id: string): boolean;
   editSelectedFlow(): void;
   closeEditor(): void;
   renameDraft(value: string): void;
@@ -131,8 +131,8 @@ export function useInstructionFlows(): InstructionFlows {
     dispatch({ type: "persisted", flows: next, closeEditor });
   }
 
-  function selectFlow(id: string): void {
-    if (!state.loaded) return;
+  function selectFlow(id: string): boolean {
+    if (!state.loaded) return false;
 
     if (id === "create") {
       dispatch({
@@ -140,18 +140,22 @@ export function useInstructionFlows(): InstructionFlows {
         editor: { mode: "create", editingId: null, name: "", instructions: "", error: null },
       });
 
-      return;
+      return true;
     }
 
-    if (![...BUILT_IN_FLOWS, ...flows.customFlows].some((flow) => flow.id === id)) return;
+    if (![...BUILT_IN_FLOWS, ...flows.customFlows].some((flow) => flow.id === id)) return false;
 
     try {
       persistFlows({ ...flows, selectedId: id }, false);
+
+      return true;
     } catch (error) {
       dispatch({
         type: "failed",
         error: error instanceof Error ? error.message : t("settings.saveError"),
       });
+
+      return false;
     }
   }
 

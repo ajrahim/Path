@@ -3,7 +3,11 @@ import { BUILT_IN_FLOWS, loadInstructionFlows } from "../src/lib/InstructionFlow
 
 describe("instruction flows", () => {
   it("provides help and spec presets with distinct output requirements", () => {
-    expect(BUILT_IN_FLOWS.map((flow) => flow.id)).toEqual(["help-guide", "spec-document"]);
+    expect(BUILT_IN_FLOWS.map((flow) => flow.id)).toEqual([
+      "help-guide",
+      "spec-document",
+      "provide-feedback",
+    ]);
     expect(BUILT_IN_FLOWS[0].instructions).toContain("numbered steps");
     expect(BUILT_IN_FLOWS[1].instructions).toContain("Given/When/Then");
     expect(BUILT_IN_FLOWS[1].instructions).toContain("unknown or open questions");
@@ -26,6 +30,17 @@ describe("instruction flows", () => {
       loadInstructionFlows(JSON.stringify({ selectedId: "spec-document", customFlows: [] }))
         .selectedId,
     ).toBe("spec-document");
+  });
+
+  it("restores feedback with evidence-grounded review instructions", () => {
+    const feedback = BUILT_IN_FLOWS.find((flow) => flow.id === "provide-feedback")!;
+
+    expect(feedback.name).toBe("Provide Feedback");
+    expect(feedback.instructions).toContain("reproduction steps that were actually shown");
+    expect(feedback.instructions).toContain("Separate observed facts");
+    expect(
+      loadInstructionFlows(JSON.stringify({ selectedId: feedback.id, customFlows: [] })).selectedId,
+    ).toBe(feedback.id);
   });
 
   it("restores named custom flows and the selection", () => {

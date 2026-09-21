@@ -43,7 +43,7 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  margin: 12px;
+  margin: 12px 12px 12px 4px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;

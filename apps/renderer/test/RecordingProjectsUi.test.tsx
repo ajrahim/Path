@@ -132,6 +132,11 @@ describe("Recording Projects", () => {
     const all = view.getByRole("region", { name: "All" });
 
     expect(within(all).getByRole("button", { name: /Workspace walkthrough/ })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Projects" }));
+    expect(within(folder).queryByRole("button", { name: /Workspace walkthrough/ })).toBeNull();
+    expect(within(all).getByRole("button", { name: /Workspace walkthrough/ })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "Projects" }));
+    expect(view.getByRole("button", { name: "Create Project" })).toBeTruthy();
     expect(view.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual([
       "Projects",
       "Onboarding",
@@ -163,8 +168,7 @@ describe("Recording Projects", () => {
   it("keeps grouping unchanged after a failed move and provides a keyboard-accessible move dialog", async () => {
     const { view, change } = await setup();
 
-    fireEvent.click(view.getByRole("button", { name: "New" }));
-    fireEvent.click(view.getByRole("menuitem", { name: "Project" }));
+    fireEvent.click(view.getByRole("button", { name: "Create Project" }));
     fireEvent.change(view.getByLabelText("Project name"), { target: { value: "Examples" } });
     await act(async () => {
       fireEvent.click(

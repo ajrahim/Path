@@ -688,6 +688,10 @@
   font-size: 14px;
 }
 
+.history-tools .search-control input {
+  font-size: 13px;
+}
+
 .search-control input::placeholder {
   color: var(--faint-ink);
 }
@@ -845,12 +849,12 @@
   justify-content: space-between;
   min-height: 52px;
   height: 52px;
-  padding: 0 14px;
+  padding: 0 8px;
   border-bottom: 0;
 }
 
 .history-panel .history-tools {
-  padding-top: 10px;
+  padding: 4px 12px 8px;
 }
 
 .history-panel .history-footer {
@@ -1004,7 +1008,7 @@
 }
 
 .history-version {
-  color: var(--muted-ink);
+  color: color-mix(in srgb, var(--muted-ink) 70%, var(--canvas));
   font-family: var(--font-mono), monospace;
   font-size: 11px;
   font-weight: 500;
@@ -1118,23 +1122,69 @@
   color: var(--ink);
 }
 .history-section-label {
-  padding: 12px 10px 5px;
+  padding: 10px 10px 5px;
   color: var(--muted-ink);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
 }
-.history-create-project {
+.history-header .history-new-recording {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  min-height: 32px;
-  margin: 0 4px;
-  padding: 5px 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+.history-header .history-new-recording:hover {
+  background: var(--accent-soft);
+}
+.history-projects-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px 4px 4px 0;
+}
+.history-projects-disclosure {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 5px;
+  padding: 6px 10px;
   border: 0;
   border-radius: 5px;
   background: transparent;
   color: var(--muted-ink);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+.history-projects-disclosure:hover {
+  color: var(--ink);
+}
+.history-projects-disclosure:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.history-create-project {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-ink);
 }
 .history-create-project:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -1143,8 +1193,50 @@
 .history-create-project:disabled {
   opacity: 0.5;
 }
+.history-search-clear {
+  display: grid;
+  flex: 0 0 24px;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -5px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-ink);
+}
+.history-search-clear:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.history-search-clear:focus-visible,
+.history-create-project:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .history-projects-heading > .history-create-project {
+    opacity: 0;
+  }
+  .history-projects-heading:hover > .history-create-project,
+  .history-projects-heading:focus-within > .history-create-project {
+    opacity: 1;
+  }
+  .history-projects-heading:hover > .history-create-project:disabled {
+    opacity: 0.5;
+  }
+  .history-project-heading > .history-row-menu {
+    opacity: 0;
+  }
+  .history-project-heading:hover > .history-row-menu,
+  .history-project-heading:focus-within > .history-row-menu,
+  .history-project-heading > .history-row-menu[aria-expanded="true"] {
+    opacity: 1;
+  }
+}
 .history-all {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .history-project {
   margin-top: 2px;
@@ -1163,13 +1255,13 @@
   align-items: center;
   gap: 7px;
   min-height: 34px;
-  padding: 5px 6px;
+  padding: 5px 10px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink);
   text-align: left;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 .history-project-toggle svg {
@@ -1178,13 +1270,14 @@
 }
 .history-project-toggle > span {
   min-width: 0;
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .history-project-toggle small {
-  color: var(--muted-ink);
+  flex-shrink: 0;
+  margin-left: -2px;
+  color: color-mix(in srgb, var(--muted-ink) 85%, var(--canvas));
   font-size: 11px;
   font-weight: 400;
 }

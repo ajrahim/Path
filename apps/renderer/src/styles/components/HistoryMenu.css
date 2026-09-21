@@ -36,24 +36,6 @@
   opacity: 0.45;
 }
 
-.history-header .history-new-recording {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 30px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 13px;
-  box-shadow: none;
-}
-
-.history-header .history-new-recording:is(:hover, [aria-expanded="true"]) {
-  background: var(--surface-hover);
-}
 .history-new-recording:focus-visible,
 .history-row-menu:focus-visible,
 .history-project-toggle:focus-visible {

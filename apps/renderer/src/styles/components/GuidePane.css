@@ -639,11 +639,35 @@ html[data-theme="dark"] .guide-panel {
 
 .guide-panel .pane-header {
   position: relative;
-  min-height: 54px;
-  flex-wrap: nowrap;
-  gap: 8px;
+  display: block;
+  min-height: 0;
   border-bottom: 0;
   background: var(--surface-raised);
+}
+
+.guide-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+  gap: 12px;
+}
+
+.guide-prompt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.guide-prompt-row .guide-flow-select {
+  position: relative;
+}
+
+.guide-prompt-row .guide-flow-menu {
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
 }
 
 .editor-surface {
@@ -662,8 +686,8 @@ html[data-theme="dark"] .guide-panel {
 
 .markdown-mode-toggle {
   display: flex;
-  flex: 0 0 66px;
-  width: 66px;
+  flex: 0 0 160px;
+  width: 160px;
   height: 32px;
   padding: 2px;
   border: 1px solid var(--border);

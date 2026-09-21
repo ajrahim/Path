@@ -12,7 +12,7 @@ import { createRendererStore } from "../src/state/RendererStore";
 afterEach(cleanup);
 
 describe("HistorySidebar layout and version", () => {
-  it("renders Recordings title and New button in header, and Settings with version in footer", async () => {
+  it("renders a direct New Recording action and Settings with version in footer", async () => {
     const onNewRecording = vi.fn();
     const onOpenSettings = vi.fn();
     const getInfo = vi.fn().mockResolvedValue({
@@ -51,19 +51,19 @@ describe("HistorySidebar layout and version", () => {
 
     await act(async () => {});
 
-    // Header contains "Recordings" label and "+ New" button
+    // The header has one direct recording action, with no dropdown.
     const header = view.container.querySelector(".history-header")!;
 
     expect(header).toBeTruthy();
-    expect(header.querySelector(".section-label")?.textContent).toBe("Recordings");
+    expect(header.querySelector(".section-label")).toBeNull();
 
     const newButton = header.querySelector("button.history-new-recording")!;
 
     expect(newButton).toBeTruthy();
-    expect(newButton.textContent).toContain("New");
+    expect(newButton.textContent).toContain("New Recording");
+    expect(newButton.hasAttribute("aria-haspopup")).toBe(false);
 
     fireEvent.click(newButton);
-    fireEvent.click(view.getByRole("menuitem", { name: "Recording" }));
     expect(onNewRecording).toHaveBeenCalledTimes(1);
 
     // Footer contains Settings button on left and version on right

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Check,
   Copy,
   Download,
-  Eye,
-  FilePenLine,
   ImagePlus,
   Pencil,
   RotateCcw,
@@ -115,47 +114,52 @@ export function GuidePane({
     <>
       <aside className="guide-panel">
         <header className="pane-header">
-          <InstructionFlowSelect
-            triggerRef={flowSelectRef}
-            selectedFlow={flows.selectedFlow}
-            customFlows={flows.customFlows}
-            disabled={!flows.loaded || guide.generating}
-            onSelect={flows.selectFlow}
-            onEdit={flows.editSelectedFlow}
-          />
-          {recording && (
-            <div className="markdown-mode-toggle" role="group" aria-label={t("guide.editor")}>
-              <button
-                type="button"
-                title={t("guide.editor")}
-                aria-label={t("guide.editor")}
-                aria-pressed={mode === "edit"}
-                className={mode === "edit" ? "markdown-mode-active" : undefined}
-                onClick={() => setMode("edit")}
+          <div className="guide-title-row">
+            <span className="section-label">{t("guide.documentation")}</span>
+            {recording && (
+              <div className="markdown-mode-toggle" role="group" aria-label={t("guide.editor")}>
+                <button
+                  type="button"
+                  title={t("guide.editor")}
+                  aria-label={t("guide.editor")}
+                  aria-pressed={mode === "edit"}
+                  className={mode === "edit" ? "markdown-mode-active" : undefined}
+                  onClick={() => setMode("edit")}
+                >
+                  {t("guide.editor")}
+                </button>
+                <button
+                  type="button"
+                  title={t("guide.preview")}
+                  aria-label={t("guide.preview")}
+                  aria-pressed={mode === "preview"}
+                  className={mode === "preview" ? "markdown-mode-active" : undefined}
+                  onClick={() => setMode("preview")}
+                >
+                  {t("guide.preview")}
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="guide-prompt-row">
+            <InstructionFlowSelect
+              triggerRef={flowSelectRef}
+              selectedFlow={flows.selectedFlow}
+              customFlows={flows.customFlows}
+              disabled={!flows.loaded || guide.generating}
+              onSelect={flows.selectFlow}
+              onEdit={flows.editSelectedFlow}
+            />
+            <div className="guide-header-actions">
+              <Button
+                size="sm"
+                disabled={!recording || guide.generating || !flows.loaded}
+                onClick={requestGenerate}
               >
-                <FilePenLine aria-hidden="true" size={15} />
-              </button>
-              <button
-                type="button"
-                title={t("guide.preview")}
-                aria-label={t("guide.preview")}
-                aria-pressed={mode === "preview"}
-                className={mode === "preview" ? "markdown-mode-active" : undefined}
-                onClick={() => setMode("preview")}
-              >
-                <Eye aria-hidden="true" size={15} />
-              </button>
+                <Sparkles size={14} />
+                {guide.generating ? t("guide.generating") : t("guide.generate")}
+              </Button>
             </div>
-          )}
-          <div className="guide-header-actions">
-            <Button
-              size="sm"
-              disabled={!recording || guide.generating || !flows.loaded}
-              onClick={requestGenerate}
-            >
-              <Sparkles size={14} />
-              {guide.generating ? t("guide.generating") : t("guide.generate")}
-            </Button>
           </div>
         </header>
         <div
@@ -235,7 +239,11 @@ export function GuidePane({
                     disabled={!guide.markdown}
                     onClick={() => void guide.copyMarkdown()}
                   >
-                    <Copy aria-hidden="true" size={14} />
+                    {guide.copied ? (
+                      <Check aria-hidden="true" size={14} />
+                    ) : (
+                      <Copy aria-hidden="true" size={14} />
+                    )}
                   </Button>
                   <Button
                     size="sm"

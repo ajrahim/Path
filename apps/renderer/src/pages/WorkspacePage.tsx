@@ -12,6 +12,7 @@ import { SourceDialog } from "@/components/SourceDialog";
 import { useRecording } from "@/hooks/useRecording";
 import { getDesktopApi } from "@/lib/Desktop";
 import { LocalModelSelect } from "@/components/LocalModelSelect";
+import { WorkspaceWelcome } from "@/components/WorkspaceWelcome";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function WorkspacePage() {
@@ -47,6 +48,8 @@ export default function WorkspacePage() {
   const activeSelectedId = selectedId ?? recordingState.recordingId;
   const selected =
     snapshot.recordings.find((recording) => recording.id === activeSelectedId) ?? null;
+
+  const showWelcome = !selected && !recordingActive;
 
   let titleStatus = t("navigation.saved");
 
@@ -213,10 +216,12 @@ export default function WorkspacePage() {
           ) : (
             <strong>{t("navigation.workspaceTitle")}</strong>
           )}
-          <span className={titleError ? "workspace-save-error" : undefined}>
-            <Check size={12} />
-            {titleStatus}
-          </span>
+          {selected && (
+            <span className={titleError ? "workspace-save-error" : undefined}>
+              <Check size={12} />
+              {titleStatus}
+            </span>
+          )}
         </div>
         <div className="header-actions">
           <LocalModelSelect disabled={recordingActive} />
@@ -236,32 +241,42 @@ export default function WorkspacePage() {
         />
         <div
           ref={workspaceRef}
-          className="recording-workspace"
-          style={{
-            gridTemplateColumns: `minmax(300px, 1fr) 1px clamp(340px, ${guideWidth}px, calc(100% - 301px))`,
-          }}
+          className={`recording-workspace${showWelcome ? " recording-workspace-empty" : ""}`}
+          style={
+            showWelcome
+              ? undefined
+              : {
+                  gridTemplateColumns: `minmax(300px, 1fr) 1px clamp(340px, ${guideWidth}px, calc(100% - 301px))`,
+                }
+          }
         >
-          <RecordingPane
-            key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
-            recording={selected}
-            onNewRecording={() => setSourceDialogOpen(true)}
-            onOpenSettings={openSettings}
-          />
-          <div
-            className="resize-handle workspace-divider"
-            role="separator"
-            aria-label={t("actions.resizeGuide")}
-            aria-orientation="vertical"
-            tabIndex={0}
-            onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
-            onPointerMove={resize}
-            onKeyDown={resizeWithKeyboard}
-          />
-          <GuidePane
-            key={`guide-${selected?.id ?? "empty"}`}
-            recording={selected}
-            onGuideStateChange={handleGuideStateChange}
-          />
+          {showWelcome ? (
+            <WorkspaceWelcome onNewRecording={() => setSourceDialogOpen(true)} />
+          ) : (
+            <>
+              <RecordingPane
+                key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
+                recording={selected}
+                onNewRecording={() => setSourceDialogOpen(true)}
+                onOpenSettings={openSettings}
+              />
+              <div
+                className="resize-handle workspace-divider"
+                role="separator"
+                aria-label={t("actions.resizeGuide")}
+                aria-orientation="vertical"
+                tabIndex={0}
+                onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+                onPointerMove={resize}
+                onKeyDown={resizeWithKeyboard}
+              />
+              <GuidePane
+                key={`guide-${selected?.id ?? "empty"}`}
+                recording={selected}
+                onGuideStateChange={handleGuideStateChange}
+              />
+            </>
+          )}
         </div>
       </div>
       <SourceDialog

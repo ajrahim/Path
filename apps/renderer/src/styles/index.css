@@ -21,3 +21,7 @@
 
 @import "./components/HistoryMenu.css";
 @import "./components/ProjectDialog.css";
+
+@import "./components/WorkspaceWelcome.css";
+
+@import "./components/ActivityTypeSelect.css";

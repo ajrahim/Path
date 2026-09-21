@@ -158,7 +158,7 @@ describe("RecordingPane UI interactions", () => {
       const onNewRecording = vi.fn();
       const view = renderRecordingPane({ recording: null, onNewRecording });
 
-      expect(screen.getByText("Create your first walkthrough")).toBeTruthy();
+      expect(screen.getByText("Create a walkthrough")).toBeTruthy();
       expect(view.container.querySelector(".video-empty-copy")?.textContent).toBe(
         `${messages.recording.onboardingTitle}${messages.recording.newRecording}`,
       );
@@ -184,16 +184,21 @@ describe("RecordingPane UI interactions", () => {
       expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
     });
 
-    const filter = screen.getByRole("combobox", { name: messages.recording.filterActivity });
+    const filter = screen.getByRole("button", { name: messages.recording.filterActivity });
 
-    expect((filter as HTMLSelectElement).value).toBe("all");
+    expect(filter.textContent).toContain("All (4)");
 
-    fireEvent.change(filter, { target: { value: "clicks" } });
+    function chooseFilter(label: string) {
+      fireEvent.click(filter);
+      fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
+    }
+
+    chooseFilter("Clicks (2)");
 
     expect(view.container.querySelectorAll(".activity-entry-click")).toHaveLength(2);
     expect(view.container.querySelectorAll(".transcript-entry")).toHaveLength(0);
 
-    fireEvent.change(filter, { target: { value: "speech" } });
+    chooseFilter("Speech (2)");
 
     expect(view.container.querySelectorAll(".transcript-entry")).toHaveLength(2);
     expect(view.container.querySelectorAll(".activity-entry-click")).toHaveLength(0);
@@ -202,10 +207,10 @@ describe("RecordingPane UI interactions", () => {
 
     fireEvent.change(search, { target: { value: "Welcome" } });
     expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(1);
-    fireEvent.change(filter, { target: { value: "clicks" } });
+    chooseFilter("Clicks (2)");
     expect(screen.getByText(messages.recording.noFilteredActivity)).toBeTruthy();
     fireEvent.change(search, { target: { value: "" } });
-    fireEvent.change(filter, { target: { value: "all" } });
+    chooseFilter("All (4)");
 
     expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
   });
