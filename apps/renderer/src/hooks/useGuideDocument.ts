@@ -287,7 +287,10 @@ export function useGuideDocument(
     try {
       let written = false;
 
-      if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
+      if (
+        typeof ClipboardItem !== "undefined" &&
+        typeof navigator.clipboard?.write === "function"
+      ) {
         try {
           const html = renderMarkdownToHtml(session.markdown);
           const textBlob = new Blob([session.markdown], { type: "text/plain" });

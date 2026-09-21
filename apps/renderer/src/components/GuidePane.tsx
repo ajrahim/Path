@@ -3,6 +3,7 @@ import {
   Copy,
   Download,
   Eye,
+  FilePenLine,
   ImagePlus,
   Pencil,
   RotateCcw,
@@ -120,18 +121,33 @@ export function GuidePane({
             customFlows={flows.customFlows}
             disabled={!flows.loaded || guide.generating}
             onSelect={flows.selectFlow}
+            onEdit={flows.editSelectedFlow}
           />
+          {recording && (
+            <div className="markdown-mode-toggle" role="group" aria-label={t("guide.editor")}>
+              <button
+                type="button"
+                title={t("guide.editor")}
+                aria-label={t("guide.editor")}
+                aria-pressed={mode === "edit"}
+                className={mode === "edit" ? "markdown-mode-active" : undefined}
+                onClick={() => setMode("edit")}
+              >
+                <FilePenLine aria-hidden="true" size={15} />
+              </button>
+              <button
+                type="button"
+                title={t("guide.preview")}
+                aria-label={t("guide.preview")}
+                aria-pressed={mode === "preview"}
+                className={mode === "preview" ? "markdown-mode-active" : undefined}
+                onClick={() => setMode("preview")}
+              >
+                <Eye aria-hidden="true" size={15} />
+              </button>
+            </div>
+          )}
           <div className="guide-header-actions">
-            <Button
-              size="icon"
-              variant="secondary"
-              title={t("guide.editPrompt")}
-              aria-label={t("guide.editPrompt")}
-              disabled={!flows.loaded || guide.generating}
-              onClick={flows.editSelectedFlow}
-            >
-              <Pencil aria-hidden="true" size={14} />
-            </Button>
             <Button
               size="sm"
               disabled={!recording || guide.generating || !flows.loaded}
@@ -167,27 +183,6 @@ export function GuidePane({
         >
           {recording ? (
             <>
-              <div className="markdown-mode-toggle" role="group" aria-label={t("guide.editor")}>
-                <button
-                  type="button"
-                  aria-pressed={mode === "edit"}
-                  className={mode === "edit" ? "markdown-mode-active" : undefined}
-                  onClick={() => setMode("edit")}
-                >
-                  <Pencil aria-hidden="true" size={13} />
-                  {t("guide.editor")}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={mode === "preview"}
-                  className={mode === "preview" ? "markdown-mode-active" : undefined}
-                  onClick={() => setMode("preview")}
-                >
-                  <Eye aria-hidden="true" size={13} />
-                  {t("guide.preview")}
-                </button>
-                {saveStatus && <span className="markdown-save-status">{saveStatus}</span>}
-              </div>
               {mode === "edit" ? (
                 <textarea
                   ref={markdownInputRef}
@@ -219,10 +214,17 @@ export function GuidePane({
                 />
               )}
               <div className="markdown-editor-footer">
-                <span className="markdown-image-hint">
-                  <ImagePlus aria-hidden="true" size={13} />
-                  {t("guide.imageHint")}
-                </span>
+                <div className="markdown-footer-info">
+                  <span className="markdown-image-hint">
+                    <ImagePlus aria-hidden="true" size={13} />
+                    {t("guide.imageHint")}
+                  </span>
+                  {saveStatus && (
+                    <span className="markdown-save-status" role="status">
+                      {saveStatus}
+                    </span>
+                  )}
+                </div>
                 <div className="markdown-editor-actions">
                   <Button
                     className="markdown-copy-action"

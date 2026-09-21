@@ -116,7 +116,7 @@ describe("recording screenshot lifecycle", () => {
     expect(view.queryByRole("button")).toBeNull();
   });
 
-  it("renders a quick-insert button and dispatches onInsert when provided", async () => {
+  it("keeps insertion in the overflow menu and restores focus on Escape", async () => {
     bridge.screenshotUrl.mockResolvedValue("https://media.test/recording-a/click.webp");
 
     const props = {
@@ -131,11 +131,15 @@ describe("recording screenshot lifecycle", () => {
 
     await waitFor(() => expect(view.getAllByRole("button")).toHaveLength(2));
 
-    const insertButton = view.getAllByRole("button")[0];
+    const trigger = view.getByRole("button", { name: "actions.more" });
 
-    if (!insertButton) throw new Error("Expected insert button");
-
-    fireEvent.click(insertButton);
+    expect(view.queryByRole("menuitem")).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(view.getByRole("menu"), { key: "Escape" });
+    expect(view.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.click(trigger);
+    fireEvent.click(view.getByRole("menuitem", { name: "guide.insertScreenshot" }));
 
     expect(props.onInsert).toHaveBeenCalledWith("https://media.test/recording-a/click.webp");
     expect(props.onOpen).not.toHaveBeenCalled();

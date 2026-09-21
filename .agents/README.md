@@ -13,6 +13,7 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Current capabilities and limitations | [Current state](memory-bank/CurrentState.md)                      |
 | Reasons behind durable choices       | [Decisions](memory-bank/Decisions.md)                             |
 | Recording and document behavior      | [Recording workflow specification](../specs/RecordingWorkflow.md) |
+| Recording library Projects           | [Project grouping behavior](RecordingProjects.md)                 |
 | Feature specification creation       | [Create spec skill](../.github/skills/spec-create/SKILL.md)       |
 | Spec implementation workflow         | [Implement spec skill](../.github/skills/spec-implement/SKILL.md) |
 | Spec review & verification           | [Review spec skill](../.github/skills/spec-review/SKILL.md)       |

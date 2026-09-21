@@ -9,6 +9,7 @@
 @import "./components/HistorySidebar.css";
 @import "./components/RecordingPane.css";
 @import "./components/ScreenshotAction.css";
+@import "./components/ActivityActionMenu.css";
 @import "./components/ScreenshotImage.css";
 @import "./components/GuidePane.css";
 @import "./components/InstructionFlowSelect.css";
@@ -17,3 +18,6 @@
 @import "./pages/RecordingToolbarPage.css";
 @import "./pages/RegionPage.css";
 @import "./pages/SettingsPage.css";
+
+@import "./components/HistoryMenu.css";
+@import "./components/ProjectDialog.css";

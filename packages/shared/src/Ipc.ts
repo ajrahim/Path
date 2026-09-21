@@ -13,6 +13,7 @@ import type {
   RecordingRuntimeState,
   RecordingSession,
   RecordingSummary,
+  RecordingProject,
   RegionSelectionContext,
   StartRecordingInput,
   SetAiProviderKeyResult,
@@ -49,6 +50,9 @@ export const IPC_CHANNELS = {
   guidesExportMarkdown: "guides:export-markdown",
   guidesGetDocument: "guides:get-document",
   guidesSaveDocument: "guides:save-document",
+
+  projectsList: "projects:list",
+  projectsChange: "projects:change",
 
   recordingsList: "recordings:list",
   recordingsGet: "recordings:get",
@@ -125,6 +129,22 @@ export const aiModelSelectionSchema = z.discriminatedUnion("source", [
     modelName: z.string().trim().min(1).max(200),
   }),
 ]);
+
+export const projectChangeInputSchema = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("create"), name: z.string().trim().min(1).max(80) }),
+  z.strictObject({
+    action: z.literal("rename"),
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(80),
+  }),
+  z.strictObject({ action: z.literal("remove"), id: z.string().uuid() }),
+  z.strictObject({
+    action: z.literal("move"),
+    recordingId: z.string().uuid(),
+    projectId: z.string().uuid().nullable(),
+  }),
+]);
+export type ProjectChangeInput = z.infer<typeof projectChangeInputSchema>;
 
 export const recordingIdInputSchema = z.strictObject({ id: z.string().uuid() });
 
@@ -234,6 +254,11 @@ export interface DesktopApi {
     exportMarkdown(input: z.infer<typeof exportMarkdownInputSchema>): Promise<boolean>;
     getDocument(input: RecordingIdInput): Promise<PersistedGuide | null>;
     saveDocument(input: z.infer<typeof saveGuideDocumentInputSchema>): Promise<PersistedGuide>;
+  };
+
+  projects: {
+    list(): Promise<RecordingProject[]>;
+    change(input: ProjectChangeInput): Promise<RecordingProject[]>;
   };
 
   recordings: {

@@ -12,7 +12,6 @@ import {
   RotateCcw,
   Search,
   Settings,
-  Trash2,
   X,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
@@ -22,6 +21,7 @@ import { formatClickTimestamp, formatPlayerTime } from "@/lib/Format";
 import { getDesktopApi } from "@/lib/Desktop";
 import { dispatchGuideImage, screenshotUrlToDataUrl } from "@/lib/GuideImageBus";
 import { Button } from "./Button";
+import { ActivityActionMenu } from "./ActivityActionMenu";
 import { ScreenshotAction } from "./ScreenshotAction";
 import { ScreenshotImage } from "./ScreenshotImage";
 import { cn } from "@/lib/ClassNames";
@@ -174,6 +174,7 @@ export function RecordingPane({
           target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
+          Boolean(target.closest("button")) ||
           Boolean(target.closest("[contenteditable='true']")))
       ) {
         return;
@@ -366,6 +367,20 @@ export function RecordingPane({
 
   return (
     <main className="recording-panel">
+      <header className="recording-capture-header">
+        <span className="section-label">{t("recording.title")}</span>
+        {recording && mediaUrl && (
+          <button
+            type="button"
+            className="hotspot-toggle"
+            aria-pressed={showHotspots}
+            onClick={() => setShowHotspots((value) => !value)}
+          >
+            {t("recording.hotspots")}
+            <span className={showHotspots ? "on" : ""} aria-hidden="true" />
+          </button>
+        )}
+      </header>
       <section className={cn("video-stage", recording && mediaUrl && "video-stage-ready")}>
         {recording && mediaUrl ? (
           <>
@@ -398,10 +413,6 @@ export function RecordingPane({
                     }}
                   />
                 )}
-              <button className="hotspot-toggle" onClick={() => setShowHotspots((value) => !value)}>
-                {t("recording.hotspots")}
-                <span className={showHotspots ? "on" : ""} />
-              </button>
             </div>
             <div className="video-controls">
               <button
@@ -487,26 +498,8 @@ export function RecordingPane({
                 ? t("recording.analyzingClicks")
                 : t("recording.activityCount", { count: timeline.length })}
             </span>
-            {canRetryAnalysis && (
-              <button
-                type="button"
-                className="activity-retry"
-                title={t("recording.retryAnalysis")}
-                aria-label={t("recording.retryAnalysis")}
-                onClick={() => void retryAnalysis()}
-              >
-                <RotateCcw size={13} />
-              </button>
-            )}
           </div>
-          <div className="transcript-search activity-search">
-            <Search size={14} aria-hidden="true" />
-            <input
-              value={timelineQuery}
-              onChange={(event) => setTimelineQuery(event.target.value)}
-              placeholder={t("recording.searchTranscript")}
-              aria-label={t("recording.searchTranscript")}
-            />
+          <div className="activity-header-actions">
             <select
               className="activity-type-select"
               aria-label={t("recording.filterActivity")}
@@ -529,8 +522,28 @@ export function RecordingPane({
                 {t("recording.filterSpeech")} ({transcript.length})
               </option>
             </select>
+            {canRetryAnalysis && (
+              <button
+                type="button"
+                className="activity-retry"
+                title={t("recording.retryAnalysis")}
+                aria-label={t("recording.retryAnalysis")}
+                onClick={() => void retryAnalysis()}
+              >
+                <RotateCcw size={13} />
+              </button>
+            )}
           </div>
         </header>
+        <div className="transcript-search activity-search">
+          <Search size={14} aria-hidden="true" />
+          <input
+            value={timelineQuery}
+            onChange={(event) => setTimelineQuery(event.target.value)}
+            placeholder={t("recording.searchTranscript")}
+            aria-label={t("recording.searchTranscript")}
+          />
+        </div>
         {activityError && (
           <p className="activity-error" role="alert">
             {activityError}
@@ -571,13 +584,12 @@ export function RecordingPane({
                   data-activity-id={`click-${entry.click.id}`}
                   data-timestamp-ms={entry.timestampMs}
                 >
-                  <button
-                    className="activity-entry-main"
-                    aria-pressed={`click-${entry.click.id}` === selectedActivityKey}
-                    onClick={() => selectClick(entry.click)}
-                  >
-                    <span
+                  <div className="activity-entry-main" onClick={() => selectClick(entry.click)}>
+                    <button
+                      type="button"
                       className="activity-time"
+                      aria-pressed={`click-${entry.click.id}` === selectedActivityKey}
+                      aria-label={`${clickLabel(t, entry.click)} ${formatPlayerTime(entry.click.timestampMs / 1_000)}`}
                       title={formatClickTimestamp(
                         entry.click.createdAt,
                         entry.click.timestampMs,
@@ -585,11 +597,15 @@ export function RecordingPane({
                       )}
                     >
                       {formatPlayerTime(entry.click.timestampMs / 1_000)}
-                    </span>
-                    <span className="activity-icon activity-icon-click">
-                      <MousePointer2 size={17} />
-                    </span>
+                    </button>
                     <span className="activity-copy">
+                      <button
+                        type="button"
+                        className="activity-type-badge activity-type-badge-click"
+                        aria-pressed={`click-${entry.click.id}` === selectedActivityKey}
+                      >
+                        {clickLabel(t, entry.click)}
+                      </button>
                       <span
                         className="activity-click-editor"
                         contentEditable
@@ -621,10 +637,9 @@ export function RecordingPane({
                       >
                         {clickActionDescription(t, entry.click) ?? clickLabel(t, entry.click)}
                       </span>
-                      {entry.click.actionDescription && <small>{clickLabel(t, entry.click)}</small>}
                     </span>
-                  </button>
-                  {entry.click.screenshotPath && (
+                  </div>
+                  <div className="activity-actions">
                     <ScreenshotAction
                       click={entry.click}
                       onOpen={(url) => {
@@ -633,6 +648,8 @@ export function RecordingPane({
                         setOpenScreenshot({ click: entry.click, url });
                       }}
                       onInsert={(url) => void insertScreenshotIntoGuide(entry.click, url)}
+                      onRemove={() => void removeClick(entry.click)}
+                      removeDisabled={activityPendingIds.includes(entry.click.id)}
                       onPreview={(url, anchor) => {
                         const width = 260;
                         const height = 174;
@@ -650,17 +667,7 @@ export function RecordingPane({
                       }}
                       onPreviewEnd={() => setHoverScreenshot(null)}
                     />
-                  )}
-                  <button
-                    type="button"
-                    className="activity-row-action activity-remove-action"
-                    title={t("recording.removeClick")}
-                    aria-label={t("recording.removeClick")}
-                    disabled={activityPendingIds.includes(entry.click.id)}
-                    onClick={() => void removeClick(entry.click)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  </div>
                 </li>
               ) : (
                 <li
@@ -687,10 +694,15 @@ export function RecordingPane({
                     >
                       {formatActivityRange(entry.segment)}
                     </button>
-                    <span className="activity-icon activity-icon-transcript">
-                      <Captions size={17} />
-                    </span>
                     <span className="activity-copy">
+                      <button
+                        type="button"
+                        className="activity-type-badge activity-type-badge-transcript"
+                        aria-pressed={`transcript-${entry.segment.id}` === selectedActivityKey}
+                      >
+                        <Captions size={12} aria-hidden="true" />
+                        {t("recording.filterSpeech")}
+                      </button>
                       <span
                         className="activity-dialogue-editor"
                         contentEditable
@@ -712,16 +724,13 @@ export function RecordingPane({
                       </span>
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    className="activity-row-action activity-remove-action"
-                    title={t("recording.removeDialogue")}
-                    aria-label={t("recording.removeDialogue")}
-                    disabled={activityPendingIds.includes(entry.segment.id)}
-                    onClick={() => void removeTranscript(entry.segment)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="activity-actions">
+                    <ActivityActionMenu
+                      onRemove={() => void removeTranscript(entry.segment)}
+                      removeLabel={t("recording.removeDialogue")}
+                      removeDisabled={activityPendingIds.includes(entry.segment.id)}
+                    />
+                  </div>
                 </li>
               ),
             )}

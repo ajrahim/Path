@@ -38,6 +38,10 @@ const desktopApi: DesktopApi = {
     getDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetDocument, input),
     saveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveDocument, input),
   },
+  projects: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.projectsList),
+    change: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectsChange, input),
+  },
   recordings: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recordingsList),
     get: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsGet, input),

@@ -3,6 +3,11 @@ import {
   AlertCircle,
   ArrowUpDown,
   Check,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderInput,
+  Video,
   LoaderCircle,
   MoreHorizontal,
   MonitorUp,
@@ -19,6 +24,9 @@ import { formatDuration, formatRecordingDate } from "@/lib/Format";
 import { cn } from "@/lib/ClassNames";
 import { useAppVersion } from "../hooks/useAppVersion";
 import { useRecordingHistory } from "../hooks/useRecordingHistory";
+import { HistoryMenu } from "./HistoryMenu";
+import { ProjectDialog, type ProjectDialogAction } from "./ProjectDialog";
+import { useRecordingProjects } from "../hooks/useRecordingProjects";
 import { useRecordingThumbnailUrl } from "../hooks/useRecordingThumbnailUrl";
 
 type SortMode = "newest" | "oldest" | "title";
@@ -88,6 +96,7 @@ function HistoryItemThumbnail({
         <img
           src={thumbnailUrl}
           alt=""
+          draggable={false}
           className="history-thumbnail-image"
           onError={() => setImageError(true)}
         />
@@ -124,11 +133,17 @@ export function HistorySidebar({
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [sortOpen, setSortOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameLocation, setRenameLocation] = useState("all");
   const [draftTitle, setDraftTitle] = useState("");
   const [hasRenameError, setHasRenameError] = useState(false);
   const [isSavingRename, setIsSavingRename] = useState(false);
   const isRenamingRef = useRef(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const projectLibrary = useRecordingProjects();
+  const [projectAction, setProjectAction] = useState<ProjectDialogAction | null>(null);
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RecordingSummary | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -153,30 +168,6 @@ export function HistorySidebar({
 
     return () => request.abort();
   }, [refresh]);
-
-  useEffect(() => {
-    if (!openMenuId) return;
-
-    function closeMenu(event: PointerEvent): void {
-      if (event.target instanceof Element && event.target.closest(".history-overflow")) {
-        return;
-      }
-
-      setOpenMenuId(null);
-    }
-
-    function closeMenuOnEscape(event: KeyboardEvent): void {
-      if (event.key === "Escape") setOpenMenuId(null);
-    }
-
-    document.addEventListener("pointerdown", closeMenu);
-    document.addEventListener("keydown", closeMenuOnEscape);
-
-    return () => {
-      document.removeEventListener("pointerdown", closeMenu);
-      document.removeEventListener("keydown", closeMenuOnEscape);
-    };
-  }, [openMenuId]);
 
   useEffect(() => {
     if (!sortOpen) return;
@@ -209,11 +200,11 @@ export function HistorySidebar({
     sortMode,
   );
 
-  function beginRename(recording: RecordingSummary): void {
+  function beginRename(recording: RecordingSummary, location: string): void {
     if (isRenamingRef.current || snapshot.mutationRequestIds[recording.id]) return;
 
-    setOpenMenuId(null);
     setRenamingId(recording.id);
+    setRenameLocation(location);
     setDraftTitle(recording.title);
     setHasRenameError(false);
   }
@@ -238,7 +229,6 @@ export function HistorySidebar({
   }
 
   function requestDelete(recording: RecordingSummary): void {
-    setOpenMenuId(null);
     setDeleteError(null);
     setPendingDelete(recording);
   }
@@ -262,14 +252,200 @@ export function HistorySidebar({
     }
   }
 
+  function dropHandlers(projectId: string | null) {
+    const target = projectId ?? "ungrouped";
+
+    return {
+      onDragEnter(event: React.DragEvent<HTMLElement>) {
+        if (!draggingId || projectLibrary.saving) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropTarget(target);
+      },
+      onDragOver(event: React.DragEvent<HTMLElement>) {
+        if (!draggingId || projectLibrary.saving) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropTarget(target);
+      },
+      onDragLeave(event: React.DragEvent<HTMLElement>) {
+        if (
+          !(event.relatedTarget instanceof Node) ||
+          !event.currentTarget.contains(event.relatedTarget)
+        ) {
+          setDropTarget(null);
+        }
+      },
+      onDrop(event: React.DragEvent<HTMLElement>) {
+        event.preventDefault();
+        const id = event.dataTransfer.getData("application/x-path-recording");
+
+        setDropTarget(null);
+        setDraggingId(null);
+        if (
+          !id ||
+          id !== draggingId ||
+          !snapshot.recordings.some((recording) => recording.id === id) ||
+          projectLibrary.saving
+        ) {
+          return;
+        }
+
+        setMoveError(false);
+        void projectLibrary
+          .change({ action: "move", recordingId: id, projectId })
+          .then(() => {
+            if (projectId) {
+              setCollapsedProjects((current) => {
+                const next = new Set(current);
+
+                next.delete(projectId);
+
+                return next;
+              });
+            }
+          })
+          .catch(() => setMoveError(true));
+      },
+    };
+  }
+
+  function renderRecording(recording: RecordingSummary, location: string) {
+    const isRenaming = renamingId === recording.id && renameLocation === location;
+    const metadata = `${formatRecordingDate(recording.createdAt, locale)} - ${recording.status === "ready" ? formatDuration(recording.durationMs, t("history.status.ready")) : t(`history.status.${recording.status}`)}`;
+    const canDrag =
+      renamingId !== recording.id && !projectLibrary.saving && projectLibrary.status === "ready";
+
+    return (
+      <div
+        className={cn("history-item", recording.id === selectedId && "history-item-selected")}
+        key={recording.id}
+        data-recording-id={recording.id}
+        draggable={canDrag}
+        onDragStart={(event) => {
+          event.dataTransfer.setData("application/x-path-recording", recording.id);
+          event.dataTransfer.effectAllowed = "move";
+          setDraggingId(recording.id);
+        }}
+        onDragEnd={() => {
+          setDraggingId(null);
+          setDropTarget(null);
+        }}
+      >
+        <button
+          className="history-item-main"
+          draggable={canDrag}
+          title={`${recording.title} - ${metadata}`}
+          aria-pressed={recording.id === selectedId}
+          aria-label={`${recording.title}, ${metadata}`}
+          onClick={() => onSelect(recording.id)}
+        >
+          <HistoryItemThumbnail
+            recording={recording}
+            statusLabel={t(`history.status.${recording.status}`)}
+          />
+          <span className="history-copy">
+            <span className="history-title-line">
+              {isRenaming ? (
+                <input
+                  className="rename-input"
+                  disabled={isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id])}
+                  value={draftTitle}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  onBlur={() => {
+                    if (draftTitle.trim()) void saveRename(recording.id);
+                    else setRenamingId(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      void saveRename(recording.id);
+                    }
+
+                    if (event.key === "Escape") setRenamingId(null);
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <strong title={recording.title}>{recording.title}</strong>
+              )}
+            </span>
+            <span className="sr-only">
+              <span className="history-date">
+                {formatRecordingDate(recording.createdAt, locale)}
+              </span>
+              <span className="history-detail">
+                ·{" "}
+                {recording.status === "ready"
+                  ? formatDuration(recording.durationMs, t("history.status.ready"))
+                  : t(`history.status.${recording.status}`)}
+              </span>
+            </span>
+          </span>
+        </button>
+        {!isRenaming && (
+          <div className="history-item-actions history-overflow">
+            <HistoryMenu
+              label={t("actions.more")}
+              className="history-row-menu"
+              items={[
+                {
+                  label: t("actions.rename"),
+                  icon: <Pencil size={14} />,
+                  onSelect: () => beginRename(recording, location),
+                  disabled: isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id]),
+                },
+                {
+                  label: t("projects.moveTitle"),
+                  icon: <FolderInput size={14} />,
+                  onSelect: () =>
+                    setProjectAction({
+                      kind: "move",
+                      recordingId: recording.id,
+                      projectId:
+                        projectLibrary.projects.find((project) =>
+                          project.recordingIds.includes(recording.id),
+                        )?.id ?? null,
+                    }),
+                  disabled: projectLibrary.saving || projectLibrary.status !== "ready",
+                },
+                {
+                  label: t("actions.delete"),
+                  icon: <Trash2 size={14} />,
+                  onSelect: () => requestDelete(recording),
+                  danger: true,
+                },
+              ]}
+            >
+              <MoreHorizontal size={15} aria-hidden="true" />
+            </HistoryMenu>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <aside className="history-panel">
       <div className="history-header">
         <span className="section-label">{t("history.title")}</span>
-        <Button className="history-new-recording" size="sm" onClick={onNewRecording}>
+        <HistoryMenu
+          label={t("history.newRecording")}
+          className="history-new-recording"
+          items={[
+            { label: t("projects.recording"), icon: <Video size={15} />, onSelect: onNewRecording },
+            {
+              label: t("projects.project"),
+              icon: <Folder size={15} />,
+              onSelect: () => setProjectAction({ kind: "create" }),
+              disabled: projectLibrary.saving || projectLibrary.status !== "ready",
+            },
+          ]}
+        >
           <Plus aria-hidden="true" size={14} />
           {t("history.newRecording")}
-        </Button>
+          <ChevronDown aria-hidden="true" size={12} />
+        </HistoryMenu>
       </div>
 
       <div className="history-tools">
@@ -329,115 +505,122 @@ export function HistorySidebar({
           </p>
         )}
         {snapshot.status === "error" && <p className="panel-message">{t("history.loadError")}</p>}
-        {snapshot.status !== "error" && visibleRecordings.length === 0 && (
-          <div className="history-empty">
-            <MonitorUp aria-hidden="true" size={20} />
-            <span>{t("history.empty")}</span>
+        {projectLibrary.status === "error" && (
+          <div className="project-error" role="alert">
+            {t("projects.loadError")}{" "}
+            <button type="button" onClick={() => void projectLibrary.refresh()}>
+              {t("projects.retry")}
+            </button>
           </div>
         )}
-        {visibleRecordings.map((recording) => (
-          <div
-            className={cn("history-item", recording.id === selectedId && "history-item-selected")}
-            key={recording.id}
-            data-recording-id={recording.id}
-          >
-            <button className="history-item-main" onClick={() => onSelect(recording.id)}>
-              <HistoryItemThumbnail
-                recording={recording}
-                statusLabel={t(`history.status.${recording.status}`)}
-              />
-              <span className="history-copy">
-                <span className="history-title-line">
-                  {renamingId === recording.id ? (
-                    <input
-                      className="rename-input"
-                      disabled={
-                        isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id])
-                      }
-                      value={draftTitle}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={(event) => setDraftTitle(event.target.value)}
-                      onBlur={() => {
-                        if (draftTitle.trim()) void saveRename(recording.id);
-                        else setRenamingId(null);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          void saveRename(recording.id);
-                        }
-
-                        if (event.key === "Escape") setRenamingId(null);
-                      }}
-                      autoFocus
-                    />
-                  ) : (
-                    <strong>{recording.title}</strong>
-                  )}
-                </span>
-                <span className="history-metadata">
-                  <span className="history-date">
-                    {formatRecordingDate(recording.createdAt, locale)}
-                  </span>
-                  <span className="history-detail">
-                    ·{" "}
-                    {recording.status === "ready"
-                      ? formatDuration(recording.durationMs, t("history.status.ready"))
-                      : t(`history.status.${recording.status}`)}
-                  </span>
-                </span>
-              </span>
+        {moveError && (
+          <p className="project-error" role="alert">
+            {t("projects.changeError")}
+          </p>
+        )}
+        <section className="history-projects" aria-label={t("projects.title")}>
+          <div className="history-section-label">{t("projects.title")}</div>
+          {projectLibrary.projects.length === 0 && (
+            <button
+              type="button"
+              className="history-create-project"
+              disabled={projectLibrary.saving || projectLibrary.status !== "ready"}
+              onClick={() => setProjectAction({ kind: "create" })}
+            >
+              <Plus size={14} aria-hidden="true" />
+              {t("projects.createAction")}
             </button>
-            {renamingId !== recording.id && (
-              <div
+          )}
+          {projectLibrary.projects.map((project) => {
+            const matchesName = project.name.toLocaleLowerCase(locale).includes(deferredQuery);
+            const members = (
+              deferredQuery && matchesName
+                ? sortRecordings(snapshot.recordings, sortMode)
+                : visibleRecordings
+            ).filter((recording) => project.recordingIds.includes(recording.id));
+
+            if (deferredQuery && !matchesName && members.length === 0) return null;
+            const expanded = Boolean(deferredQuery) || !collapsedProjects.has(project.id);
+
+            return (
+              <section
+                key={project.id}
                 className={cn(
-                  "history-item-actions history-overflow",
-                  openMenuId === recording.id && "menu-open",
+                  "history-project",
+                  dropTarget === project.id && "project-drop-target",
                 )}
+                aria-label={project.name}
+                {...dropHandlers(project.id)}
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-haspopup="menu"
-                  aria-expanded={openMenuId === recording.id}
-                  title={t("actions.more")}
-                  onClick={() =>
-                    setOpenMenuId((current) => (current === recording.id ? null : recording.id))
-                  }
-                >
-                  <MoreHorizontal size={15} />
-                </Button>
-                {openMenuId === recording.id && (
-                  <div
-                    className="history-overflow-dropdown"
-                    role="menu"
-                    aria-label={t("actions.more")}
+                <div className="history-project-heading">
+                  <button
+                    type="button"
+                    className="history-project-toggle"
+                    aria-expanded={expanded}
+                    aria-label={project.name}
+                    aria-controls={`project-${project.id}`}
+                    onClick={() =>
+                      setCollapsedProjects((current) => {
+                        const next = new Set(current);
+
+                        if (next.has(project.id)) next.delete(project.id);
+                        else next.add(project.id);
+
+                        return next;
+                      })
+                    }
                   >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={
-                        isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id])
-                      }
-                      onClick={() => beginRename(recording)}
-                    >
-                      <Pencil size={13} />
-                      {t("actions.rename")}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="danger"
-                      onClick={() => requestDelete(recording)}
-                    >
-                      <Trash2 size={13} />
-                      {t("actions.delete")}
-                    </button>
+                    {expanded ? (
+                      <ChevronDown size={12} aria-hidden="true" />
+                    ) : (
+                      <ChevronRight size={12} aria-hidden="true" />
+                    )}
+                    <Folder size={16} aria-hidden="true" />
+                    <span title={project.name}>{project.name}</span>
+                    <small>{members.length}</small>
+                  </button>
+                  <HistoryMenu
+                    label={t("projects.projectActions", { name: project.name })}
+                    className="history-row-menu"
+                    disabled={projectLibrary.saving}
+                    items={[
+                      {
+                        label: t("actions.rename"),
+                        icon: <Pencil size={14} />,
+                        onSelect: () => setProjectAction({ kind: "rename", project }),
+                      },
+                      {
+                        label: t("projects.removeTitle"),
+                        icon: <Trash2 size={14} />,
+                        onSelect: () => setProjectAction({ kind: "remove", project }),
+                      },
+                    ]}
+                  >
+                    <MoreHorizontal size={15} aria-hidden="true" />
+                  </HistoryMenu>
+                </div>
+                {expanded && (
+                  <div id={`project-${project.id}`} className="history-project-recordings">
+                    {members.map((recording) => renderRecording(recording, project.id))}
+                    {members.length === 0 && (
+                      <p className="project-drop-hint">{t("projects.dropHere")}</p>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-          </div>
-        ))}
+              </section>
+            );
+          })}
+        </section>
+        <section className="history-all" aria-label={t("projects.all")}>
+          <div className="history-section-label">{t("projects.all")}</div>
+          {snapshot.status !== "error" && visibleRecordings.length === 0 && (
+            <div className="history-empty">
+              <MonitorUp aria-hidden="true" size={20} />
+              <span>{t("history.empty")}</span>
+            </div>
+          )}
+          {visibleRecordings.map((recording) => renderRecording(recording, "all"))}
+        </section>
       </div>
 
       <div className="history-footer">
@@ -453,6 +636,14 @@ export function HistorySidebar({
         </Button>
         {versionLabel && <span className="history-version">{versionLabel}</span>}
       </div>
+      {projectAction && (
+        <ProjectDialog
+          action={projectAction}
+          projects={projectLibrary.projects}
+          change={projectLibrary.change}
+          onClose={() => setProjectAction(null)}
+        />
+      )}
       <dialog
         ref={deleteDialogRef}
         className="recording-delete-dialog"

@@ -426,13 +426,13 @@
 .history-item-main {
   min-width: 0;
   gap: 10px;
-  padding: 10px 4px 10px 10px;
+  padding: 12px 10px;
 }
 
 .history-thumbnail {
-  width: 42px;
-  height: 42px;
-  flex-basis: 42px;
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
   border-radius: 8px;
 }
 
@@ -459,6 +459,8 @@
   align-items: baseline;
   gap: 4px;
   min-width: 0;
+  padding-right: 28px;
+  line-height: 16px;
 }
 
 .history-date {
@@ -501,7 +503,10 @@
 }
 
 .history-overflow {
-  position: relative;
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  margin-right: 0;
 }
 
 .history-overflow-dropdown {
@@ -579,7 +584,8 @@
 }
 
 .history-copy strong {
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .history-copy > span:last-child {
@@ -623,6 +629,14 @@
   .history-item-actions > button {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .history-item-main {
+    padding-right: 54px;
+  }
+
+  .history-metadata {
+    padding-right: 0;
   }
 }
 
@@ -796,7 +810,7 @@
 
 .history-copy > span:last-child {
   color: var(--muted-ink);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .history-empty svg {
@@ -806,7 +820,7 @@
 }
 
 .history-footer {
-  border-top: 1px solid var(--border);
+  border-top: 0;
   background: var(--canvas);
 }
 
@@ -962,10 +976,7 @@
 }
 
 .history-header .history-new-recording {
-  height: 32px;
-  padding-inline: 10px;
-  font-size: 12px;
-  gap: 5px;
+  min-width: 80px;
 }
 
 .history-footer .history-settings {
@@ -1041,4 +1052,177 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
+}
+
+/* Compact library rows share one baseline with collapsible Project folders. */
+.history-list .history-item {
+  min-height: 36px;
+  margin-bottom: 2px;
+  border-radius: 6px;
+}
+.history-list .history-item-main {
+  min-height: 36px;
+  gap: 9px;
+  padding: 6px 34px 6px 10px;
+}
+.history-list .history-thumbnail {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+.history-list .history-thumbnail svg {
+  width: 13px;
+  height: 13px;
+}
+.history-list .history-copy {
+  display: block;
+}
+.history-list .history-copy strong {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+.history-list .history-item-selected .history-copy strong {
+  font-weight: 500;
+}
+.history-list .history-item-selected::before {
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+}
+.history-list .history-overflow {
+  right: 4px;
+  top: 4px;
+  bottom: auto;
+}
+.history-list .history-overflow:has([aria-expanded="true"]) {
+  visibility: visible;
+  opacity: 1;
+}
+.history-row-menu {
+  display: grid;
+  flex: 0 0 28px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-ink);
+}
+.history-row-menu:hover,
+.history-row-menu[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.history-section-label {
+  padding: 12px 10px 5px;
+  color: var(--muted-ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+.history-create-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0 4px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+.history-create-project:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.history-create-project:disabled {
+  opacity: 0.5;
+}
+.history-all {
+  margin-top: 8px;
+}
+.history-project {
+  margin-top: 2px;
+  border-radius: 6px;
+}
+.history-project-heading {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+.history-project-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+}
+.history-project-toggle svg {
+  flex: 0 0 auto;
+  color: var(--muted-ink);
+}
+.history-project-toggle > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-project-toggle small {
+  color: var(--muted-ink);
+  font-size: 11px;
+  font-weight: 400;
+}
+.history-project-heading:hover {
+  background: var(--surface-hover);
+  border-radius: 6px;
+}
+.history-project-recordings {
+  padding-left: 16px;
+}
+.project-drop-hint {
+  margin: 0;
+  padding: 8px 10px 12px;
+  color: var(--muted-ink);
+  font-size: 11px;
+}
+.project-drop-target {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--primary);
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+.history-item[draggable="true"] {
+  cursor: grab;
+}
+@media (max-width: 600px) {
+  .history-list .history-item,
+  .history-list .history-item-main {
+    min-height: 44px;
+  }
+  .history-list .history-item-main {
+    padding-right: 48px;
+  }
+  .history-list .history-overflow {
+    top: 0;
+  }
+  .history-list .history-row-menu {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

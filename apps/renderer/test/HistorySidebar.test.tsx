@@ -27,6 +27,7 @@ describe("HistorySidebar layout and version", () => {
 
     const desktop = {
       app: { getInfo },
+      projects: { list: vi.fn().mockResolvedValue([]) },
       recordings,
     } as unknown as DesktopApi;
 
@@ -62,6 +63,7 @@ describe("HistorySidebar layout and version", () => {
     expect(newButton.textContent).toContain("New");
 
     fireEvent.click(newButton);
+    fireEvent.click(view.getByRole("menuitem", { name: "Recording" }));
     expect(onNewRecording).toHaveBeenCalledTimes(1);
 
     // Footer contains Settings button on left and version on right
@@ -173,6 +175,7 @@ describe("HistorySidebar layout and version", () => {
 
     const desktop = {
       app: { getInfo: vi.fn().mockResolvedValue({ version: "0.3.0" }) },
+      projects: { list: vi.fn().mockResolvedValue([]) },
       recordings,
     } as unknown as DesktopApi;
 

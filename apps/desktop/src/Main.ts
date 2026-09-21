@@ -3,7 +3,12 @@ import { createRequire } from "node:module";
 import { stat } from "node:fs/promises";
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { AppSettingsRepository, openDatabase, RecordingRepository } from "@path/database";
+import {
+  AppSettingsRepository,
+  openDatabase,
+  RecordingRepository,
+  ProjectRepository,
+} from "@path/database";
 import { registerIpcHandlers } from "./ipc/RegisterIpc";
 import { ManagedRecordingAssets } from "./storage/ManagedRecordingAssets";
 import { AiCredentialStore } from "./storage/AiCredentialStore";
@@ -210,6 +215,7 @@ if (!hasSingleInstanceLock) {
 
     registerIpcHandlers({
       recordings,
+      projects: new ProjectRepository(connection.db),
       assets,
       tray,
       recording,

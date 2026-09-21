@@ -1,0 +1,62 @@
+.project-dialog {
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-float);
+}
+.project-dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+.project-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.project-dialog h2 svg {
+  color: var(--primary);
+}
+.project-dialog label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.project-dialog :is(input, select) {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-size: 14px;
+}
+.project-dialog p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.project-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+.project-error {
+  color: var(--danger);
+  font-size: 12px;
+  padding: 8px;
+}
+.project-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+}

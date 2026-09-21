@@ -193,3 +193,10 @@ export interface AppInfo {
   platform: "darwin" | "win32" | "linux" | "other";
   dataDirectory: string;
 }
+
+/** A local recording collection; deleting it never deletes its recordings. */
+export interface RecordingProject {
+  id: string;
+  name: string;
+  recordingIds: string[];
+}

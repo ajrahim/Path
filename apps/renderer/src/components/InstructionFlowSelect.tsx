@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import { BookOpen, Check, ChevronDown, FileCode2, FileText, Plus } from "lucide-react";
+import { BookOpen, Check, ChevronDown, FileCode2, FileText, Pencil, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BUILT_IN_FLOWS, type InstructionFlow } from "../lib/InstructionFlows";
 
@@ -9,12 +9,14 @@ export function InstructionFlowSelect({
   disabled,
   triggerRef,
   onSelect,
+  onEdit,
 }: {
   selectedFlow: InstructionFlow;
   customFlows: InstructionFlow[];
   disabled: boolean;
   triggerRef: RefObject<HTMLButtonElement | null>;
   onSelect(id: string): void;
+  onEdit(): void;
 }) {
   const t = useTranslations("guide");
   const menuId = useId();
@@ -95,32 +97,47 @@ export function InstructionFlowSelect({
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="guide-flow-trigger"
-        aria-label={`${t("documentFlow")}: ${selectedFlow.name}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        title={selectedFlow.name}
-        disabled={disabled}
-        onClick={() => {
-          initialFocus.current = "selected";
-          setOpen((current) => !current);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            initialFocus.current = event.key === "ArrowUp" ? "last" : "selected";
-            setOpen(true);
-          }
-        }}
-      >
-        <Icon className="guide-flow-document-icon" aria-hidden="true" size={16} />
-        <span>{selectedFlow.name}</span>
-        <ChevronDown className="guide-flow-chevron" aria-hidden="true" size={14} />
-      </button>
+      <div className="guide-flow-control">
+        <button
+          ref={triggerRef}
+          type="button"
+          className="guide-flow-trigger"
+          aria-label={`${t("documentFlow")}: ${selectedFlow.name}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? menuId : undefined}
+          title={selectedFlow.name}
+          disabled={disabled}
+          onClick={() => {
+            initialFocus.current = "selected";
+            setOpen((current) => !current);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              initialFocus.current = event.key === "ArrowUp" ? "last" : "selected";
+              setOpen(true);
+            }
+          }}
+        >
+          <Icon className="guide-flow-document-icon" aria-hidden="true" size={16} />
+          <span>{selectedFlow.name}</span>
+          <ChevronDown className="guide-flow-chevron" aria-hidden="true" size={14} />
+        </button>
+        <button
+          type="button"
+          className="guide-flow-edit"
+          title={t("editPrompt")}
+          aria-label={t("editPrompt")}
+          disabled={disabled}
+          onClick={() => {
+            setOpen(false);
+            onEdit();
+          }}
+        >
+          <Pencil aria-hidden="true" size={14} />
+        </button>
+      </div>
       {open && (
         <div
           ref={menuRef}

@@ -33,9 +33,30 @@
 
 .workspace-grid {
   display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.recording-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  margin: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 8px 24px rgb(18 35 58 / 7%),
+    0 2px 6px rgb(18 35 58 / 4%);
+}
+
+html[data-theme="dark"] .recording-workspace {
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 24%),
+    0 2px 6px rgb(0 0 0 / 16%);
 }
 
 .resize-handle {
@@ -251,6 +272,30 @@
   outline-offset: 2px;
 }
 
+/* A shared divider keeps the frame continuous while retaining a generous drag target. */
+.workspace-divider {
+  width: 1px;
+  background: transparent;
+}
+
+.workspace-divider::after {
+  inset: 0 -4px;
+  width: 9px;
+  background: transparent;
+  transform: none;
+}
+
+.workspace-divider::before {
+  width: 3px;
+  height: 32px;
+  background: var(--border-strong);
+  box-shadow: none;
+}
+
+.workspace-divider:is(:hover, :focus-visible, :active)::after {
+  background: color-mix(in srgb, var(--focus) 12%, transparent);
+}
+
 @media (max-width: 900px) {
   .app-frame {
     grid-template-rows: 60px auto;
@@ -288,6 +333,12 @@
 
   .resize-handle {
     display: none;
+  }
+
+  .recording-workspace {
+    display: block;
+    margin: 12px;
+    overflow: visible;
   }
 }
 

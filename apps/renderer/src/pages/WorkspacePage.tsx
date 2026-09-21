@@ -14,8 +14,6 @@ import { getDesktopApi } from "@/lib/Desktop";
 import { LocalModelSelect } from "@/components/LocalModelSelect";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-type DragTarget = "history" | "guide";
-
 export default function WorkspacePage() {
   const t = useTranslations();
   const router = useRouter();
@@ -25,7 +23,6 @@ export default function WorkspacePage() {
   // Selection and panel sizes belong to this window; recording data is shared within its store.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
-  const [historyWidth, setHistoryWidth] = useState(264);
   const [guideWidth, setGuideWidth] = useState(440);
   const [titleSaving, setTitleSaving] = useState(false);
   const isTitleSavingRef = useRef(false);
@@ -33,6 +30,7 @@ export default function WorkspacePage() {
   const [pendingSelectionId, setPendingSelectionId] = useState<string | null>(null);
   const [switchSaving, setSwitchSaving] = useState(false);
   const guideStateRef = useRef<GuidePaneState | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const discardDialogRef = useRef<HTMLDialogElement>(null);
   const recordingActive = ["preparing", "recording", "paused", "stopping", "processing"].includes(
     recordingState.status,
@@ -126,30 +124,29 @@ export default function WorkspacePage() {
     else void router.push(RENDERER_ROUTES.settings);
   }
 
-  function resize(event: React.PointerEvent<HTMLDivElement>, target: DragTarget): void {
+  function resize(event: React.PointerEvent<HTMLDivElement>): void {
     if (event.buttons !== 1) return;
 
-    if (target === "history") {
-      setHistoryWidth(Math.min(380, Math.max(230, event.clientX - 8)));
-    } else {
-      setGuideWidth(Math.min(680, Math.max(410, window.innerWidth - event.clientX - 8)));
-    }
+    const right = workspaceRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+
+    setGuideWidth(clampGuideWidth(right - event.clientX));
   }
 
-  function resizeWithKeyboard(
-    event: React.KeyboardEvent<HTMLDivElement>,
-    target: DragTarget,
-  ): void {
+  function clampGuideWidth(width: number): number {
+    // Match the CSS limit so dragging and keyboard resizing use the visible pane width.
+    const availableWidth = workspaceRef.current?.clientWidth ?? window.innerWidth;
+    const maximum = Math.max(340, Math.min(680, availableWidth - 301));
+
+    return Math.min(maximum, Math.max(340, width));
+  }
+
+  function resizeWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>): void {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
 
     const direction = event.key === "ArrowLeft" ? -1 : 1;
 
     event.preventDefault();
-    if (target === "history") {
-      setHistoryWidth((width) => Math.min(380, Math.max(230, width + direction * 12)));
-    } else {
-      setGuideWidth((width) => Math.min(680, Math.max(410, width - direction * 12)));
-    }
+    setGuideWidth((width) => clampGuideWidth(clampGuideWidth(width) - direction * 12));
   }
 
   async function saveTitle(element: HTMLElement): Promise<void> {
@@ -227,12 +224,7 @@ export default function WorkspacePage() {
           <ThemeToggle />
         </div>
       </header>
-      <div
-        className="workspace-grid"
-        style={{
-          gridTemplateColumns: `${historyWidth}px 8px minmax(300px, 1fr) 8px ${guideWidth}px`,
-        }}
-      >
+      <div className="workspace-grid">
         <HistorySidebar
           selectedId={activeSelectedId}
           onSelect={requestSelect}
@@ -243,36 +235,34 @@ export default function WorkspacePage() {
           onOpenSettings={openSettings}
         />
         <div
-          className="resize-handle"
-          role="separator"
-          aria-label={t("actions.resizeHistory")}
-          aria-orientation="vertical"
-          tabIndex={0}
-          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
-          onPointerMove={(event) => resize(event, "history")}
-          onKeyDown={(event) => resizeWithKeyboard(event, "history")}
-        />
-        <RecordingPane
-          key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
-          recording={selected}
-          onNewRecording={() => setSourceDialogOpen(true)}
-          onOpenSettings={openSettings}
-        />
-        <div
-          className="resize-handle"
-          role="separator"
-          aria-label={t("actions.resizeGuide")}
-          aria-orientation="vertical"
-          tabIndex={0}
-          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
-          onPointerMove={(event) => resize(event, "guide")}
-          onKeyDown={(event) => resizeWithKeyboard(event, "guide")}
-        />
-        <GuidePane
-          key={`guide-${selected?.id ?? "empty"}`}
-          recording={selected}
-          onGuideStateChange={handleGuideStateChange}
-        />
+          ref={workspaceRef}
+          className="recording-workspace"
+          style={{
+            gridTemplateColumns: `minmax(300px, 1fr) 1px clamp(340px, ${guideWidth}px, calc(100% - 301px))`,
+          }}
+        >
+          <RecordingPane
+            key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
+            recording={selected}
+            onNewRecording={() => setSourceDialogOpen(true)}
+            onOpenSettings={openSettings}
+          />
+          <div
+            className="resize-handle workspace-divider"
+            role="separator"
+            aria-label={t("actions.resizeGuide")}
+            aria-orientation="vertical"
+            tabIndex={0}
+            onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+            onPointerMove={resize}
+            onKeyDown={resizeWithKeyboard}
+          />
+          <GuidePane
+            key={`guide-${selected?.id ?? "empty"}`}
+            recording={selected}
+            onGuideStateChange={handleGuideStateChange}
+          />
+        </div>
       </div>
       <SourceDialog
         key={sourceDialogOpen ? "open" : "closed"}

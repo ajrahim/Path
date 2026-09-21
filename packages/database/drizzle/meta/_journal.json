@@ -15,6 +15,13 @@
       "when": 1788588570566,
       "tag": "0001_normal_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789960971739,
+      "tag": "0002_brave_shockwave",
+      "breakpoints": true
     }
   ]
 }

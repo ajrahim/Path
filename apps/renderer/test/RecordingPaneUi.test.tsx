@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { Provider } from "react-redux";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -186,6 +186,8 @@ describe("RecordingPane UI interactions", () => {
 
     const filter = screen.getByRole("combobox", { name: messages.recording.filterActivity });
 
+    expect((filter as HTMLSelectElement).value).toBe("all");
+
     fireEvent.change(filter, { target: { value: "clicks" } });
 
     expect(view.container.querySelectorAll(".activity-entry-click")).toHaveLength(2);
@@ -206,6 +208,127 @@ describe("RecordingPane UI interactions", () => {
     fireEvent.change(filter, { target: { value: "all" } });
 
     expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+  });
+
+  it("seeks from activity times and badges without seeking while editing", async () => {
+    const view = renderRecordingPane();
+
+    await waitFor(() => {
+      expect(view.container.querySelector("video")).not.toBeNull();
+      expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+    });
+
+    const video = view.container.querySelector("video")!;
+    const clickRow = view.container.querySelector<HTMLElement>(
+      '[data-activity-id="click-click-1"]',
+    )!;
+
+    const speechRow = view.container.querySelector<HTMLElement>(
+      '[data-activity-id="transcript-speech-1"]',
+    )!;
+
+    fireEvent.click(within(clickRow).getByRole("button", { name: "Left click 00:02" }));
+    expect(video.currentTime).toBe(2);
+
+    fireEvent.click(
+      within(speechRow).getByRole("button", { name: messages.recording.filterSpeech }),
+    );
+    expect(video.currentTime).toBe(1);
+
+    const clickEditor = within(clickRow).getByRole("textbox", {
+      name: messages.recording.editClickDescription,
+    });
+
+    fireEvent.focus(clickEditor);
+    fireEvent.click(clickEditor);
+    fireEvent.keyDown(clickEditor, { key: "ArrowRight" });
+    expect(video.currentTime).toBe(1);
+    expect(clickEditor.closest("button")).toBeNull();
+
+    const clickBadge = within(clickRow).getByRole("button", { name: messages.recording.leftClick });
+
+    fireEvent.keyDown(clickBadge, { code: "Space" });
+    expect(video.paused).toBe(true);
+    fireEvent.click(clickBadge);
+    expect(video.currentTime).toBe(2);
+
+    const speechEditor = within(speechRow).getByRole("textbox", {
+      name: messages.recording.editDialogue,
+    });
+
+    fireEvent.click(speechEditor);
+    expect(video.currentTime).toBe(2);
+    fireEvent.click(speechRow.querySelector(".activity-entry-main")!);
+    expect(video.currentTime).toBe(1);
+  });
+
+  it("preserves saving inline edits and removing an activity after the row layout changes", async () => {
+    const clickDescription = "The user opens the saved document.";
+    const dialogue = "Review the saved document before continuing.";
+
+    bridge.updateClick.mockResolvedValue({
+      ...sampleClicks[0],
+      actionDescription: clickDescription,
+    });
+    bridge.updateTranscript.mockResolvedValue({ ...sampleTranscript[0], text: dialogue });
+    bridge.deleteClick.mockResolvedValue(undefined);
+
+    const view = renderRecordingPane();
+
+    await waitFor(() => {
+      expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+    });
+
+    const clickEditor = screen.getAllByRole("textbox", {
+      name: messages.recording.editClickDescription,
+    })[0];
+
+    Object.defineProperty(clickEditor, "innerText", {
+      configurable: true,
+      value: clickDescription,
+    });
+    fireEvent.blur(clickEditor);
+
+    await waitFor(() => {
+      expect(bridge.updateClick).toHaveBeenCalledExactlyOnceWith({
+        recordingId: recording.id,
+        id: sampleClicks[0].id,
+        description: clickDescription,
+      });
+    });
+
+    const speechEditor = screen.getAllByRole("textbox", {
+      name: messages.recording.editDialogue,
+    })[0];
+
+    Object.defineProperty(speechEditor, "innerText", { configurable: true, value: dialogue });
+    fireEvent.blur(speechEditor);
+
+    await waitFor(() => {
+      expect(bridge.updateTranscript).toHaveBeenCalledExactlyOnceWith({
+        recordingId: recording.id,
+        id: sampleTranscript[0].id,
+        text: dialogue,
+      });
+    });
+
+    const clickRow = view.container.querySelector<HTMLElement>(
+      '[data-activity-id="click-click-1"]',
+    )!;
+
+    fireEvent.click(within(clickRow).getByRole("button", { name: messages.actions.more }));
+    const remove = screen.getByRole("menuitem", { name: messages.recording.removeClick });
+
+    expect((remove as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(remove);
+
+    await waitFor(() => {
+      expect(bridge.deleteClick).toHaveBeenCalledExactlyOnceWith({
+        recordingId: recording.id,
+        id: sampleClicks[0].id,
+      });
+      expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(3);
+    });
   });
 
   it("handles playback keyboard shortcuts with Space, ArrowLeft, and ArrowRight", async () => {

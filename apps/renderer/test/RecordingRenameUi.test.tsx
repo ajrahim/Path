@@ -36,7 +36,7 @@ async function renderWorkspace() {
     rename: vi.fn(),
   };
 
-  const desktop = { recordings } as unknown as DesktopApi;
+  const desktop = { recordings, projects: { list: async () => [] } } as unknown as DesktopApi;
   const store = createRendererStore({ getDesktopApi: () => desktop });
   const view = render(
     <Provider store={store}>
@@ -63,7 +63,7 @@ async function renderWorkspace() {
 function openRenameMenu(row: HTMLElement): HTMLButtonElement {
   fireEvent.click(within(row).getByTitle(messages.actions.more));
 
-  return within(row).getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename });
+  return screen.getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename });
 }
 
 afterEach(cleanup);
@@ -90,8 +90,7 @@ describe("recording rename editing", () => {
     expect(header.getAttribute("contenteditable")).toBe("true");
     expect(header.textContent).toBe("Draft title");
     expect(
-      within(firstRow).getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename })
-        .disabled,
+      screen.getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename }).disabled,
     ).toBe(false);
     expect(screen.getByText(messages.navigation.titleSaveFailed)).toBeTruthy();
   });
@@ -118,8 +117,7 @@ describe("recording rename editing", () => {
     expect(input.value).toBe("Sidebar draft");
     expect(header.getAttribute("contenteditable")).toBe("true");
     expect(
-      within(secondRow).getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename })
-        .disabled,
+      screen.getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename }).disabled,
     ).toBe(false);
     expect(screen.getByRole("alert").textContent).toBe(messages.navigation.titleSaveFailed);
   });

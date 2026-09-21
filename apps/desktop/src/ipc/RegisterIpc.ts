@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { stat, writeFile } from "node:fs/promises";
-import type { RecordingRepository } from "@path/database";
+import type { RecordingRepository, ProjectRepository } from "@path/database";
 import {
   clickAssetInputSchema,
+  projectChangeInputSchema,
   exportMarkdownInputSchema,
   generateGuideInputSchema,
   saveGuideDocumentInputSchema,
@@ -42,6 +43,7 @@ import type { SelectedAiService } from "../ai/SelectedAiService";
 
 export interface IpcDependencies {
   recordings: RecordingRepository;
+  projects: ProjectRepository;
   assets: ManagedRecordingAssets;
   tray: TrayController;
   recording: RecordingController;
@@ -64,6 +66,7 @@ function platform(): AppInfo["platform"] {
 // Validate renderer input here, then delegate state changes to their main-process owners.
 export function registerIpcHandlers({
   recordings,
+  projects,
   assets,
   tray,
   recording,
@@ -224,6 +227,11 @@ export function registerIpcHandlers({
     const { id, markdown } = saveGuideDocumentInputSchema.parse(input);
 
     return recordings.saveDocument(id, markdown);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectsList, () => projects.list());
+  ipcMain.handle(IPC_CHANNELS.projectsChange, (_event, input: unknown) => {
+    return projects.change(projectChangeInputSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.recordingsList, () => recordings.list());

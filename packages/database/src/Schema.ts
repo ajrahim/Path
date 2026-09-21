@@ -118,3 +118,22 @@ export const appSettings = sqliteTable("app_settings", {
 
 export type RecordingRow = typeof recordings.$inferSelect;
 export type NewRecordingRow = typeof recordings.$inferInsert;
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const projectRecordings = sqliteTable(
+  "project_recordings",
+  {
+    recordingId: text("recording_id")
+      .primaryKey()
+      .references(() => recordings.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("project_recordings_project_idx").on(table.projectId)],
+);
