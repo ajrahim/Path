@@ -9,7 +9,8 @@ const desktopApi: DesktopApi = {
     showMainWindow: () => ipcRenderer.invoke(IPC_CHANNELS.appShowMainWindow),
     setRecorderPopoverExpanded: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.appSetRecorderPopoverExpanded, input),
-    openSettings: () => ipcRenderer.invoke(IPC_CHANNELS.appOpenSettings),
+    setTitleBarTheme: (input) => ipcRenderer.invoke(IPC_CHANNELS.appSetTitleBarTheme, input),
+    openSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.appOpenSettings, input),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),

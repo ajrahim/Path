@@ -143,16 +143,21 @@ if (!hasSingleInstanceLock) {
     };
 
     let settingsWindow: ReturnType<typeof createSettingsWindow> | null = null;
-    const openSettingsWindow = () => {
+    const openSettingsWindow = (section?: string) => {
       if (settingsWindow && !settingsWindow.isDestroyed()) {
         if (settingsWindow.isMinimized()) settingsWindow.restore();
         settingsWindow.show();
         settingsWindow.focus();
+        if (section) {
+          void settingsWindow.webContents.executeJavaScript(
+            `location.hash = ${JSON.stringify(`#${section}`)}`,
+          );
+        }
 
         return;
       }
 
-      settingsWindow = createSettingsWindow(rendererTarget);
+      settingsWindow = createSettingsWindow(rendererTarget, section);
       settingsWindow.on("closed", () => {
         settingsWindow = null;
       });

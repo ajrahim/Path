@@ -3,11 +3,13 @@ import {
   normalizeClickDescription,
   type AiModelSelection,
   type AiProvider,
+  type ApiAiModel,
   type AvailableAiModels,
+  type LocalAiModel,
 } from "@path/shared";
 import type { DesktopSettingsService } from "../settings/DesktopSettingsService";
 import type { AiCredentialStore } from "../storage/AiCredentialStore";
-import { listProviderModels } from "./ProviderModels";
+import { listOpenRouterCatalog, listProviderModels } from "./ProviderModels";
 import type { OllamaClickActionAnalyzer } from "./OllamaClickActionAnalyzer";
 import {
   prepareClickAction,
@@ -50,43 +52,51 @@ export class SelectedAiService implements ClickActionAnalyzer {
 
   async listModels(): Promise<AvailableAiModels> {
     // Discovery can list available backends independently; generation never changes the selected source.
-    const [local, status] = await Promise.all([
-      this.ollama.listModels().catch(() => []),
+    const [localOutcome, status, openRouter] = await Promise.all([
+      this.ollama.listModels().then(
+        (models) => ({ models, running: true as const }),
+        () => ({ models: [] as LocalAiModel[], running: false as const }),
+      ),
       this.credentials.getStatus(),
+      listOpenRouterCatalog().catch((): ApiAiModel[] => []),
     ]);
 
     const apiGroups = await Promise.all(
-      aiProviders.map(async (provider) => {
+      aiProviders.map(async (provider): Promise<ApiAiModel[]> => {
+        // The OpenRouter catalog is public, so browsing never waits on a saved key.
+        if (provider === "openrouter") return openRouter;
+
         if (!status[provider]) return [];
 
         const key = await this.credentials.get(provider);
 
         if (!key) return [];
 
-        return listProviderModels(provider, key)
-          .then((models) =>
-            models
-              .filter((model) => supportsImages(provider, model.id))
-              .map((model) => ({ ...model, provider })),
-          )
-          .catch(() => []);
+        return listProviderModels(provider, key).catch((): ApiAiModel[] => []);
       }),
     );
 
-    return { api: apiGroups.flat(), local };
+    return {
+      api: apiGroups.flat(),
+      local: localOutcome.models,
+      ollama: {
+        status: localOutcome.running ? "running" : "unavailable",
+        endpoint: this.ollama.getEndpoint(),
+      },
+    };
   }
 
-  listLocalModels() {
-    return this.ollama.listModels();
+  async listLocalModels(): Promise<LocalAiModel[]> {
+    const models = await this.ollama.listModels();
+
+    return models.filter((model) => model.supportedPurposes.includes("visual"));
   }
 
   async analyze(input: ClickActionAnalysisInput): Promise<string> {
-    const selection = this.settings.get().aiModelSelection;
+    const selection = this.settings.get().aiModelSelections.visual;
 
     if (selection.source === "local") {
-      this.ollama.setModel(selection.modelId);
-
-      return this.ollama.analyze(input);
+      return this.ollama.analyze(input, selection.modelId);
     }
 
     const prepared = await prepareClickAction(input);
@@ -101,12 +111,10 @@ export class SelectedAiService implements ClickActionAnalyzer {
   }
 
   async generateText(prompt: string): Promise<string> {
-    const selection = this.settings.get().aiModelSelection;
+    const selection = this.settings.get().aiModelSelections.text;
 
     if (selection.source === "local") {
-      this.ollama.setModel(selection.modelId);
-
-      return this.ollama.generateText(prompt);
+      return this.ollama.generateText(prompt, selection.modelId);
     }
 
     return (await this.requestApi(selection, prompt, MAX_DOCUMENT_TOKENS)).text;
@@ -130,6 +138,8 @@ export class SelectedAiService implements ClickActionAnalyzer {
           return requestOpenAi(key, selection.modelId, prompt, maxTokens, imageBase64);
         case "google":
           return requestGoogle(key, selection.modelId, prompt, maxTokens, imageBase64);
+        case "openrouter":
+          return requestOpenRouter(key, selection.modelId, prompt, maxTokens, imageBase64);
       }
     });
   }
@@ -219,6 +229,37 @@ async function requestOpenAi(
     : prompt;
 
   const body = await requestJson("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature: 0,
+      messages: [{ role: "user", content }],
+    }),
+  });
+
+  const choices = record(body)?.choices;
+  const first = Array.isArray(choices) ? record(choices[0]) : null;
+
+  return { text: String(record(first?.message)?.content ?? "") };
+}
+
+async function requestOpenRouter(
+  key: string,
+  model: string,
+  prompt: string,
+  maxTokens: number,
+  image?: string,
+): Promise<ApiTextResponse> {
+  const content = image
+    ? [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:image/png;base64,${image}` } },
+      ]
+    : prompt;
+
+  const body = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -379,13 +420,4 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-function supportsImages(provider: "anthropic" | "openai" | "google", modelId: string): boolean {
-  if (provider === "anthropic") return /^claude-(?:3|[4-9])/.test(modelId);
-  if (provider === "openai") {
-    return /^(?:gpt-(?:4o|4\.1|4-turbo|5)|chatgpt-4o)/.test(modelId);
-  }
-
-  return /^gemini-/.test(modelId);
 }

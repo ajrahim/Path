@@ -25,6 +25,13 @@
     "aiModel": "AI model",
     "selectAiModel": "Select AI model",
     "aiModels": "AI models",
+    "modelPurpose": "Model purpose",
+    "modelSelectionSummary": "Visual: {visual} | Text: {text}",
+    "visualModel": "Visual",
+    "textModel": "Text",
+    "visualModels": "Visual models",
+    "textModels": "Text models",
+    "chooseModel": "Choose a model",
     "apiModels": "API",
     "localModels": "Local",
     "refreshAiModels": "Refresh AI models",
@@ -34,7 +41,21 @@
     "checkingAiModels": "Checking AI models…",
     "aiModelsUnavailable": "AI models are unavailable",
     "noApiModels": "Configure API keys in Settings",
-    "noLocalVisionModels": "No local vision models found"
+    "noLocalVisionModels": "No local vision models found",
+    "noLocalTextModels": "No local text models found",
+    "noApiVisualModels": "No visual models are available.",
+    "noApiTextModels": "No text models are available.",
+    "ollamaRunning": "Ollama is running",
+    "modelLoaded": "Loaded",
+    "staleVisualModelSelected": "Selected visual model is no longer installed",
+    "staleTextModelSelected": "Selected text model is no longer installed",
+    "staleVisualApiModelSelected": "Selected visual model is unavailable",
+    "staleTextApiModelSelected": "Selected text model is unavailable",
+    "openRouterModels": "OpenRouter",
+    "noApiKey": "No Key",
+    "freeModel": "Free",
+    "modelPricing": "${prompt} in · ${completion} out / 1M tokens",
+    "modelContext": "{tokens} context"
   },
   "settings": {
     "title": "Settings",
@@ -199,7 +220,7 @@
     "onboardingTitle": "Create a walkthrough",
     "newRecording": "New recording",
     "configureKeys": "Configure API keys",
-    "onboardingNeedsModel": "Select a model above or configure API keys in Settings"
+    "onboardingNeedsModel": "Select Visual and Text models above or configure API keys in Settings"
   },
   "guide": {
     "title": "Guide",

@@ -3,7 +3,12 @@ import { PNG } from "pngjs";
 import { writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { AiModelSelection, AiModelSelections } from "@path/shared";
 import { SelectedAiService } from "../src/ai/SelectedAiService";
+
+function settingsWithModel(selection: AiModelSelection): { aiModelSelections: AiModelSelections } {
+  return { aiModelSelections: { visual: selection, text: selection } };
+}
 
 function png(): Buffer {
   const image = new PNG({ width: 4, height: 4 });
@@ -21,7 +26,6 @@ afterEach(() => {
 describe("SelectedAiService", () => {
   it("uses the selected local model for text generation", async () => {
     const ollama = {
-      setModel: vi.fn(),
       generateText: vi.fn().mockResolvedValue("# Guide"),
       analyze: vi.fn(),
       listModels: vi.fn(),
@@ -29,16 +33,79 @@ describe("SelectedAiService", () => {
 
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: { source: "local", modelId: "gemma4:latest", modelName: "Gemma" },
-        }),
+        get: () =>
+          settingsWithModel({ source: "local", modelId: "gemma4:latest", modelName: "Gemma" }),
       } as never,
       {} as never,
       ollama as never,
     );
 
     await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
-    expect(ollama.setModel).toHaveBeenCalledWith("gemma4:latest");
+    expect(ollama.generateText).toHaveBeenCalledWith("Write a guide", "gemma4:latest");
+  });
+
+  it("uses independent local visual and API text selections", async () => {
+    const ollama = {
+      analyze: vi.fn().mockResolvedValue("The user clicks the Import button."),
+      generateText: vi.fn(),
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "# API Guide" } }] }), {
+        status: 200,
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new SelectedAiService(
+      {
+        get: () => ({
+          aiModelSelections: {
+            visual: { source: "local", modelId: "vision-model", modelName: "Vision" },
+            text: {
+              source: "api",
+              provider: "openai",
+              modelId: "gpt-3.5-turbo",
+              modelName: "Text",
+            },
+          },
+        }),
+      } as never,
+      { get: vi.fn().mockResolvedValue("secret") } as never,
+      ollama as never,
+    );
+
+    const input = {
+      screenshotPath: "owned-by-analyzer.png",
+      timestampMs: 1_000,
+      button: "left" as const,
+      normalizedX: 0.5,
+      normalizedY: 0.5,
+    };
+
+    await expect(service.analyze(input)).resolves.toBe("The user clicks the Import button.");
+    await expect(service.generateText("Write a guide")).resolves.toBe("# API Guide");
+
+    expect(ollama.analyze).toHaveBeenCalledWith(input, "vision-model");
+    expect(ollama.generateText).not.toHaveBeenCalled();
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: "Write a guide" }],
+    });
+  });
+
+  it("preserves the legacy local vision list while the catalog includes text models", async () => {
+    const text = { id: "text", name: "Text", supportedPurposes: ["text"] };
+    const visual = { id: "visual", name: "Visual", supportedPurposes: ["visual", "text"] };
+    const service = new SelectedAiService(
+      {} as never,
+      {} as never,
+      { listModels: vi.fn().mockResolvedValue([text, visual]) } as never,
+    );
+
+    await expect(service.listLocalModels()).resolves.toEqual([visual]);
   });
 
   it("uses the selected API model for image analysis", async () => {
@@ -61,14 +128,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "openai",
             modelId: "gpt-4o",
             modelName: "gpt-4o",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -120,14 +186,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "google",
             modelId: "gemini-2.5-flash",
             modelName: "Gemini 2.5 Flash",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -180,14 +245,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "openai",
             modelId: "gpt-4o",
             modelName: "GPT-4o",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -219,14 +283,13 @@ describe("SelectedAiService", () => {
     );
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "openai",
             modelId: "gpt-4o",
             modelName: "GPT-4o",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -266,14 +329,13 @@ describe("SelectedAiService", () => {
     );
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "google",
             modelId: "gemini-3.7-flash",
             modelName: "Gemini 3.7 Flash",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -312,14 +374,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "openai",
             modelId: "gpt-4o",
             modelName: "GPT-4o",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -354,14 +415,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "google",
             modelId: "gemini-3.7-flash",
             modelName: "Gemini 3.7 Flash",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -391,14 +451,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "google",
             modelId: "gemini-3.7-flash",
             modelName: "Gemini 3.7 Flash",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,
@@ -417,6 +476,121 @@ describe("SelectedAiService", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("uses the selected OpenRouter model for text generation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "# Router Guide" } }] }), {
+        status: 200,
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new SelectedAiService(
+      {
+        get: () =>
+          settingsWithModel({
+            source: "api",
+            provider: "openrouter",
+            modelId: "router/vision-pro",
+            modelName: "Vision Pro",
+          }),
+      } as never,
+      { get: vi.fn().mockResolvedValue("secret") } as never,
+      {} as never,
+    );
+
+    await expect(service.generateText("Write a guide")).resolves.toBe("# Router Guide");
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(request.body));
+
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(body.model).toBe("router/vision-pro");
+    expect(body.messages[0].content).toBe("Write a guide");
+    vi.unstubAllGlobals();
+  });
+
+  it("lists the OpenRouter catalog without a key and reports Ollama as running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "router/vision-pro",
+                name: "Vision Pro",
+                context_length: 128000,
+                architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+                pricing: { prompt: "0.0000015", completion: "0.000006" },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const service = new SelectedAiService(
+      {} as never,
+      {
+        getStatus: vi
+          .fn()
+          .mockResolvedValue({ anthropic: false, openai: false, google: false, openrouter: false }),
+        get: vi.fn(),
+      } as never,
+      {
+        listModels: vi.fn().mockResolvedValue([]),
+        getEndpoint: () => "http://127.0.0.1:11434",
+      } as never,
+    );
+
+    await expect(service.listModels()).resolves.toEqual({
+      api: [
+        {
+          id: "router/vision-pro",
+          name: "Vision Pro",
+          provider: "openrouter",
+          vendor: "router",
+          supportedPurposes: ["visual", "text"],
+          contextLength: 128000,
+          pricing: { promptPerMillion: 1.5, completionPerMillion: 6 },
+          isFree: false,
+        },
+      ],
+      local: [],
+      ollama: { status: "running", endpoint: "http://127.0.0.1:11434" },
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("reports Ollama as unavailable when local discovery fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+        }),
+      ),
+    );
+    const service = new SelectedAiService(
+      {} as never,
+      {
+        getStatus: vi
+          .fn()
+          .mockResolvedValue({ anthropic: false, openai: false, google: false, openrouter: false }),
+        get: vi.fn(),
+      } as never,
+      {
+        listModels: vi.fn().mockRejectedValue(new Error("daemon down")),
+        getEndpoint: () => "http://127.0.0.1:11434",
+      } as never,
+    );
+
+    const catalog = await service.listModels();
+
+    expect(catalog.local).toEqual([]);
+    expect(catalog.ollama).toEqual({ status: "unavailable", endpoint: "http://127.0.0.1:11434" });
+    vi.unstubAllGlobals();
+  });
+
   it("does not retry non-transient API errors", async () => {
     const fetchMock = vi
       .fn()
@@ -427,14 +601,13 @@ describe("SelectedAiService", () => {
     vi.stubGlobal("fetch", fetchMock);
     const service = new SelectedAiService(
       {
-        get: () => ({
-          aiModelSelection: {
+        get: () =>
+          settingsWithModel({
             source: "api",
             provider: "openai",
             modelId: "gpt-4o",
             modelName: "GPT-4o",
-          },
-        }),
+          }),
       } as never,
       { get: vi.fn().mockResolvedValue("secret") } as never,
       {} as never,

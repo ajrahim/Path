@@ -49,7 +49,7 @@ type SettingsAction =
 
 const initialState: SettingsEditorState = {
   settings: null,
-  keyStatus: { anthropic: false, openai: false, google: false },
+  keyStatus: { anthropic: false, openai: false, google: false, openrouter: false },
   version: "",
   keyEditor: { provider: null, draft: "" },
   busy: "loading",

@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { AiModelSelection, AiProviderKeyStatus, AvailableAiModels } from "@path/shared";
-import { getDesktopApi } from "@/lib/Desktop";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { AiModelPurpose, AiModelSelection, AiProviderKeyStatus } from "@path/shared";
+import {
+  createIpcModelCatalogProvider,
+  type ModelCatalogProvider,
+  type ModelCatalogSnapshot,
+} from "@/lib/ModelCatalog";
 
-interface ModelCatalog {
-  models: AvailableAiModels;
-  keyStatus: AiProviderKeyStatus;
-  selection: AiModelSelection | null;
-}
-
-interface ModelState extends ModelCatalog {
+interface ModelState extends ModelCatalogSnapshot {
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -16,15 +14,15 @@ interface ModelState extends ModelCatalog {
 
 type ModelAction =
   | { type: "refresh-started" }
-  | { type: "catalog-loaded"; catalog: ModelCatalog }
+  | { type: "catalog-loaded"; catalog: ModelCatalogSnapshot }
   | { type: "selection-started" }
-  | { type: "selection-saved"; selection: AiModelSelection }
+  | { type: "selection-saved"; purpose: AiModelPurpose; selection: AiModelSelection }
   | { type: "failed"; message: string };
 
 const initialState: ModelState = {
-  models: { api: [], local: [] },
-  keyStatus: { anthropic: false, openai: false, google: false },
-  selection: null,
+  models: { api: [], local: [], ollama: { status: "unavailable", endpoint: "" } },
+  keyStatus: { anthropic: false, openai: false, google: false, openrouter: false },
+  selections: { visual: null, text: null },
   isLoading: true,
   isSaving: false,
   error: null,
@@ -43,7 +41,12 @@ function reduceModels(state: ModelState, action: ModelAction): ModelState {
       return { ...state, isSaving: true, error: null };
 
     case "selection-saved":
-      return { ...state, selection: action.selection, isLoading: false, isSaving: false };
+      return {
+        ...state,
+        selections: { ...state.selections, [action.purpose]: action.selection },
+        isLoading: false,
+        isSaving: false,
+      };
 
     case "failed":
       return { ...state, error: action.message, isLoading: false, isSaving: false };
@@ -52,12 +55,14 @@ function reduceModels(state: ModelState, action: ModelAction): ModelState {
 
 interface AiModels extends ModelState {
   refreshModels(): Promise<AiProviderKeyStatus | null>;
-  selectModel(selection: AiModelSelection): Promise<boolean>;
+  selectModel(purpose: AiModelPurpose, selection: AiModelSelection): Promise<boolean>;
+  openKeySettings(): Promise<void>;
 }
 
 /** Owns model discovery and selection, with newer requests superseding stale completions. */
-export function useAiModels(): AiModels {
+export function useAiModels(provider?: ModelCatalogProvider): AiModels {
   const [state, dispatch] = useReducer(reduceModels, initialState);
+  const [catalog] = useState(() => provider ?? createIpcModelCatalogProvider());
   const requestIdRef = useRef(0);
   const isSavingRef = useRef(false);
 
@@ -65,13 +70,13 @@ export function useAiModels(): AiModels {
     const requestId = ++requestIdRef.current;
 
     try {
-      const catalog = await loadModelCatalog();
+      const snapshot = await catalog.loadCatalog();
 
       if (requestId !== requestIdRef.current) return null;
 
-      dispatch({ type: "catalog-loaded", catalog });
+      dispatch({ type: "catalog-loaded", catalog: snapshot });
 
-      return catalog.keyStatus;
+      return snapshot.keyStatus;
     } catch (error) {
       if (requestId === requestIdRef.current) {
         dispatch({ type: "failed", message: errorMessage(error) });
@@ -79,7 +84,7 @@ export function useAiModels(): AiModels {
 
       return null;
     }
-  }, []);
+  }, [catalog]);
 
   useEffect(() => {
     void loadModels();
@@ -97,10 +102,11 @@ export function useAiModels(): AiModels {
     return loadModels();
   }
 
-  async function selectModel(selection: AiModelSelection): Promise<boolean> {
-    const desktop = getDesktopApi();
-
-    if (!desktop || isSavingRef.current) return false;
+  async function selectModel(
+    purpose: AiModelPurpose,
+    selection: AiModelSelection,
+  ): Promise<boolean> {
+    if (isSavingRef.current) return false;
 
     isSavingRef.current = true;
     const requestId = ++requestIdRef.current;
@@ -108,11 +114,11 @@ export function useAiModels(): AiModels {
     dispatch({ type: "selection-started" });
 
     try {
-      const settings = await desktop.settings.updateAiModelSelection(selection);
+      const saved = await catalog.saveSelection(purpose, selection);
 
       if (requestId !== requestIdRef.current) return false;
 
-      dispatch({ type: "selection-saved", selection: settings.aiModelSelection });
+      dispatch({ type: "selection-saved", purpose, selection: saved });
 
       return true;
     } catch (error) {
@@ -126,23 +132,11 @@ export function useAiModels(): AiModels {
     }
   }
 
-  return { ...state, refreshModels, selectModel };
-}
-
-async function loadModelCatalog(): Promise<ModelCatalog> {
-  const desktop = getDesktopApi();
-
-  if (!desktop) {
-    return { models: initialState.models, keyStatus: initialState.keyStatus, selection: null };
+  async function openKeySettings(): Promise<void> {
+    await catalog.openKeySettings();
   }
 
-  const [settings, models, keyStatus] = await Promise.all([
-    desktop.settings.get(),
-    desktop.settings.listAvailableAiModels(),
-    desktop.settings.getAiProviderKeyStatus(),
-  ]);
-
-  return { selection: settings.aiModelSelection, models, keyStatus };
+  return { ...state, refreshModels, selectModel, openKeySettings };
 }
 
 function errorMessage(error: unknown): string {

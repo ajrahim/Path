@@ -4,7 +4,13 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { NextIntlClientProvider } from "next-intl";
 import { Provider } from "react-redux";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClickEvent, RecordingSummary, TranscriptSegment } from "@path/shared";
+import type {
+  ApiAiModel,
+  ClickEvent,
+  LocalAiModel,
+  RecordingSummary,
+  TranscriptSegment,
+} from "@path/shared";
 import messages from "@path/shared/messages/en.json";
 import { RecordingPane } from "../src/components/RecordingPane";
 import { createRendererStore } from "../src/state/RendererStore";
@@ -27,7 +33,8 @@ const bridge = vi.hoisted(() => ({
 vi.mock("@/lib/Desktop", () => ({ getDesktopApi: () => ({ recordings: bridge }) }));
 
 const aiModels = vi.hoisted(() => ({
-  models: { api: [] as string[], local: [] as string[] },
+  models: { api: [] as ApiAiModel[], local: [] as LocalAiModel[] },
+  keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
   isLoading: false,
 }));
 
@@ -152,8 +159,33 @@ describe("RecordingPane UI interactions", () => {
   it.each(["local", "api", "loading"] as const)(
     "keeps the empty state minimal when models are %s",
     (state) => {
-      if (state === "loading") aiModels.isLoading = true;
-      else aiModels.models[state] = ["test-model"];
+      if (state === "loading") {
+        aiModels.isLoading = true;
+      } else if (state === "local") {
+        aiModels.models.local = [
+          {
+            id: "vision",
+            name: "Vision",
+            supportedPurposes: ["visual", "text"],
+            sizeBytes: null,
+            modifiedAt: null,
+            isLoaded: false,
+          },
+        ];
+      } else {
+        aiModels.models.api = [
+          {
+            id: "vision",
+            name: "Vision",
+            supportedPurposes: ["visual", "text"],
+            provider: "openai",
+            vendor: null,
+            contextLength: null,
+            pricing: null,
+            isFree: false,
+          },
+        ];
+      }
 
       const onNewRecording = vi.fn();
       const view = renderRecordingPane({ recording: null, onNewRecording });
@@ -166,6 +198,22 @@ describe("RecordingPane UI interactions", () => {
       expect(onNewRecording).toHaveBeenCalledOnce();
     },
   );
+
+  it("keeps visual model setup accessible when only text models are available", () => {
+    aiModels.models.local = [
+      {
+        id: "writer",
+        name: "Writer",
+        supportedPurposes: ["text"],
+        sizeBytes: null,
+        modifiedAt: null,
+        isLoaded: false,
+      },
+    ];
+    renderRecordingPane({ recording: null });
+
+    expect(screen.getByText(messages.recording.onboardingNeedsModel)).toBeTruthy();
+  });
 
   it("keeps model setup accessible when no models are available", () => {
     const onOpenSettings = vi.fn();

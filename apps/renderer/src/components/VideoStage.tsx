@@ -218,8 +218,15 @@ function OnboardingEmptyState({
   onOpenSettings(): void;
 }) {
   const t = useTranslations();
-  const { models, isLoading } = useAiModels();
-  const hasModels = models.api.length > 0 || models.local.length > 0;
+  const { models, keyStatus, isLoading } = useAiModels();
+  const availableModels = [
+    ...models.local,
+    ...models.api.filter((model) => keyStatus[model.provider]),
+  ];
+
+  const hasModels = (["visual", "text"] as const).every((purpose) =>
+    availableModels.some((model) => model.supportedPurposes.includes(purpose)),
+  );
 
   return (
     <div className="video-empty-state">

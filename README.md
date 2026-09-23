@@ -14,7 +14,7 @@ Media is stored locally. Selecting a cloud AI provider sends the context require
 - Floating recording controls, post-stop video processing, and local recording history.
 - Video playback with seekable activity, click screenshots, transcript editing, and activity deletion.
 - Help Guide and Spec Document presets, reusable custom instruction flows, and Markdown editing, copying, and export.
-- Ollama model selection or configured Anthropic, OpenAI, and Google providers; local Windows whisper.cpp transcription.
+- Separate Visual and Text model selection with Ollama, OpenRouter, or configured Anthropic, OpenAI, and Google providers; local Windows whisper.cpp transcription.
 - Persistent appearance/settings, encrypted provider credentials, and configurable recording-file location.
 
 Windows is the primary development target. macOS packaging is configured, but complete native runtime and permission validation remains outstanding. Linux has no configured installer target. Current limitations are listed below; configured targets are not a claim of verified platform support.
@@ -30,7 +30,7 @@ npm run dev
 
 Development starts Next.js on port 3000 and launches Electron. The browser alone cannot provide desktop capture or native storage capabilities. The launcher can reuse an existing Path renderer on that port.
 
-AI is optional for capture and video processing. For local AI, run Ollama with a vision-capable model and select it in the application header. Alternatively, add a provider key in Settings, then choose an available model. AI failures may leave click descriptions or documents unavailable while recorded video remains usable.
+AI is optional for capture and video processing. Open AI models in the application header to choose a Visual model for screenshot analysis and a Text model for document generation. Each choice is saved independently; the same model can serve both roles. For local AI, run Ollama with a vision-capable model for Visual and a text-generation model for Text. Alternatively, add a provider key in Settings, then choose a compatible cloud model. Existing profiles start with their previous model selected for both roles. AI failures may leave click descriptions or documents unavailable while recorded video remains usable.
 
 Windows transcription uses the runtime under `apps/desktop/vendor/whisper/win32-x64/Release`. Its first run downloads an English `tiny.en` model and verifies its size and SHA-256. See the included third-party license before redistributing that runtime.
 
@@ -49,7 +49,7 @@ Do not modify the operating system's `PATH` variable to configure the app.
 2. Start recording. The main window minimizes and floating controls appear. Stop is armed after two seconds to prevent accidental termination from residual input.
 3. Stop to return to the workspace while video processing and optional transcription/click analysis finish.
 4. Select a recording in History. Review video and activity, seek from a timestamp, edit transcript text, or remove an activity entry.
-5. Select a document flow and AI model, generate a document, then edit, copy, or export its Markdown.
+5. Select a document flow and Text model, generate a document, then edit, copy, or export its Markdown.
 
 **Generated Markdown is not autosaved.** Switching recordings, reloading, closing, or generating again can discard editor content. Copy or export anything you want to retain. Custom instruction flows are saved separately in the renderer profile; editing a built-in preset creates a custom copy.
 
@@ -57,7 +57,7 @@ History supports search, sorting, renaming, and deletion. Deletion requires conf
 
 ## AI and privacy
 
-Screen recordings, screenshots, and transcripts may contain sensitive material. Local capture and processing do not require a cloud AI provider. The selected model is used for click analysis and document generation; an Ollama endpoint override may send content to another machine.
+Screen recordings, screenshots, and transcripts may contain sensitive material. Local capture and processing do not require a cloud AI provider. The Visual selection controls click screenshot analysis; the Text selection controls document generation. Each role can use a different local or cloud provider, and failures never switch providers automatically. An Ollama endpoint override may send content to another machine.
 
 - Cloud click analysis sends a processed click screenshot with bounded nearby transcript and prior-click context.
 - Cloud document generation sends the recording title, selected instructions, and ordered transcript/click-description text. It does not send raw video or audio.

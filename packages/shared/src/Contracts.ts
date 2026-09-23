@@ -11,7 +11,7 @@ export type MouseButton = "left" | "right" | "middle";
 export type GuideFormat =
   "help-guide" | "knowledge-base" | "tutorial" | "internal-sop" | "blog-post";
 
-export const aiProviders = ["anthropic", "openai", "google"] as const;
+export const aiProviders = ["anthropic", "openai", "google", "openrouter"] as const;
 
 export type AiProvider = (typeof aiProviders)[number];
 export type AiProviderKeyStatus = Record<AiProvider, boolean>;
@@ -21,14 +21,45 @@ export interface AiModel {
   name: string;
 }
 
+export type AiModelPurpose = "visual" | "text";
+
+/**
+ * Installed Ollama model with discovery metadata. Nulls mean the daemon
+ * answered but omitted the field; a down daemon yields no models at all.
+ */
+export interface LocalAiModel extends AiModel {
+  supportedPurposes: AiModelPurpose[];
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  isLoaded: boolean;
+}
+
+/** Per-1M-token USD pricing as published by the catalog source. */
+export interface ApiModelPricing {
+  promptPerMillion: number;
+  completionPerMillion: number;
+}
+
+export interface ApiAiModel extends AiModel {
+  supportedPurposes: AiModelPurpose[];
+  provider: AiProvider;
+  vendor: string | null;
+  contextLength: number | null;
+  pricing: ApiModelPricing | null;
+  isFree: boolean;
+}
+
 /** Explicit processing choice; an unavailable model must not trigger a provider fallback. */
 export type AiModelSelection =
   | { source: "local"; modelId: string; modelName: string }
   | { source: "api"; provider: AiProvider; modelId: string; modelName: string };
 
+export type AiModelSelections = Record<AiModelPurpose, AiModelSelection>;
+
 export interface AvailableAiModels {
-  api: Array<AiModel & { provider: AiProvider }>;
-  local: AiModel[];
+  api: ApiAiModel[];
+  local: LocalAiModel[];
+  ollama: { status: "running" | "unavailable"; endpoint: string };
 }
 
 export interface SetAiProviderKeyResult {
@@ -47,7 +78,7 @@ export interface DesktopSettings {
   /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
   guideInstructions: string;
   localVisionModel: string;
-  aiModelSelection: AiModelSelection;
+  aiModelSelections: AiModelSelections;
 }
 
 /** A rectangle in global Electron DIP coordinates, including negative monitor origins. */

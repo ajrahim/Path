@@ -402,6 +402,11 @@
   font-weight: 600;
 }
 
+.provider-openrouter {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
 .provider-openai {
   background: var(--success-soft);
   color: var(--success);

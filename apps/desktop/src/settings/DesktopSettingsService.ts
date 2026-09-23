@@ -1,7 +1,13 @@
 import { app } from "electron";
 import { resolve } from "node:path";
 import type { AppSettingsRepository } from "@path/database";
-import type { AiModelSelection, DesktopSettings, GeneralSettings } from "@path/shared";
+import { aiModelSelectionSchema } from "@path/shared";
+import type {
+  AiModelPurpose,
+  AiModelSelection,
+  DesktopSettings,
+  GeneralSettings,
+} from "@path/shared";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 
 const SETTINGS_KEY = "desktop-settings";
@@ -13,22 +19,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class DesktopSettingsService {
   private current: DesktopSettings;
+  private aiModelSelectionUpdate: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly repository: AppSettingsRepository,
     private readonly assets: ManagedRecordingAssets,
     defaultRecordingsDirectory: string,
   ) {
+    const defaultSelection: AiModelSelection = {
+      source: "local",
+      modelId: "llama3.2-vision:latest",
+      modelName: "llama3.2-vision:latest",
+    };
+
     this.current = {
       general: { minimizeToTray: true },
       recordingsDirectory: resolve(defaultRecordingsDirectory),
       guideInstructions: "",
       localVisionModel: "llama3.2-vision:latest",
-      aiModelSelection: {
-        source: "local",
-        modelId: "llama3.2-vision:latest",
-        modelName: "llama3.2-vision:latest",
-      },
+      aiModelSelections: { visual: { ...defaultSelection }, text: { ...defaultSelection } },
     };
   }
 
@@ -38,11 +47,17 @@ export class DesktopSettingsService {
     // Fill fields absent from older profiles without replacing their valid persisted preferences.
     if (isRecord(stored)) {
       const general = isRecord(stored.general) ? stored.general : {};
-      const storedSelection = isRecord(stored.aiModelSelection) ? stored.aiModelSelection : null;
-      const localVisionModel =
-        typeof stored.localVisionModel === "string" && stored.localVisionModel
-          ? stored.localVisionModel
-          : this.current.localVisionModel;
+      const storedSelections = isRecord(stored.aiModelSelections) ? stored.aiModelSelections : {};
+      const localSelection =
+        parseAiModelSelection({
+          source: "local",
+          modelId: stored.localVisionModel,
+          modelName: stored.localVisionModel,
+        }) ?? this.current.aiModelSelections.visual;
+
+      const legacySelection = parseAiModelSelection(stored.aiModelSelection) ?? localSelection;
+      const visualSelection = parseAiModelSelection(storedSelections.visual) ?? legacySelection;
+      const textSelection = parseAiModelSelection(storedSelections.text) ?? legacySelection;
 
       this.current = {
         general: {
@@ -55,11 +70,11 @@ export class DesktopSettingsService {
             : this.current.recordingsDirectory,
         guideInstructions:
           typeof stored.guideInstructions === "string" ? stored.guideInstructions : "",
-        localVisionModel,
-        aiModelSelection: parseAiModelSelection(storedSelection) ?? {
-          source: "local",
-          modelId: localVisionModel,
-          modelName: localVisionModel,
+        localVisionModel:
+          visualSelection.source === "local" ? visualSelection.modelId : localSelection.modelId,
+        aiModelSelections: {
+          visual: { ...visualSelection },
+          text: { ...textSelection },
         },
       };
     }
@@ -85,7 +100,10 @@ export class DesktopSettingsService {
       recordingsDirectory: this.current.recordingsDirectory,
       guideInstructions: this.current.guideInstructions,
       localVisionModel: this.current.localVisionModel,
-      aiModelSelection: { ...this.current.aiModelSelection },
+      aiModelSelections: {
+        visual: { ...this.current.aiModelSelections.visual },
+        text: { ...this.current.aiModelSelections.text },
+      },
     };
   }
 
@@ -105,22 +123,40 @@ export class DesktopSettingsService {
   }
 
   async updateLocalVisionModel(model: string): Promise<DesktopSettings> {
-    this.current.localVisionModel = model;
-    this.current.aiModelSelection = { source: "local", modelId: model, modelName: model };
-    await this.persist();
-
-    return this.get();
+    return this.updateAiModelSelection("visual", {
+      source: "local",
+      modelId: model,
+      modelName: model,
+    });
   }
 
-  async updateAiModelSelection(selection: AiModelSelection): Promise<DesktopSettings> {
-    this.current.aiModelSelection = { ...selection };
-    if (selection.source === "local") {
-      this.current.localVisionModel = selection.modelId;
-    }
+  async updateAiModelSelection(
+    purpose: AiModelPurpose,
+    selection: AiModelSelection,
+  ): Promise<DesktopSettings> {
+    const nextSelection = { ...selection };
+    const update = this.aiModelSelectionUpdate.then(async () => {
+      const nextSettings = this.get();
 
-    await this.persist();
+      nextSettings.aiModelSelections[purpose] = nextSelection;
+      if (purpose === "visual" && nextSelection.source === "local") {
+        nextSettings.localVisionModel = nextSelection.modelId;
+      }
 
-    return this.get();
+      await this.repository.set(SETTINGS_KEY, nextSettings);
+      this.current.aiModelSelections = nextSettings.aiModelSelections;
+      this.current.localVisionModel = nextSettings.localVisionModel;
+
+      return this.get();
+    });
+
+    // Keep later role changes available if an earlier save fails.
+    this.aiModelSelectionUpdate = update.then(
+      () => {},
+      () => {},
+    );
+
+    return update;
   }
 
   async updateRecordingsDirectory(directory: string): Promise<DesktopSettings> {
@@ -143,6 +179,7 @@ export class DesktopSettingsService {
   }
 
   private async persist(): Promise<void> {
+    await this.aiModelSelectionUpdate;
     await this.repository.set(SETTINGS_KEY, this.current);
   }
 
@@ -152,28 +189,8 @@ export class DesktopSettingsService {
   }
 }
 
-function parseAiModelSelection(value: Record<string, unknown> | null): AiModelSelection | null {
-  if (
-    value?.source === "local" &&
-    typeof value.modelId === "string" &&
-    typeof value.modelName === "string"
-  ) {
-    return { source: "local", modelId: value.modelId, modelName: value.modelName };
-  }
+function parseAiModelSelection(value: unknown): AiModelSelection | null {
+  const result = aiModelSelectionSchema.safeParse(value);
 
-  if (
-    value?.source === "api" &&
-    ["anthropic", "openai", "google"].includes(String(value.provider)) &&
-    typeof value.modelId === "string" &&
-    typeof value.modelName === "string"
-  ) {
-    return {
-      source: "api",
-      provider: value.provider as "anthropic" | "openai" | "google",
-      modelId: value.modelId,
-      modelName: value.modelName,
-    };
-  }
-
-  return null;
+  return result.success ? result.data : null;
 }

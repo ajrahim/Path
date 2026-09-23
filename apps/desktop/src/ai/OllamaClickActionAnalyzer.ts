@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import {
   normalizeClickDescription,
   UNKNOWN_CLICK_CONTROL,
-  type AiModel,
+  type LocalAiModel,
   type MouseButton,
 } from "@path/shared";
 import { PNG } from "pngjs";
@@ -31,6 +31,10 @@ export interface PreparedClickAction {
 }
 
 interface OllamaTagsResponse {
+  models?: Array<{ name?: string; model?: string; size?: number; modified_at?: string }>;
+}
+
+interface OllamaPsResponse {
   models?: Array<{ name?: string; model?: string }>;
 }
 
@@ -47,20 +51,16 @@ const MAX_CLICK_DESCRIPTION_TOKENS = 80;
 const MAX_DOCUMENT_TOKENS = 2_048;
 
 export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
-  private model: string;
-
   constructor(
-    model = "llama3.2-vision:latest",
+    private readonly defaultModel = "llama3.2-vision:latest",
     private readonly endpoint = "http://127.0.0.1:11434",
-  ) {
-    this.model = model;
+  ) {}
+
+  getEndpoint(): string {
+    return this.endpoint;
   }
 
-  setModel(model: string): void {
-    this.model = model;
-  }
-
-  async listModels(): Promise<AiModel[]> {
+  async listModels(): Promise<LocalAiModel[]> {
     const response = await fetch(`${this.endpoint}/api/tags`, {
       signal: AbortSignal.timeout(OLLAMA_DISCOVERY_TIMEOUT_MS),
     });
@@ -70,16 +70,22 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
     }
 
     const result = (await response.json()) as OllamaTagsResponse;
-    const names = [
-      ...new Set(
-        (result.models ?? [])
-          .map((model) => model.name ?? model.model)
-          .filter((name): name is string => Boolean(name)),
-      ),
-    ];
+    const installed = new Map<string, { sizeBytes: number | null; modifiedAt: string | null }>();
 
+    for (const model of result.models ?? []) {
+      const name = model.name ?? model.model;
+
+      if (name && !installed.has(name)) {
+        installed.set(name, {
+          sizeBytes: typeof model.size === "number" ? model.size : null,
+          modifiedAt: typeof model.modified_at === "string" ? model.modified_at : null,
+        });
+      }
+    }
+
+    const loaded = await this.listLoadedModelNames();
     const compatible = await Promise.all(
-      names.map(async (name): Promise<AiModel | null> => {
+      [...installed].map(async ([name, metadata]): Promise<LocalAiModel | null> => {
         try {
           const details = await fetch(`${this.endpoint}/api/show`, {
             method: "POST",
@@ -91,7 +97,17 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
           if (!details.ok) return null;
           const model = (await details.json()) as OllamaShowResponse;
 
-          return model.capabilities?.includes("vision") ? { id: name, name } : null;
+          const capabilities = model.capabilities;
+
+          if (!Array.isArray(capabilities) || !capabilities.includes("completion")) return null;
+
+          return {
+            id: name,
+            name,
+            ...metadata,
+            isLoaded: loaded.has(name),
+            supportedPurposes: capabilities.includes("vision") ? ["visual", "text"] : ["text"],
+          };
         } catch {
           // A failed capability probe excludes only this model from discovery.
           return null;
@@ -100,30 +116,55 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
     );
 
     return compatible
-      .filter((model): model is AiModel => model !== null)
+      .filter((model): model is LocalAiModel => model !== null)
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async analyze(input: ClickActionAnalysisInput): Promise<string> {
+  private async listLoadedModelNames(): Promise<Set<string>> {
+    try {
+      const response = await fetch(`${this.endpoint}/api/ps`, {
+        signal: AbortSignal.timeout(OLLAMA_DISCOVERY_TIMEOUT_MS),
+      });
+
+      if (!response.ok) return new Set();
+      const result = (await response.json()) as OllamaPsResponse;
+
+      return new Set(
+        (result.models ?? [])
+          .map((model) => model.name ?? model.model)
+          .filter((name): name is string => Boolean(name)),
+      );
+    } catch {
+      // Tags already proved the daemon is up; loaded state is best-effort metadata.
+      return new Set();
+    }
+  }
+
+  async analyze(input: ClickActionAnalysisInput, model = this.defaultModel): Promise<string> {
     const prepared = await prepareClickAction(input);
-    const response = await this.chat(prepared.prompt, MAX_CLICK_DESCRIPTION_TOKENS, [
+    const response = await this.chat(model, prepared.prompt, MAX_CLICK_DESCRIPTION_TOKENS, [
       prepared.imageBase64,
     ]);
 
     return normalizeClickDescription(response, input.button);
   }
 
-  async generateText(prompt: string): Promise<string> {
-    return this.chat(prompt, MAX_DOCUMENT_TOKENS);
+  async generateText(prompt: string, model = this.defaultModel): Promise<string> {
+    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS);
   }
 
-  private async chat(prompt: string, maxTokens: number, images?: string[]): Promise<string> {
+  private async chat(
+    model: string,
+    prompt: string,
+    maxTokens: number,
+    images?: string[],
+  ): Promise<string> {
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       signal: AbortSignal.timeout(OLLAMA_CHAT_TIMEOUT_MS),
       body: JSON.stringify({
-        model: this.model,
+        model,
         stream: false,
         think: false,
         messages: [{ role: "user", content: prompt, images }],

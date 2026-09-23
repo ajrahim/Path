@@ -55,8 +55,16 @@ export function useSettingsNavigation(isLoading: boolean): SettingsNavigation {
     content.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
-    window.addEventListener("hashchange", scheduleUpdate);
-    scheduleUpdate();
+    function revealHashedSection(): void {
+      const sectionId = window.location.hash.slice(1);
+      const section = sections.find((candidate) => candidate.id === sectionId);
+
+      section?.scrollIntoView({ block: "start" });
+      scheduleUpdate();
+    }
+
+    window.addEventListener("hashchange", revealHashedSection);
+    revealHashedSection();
 
     return () => {
       cancelAnimationFrame(frame);
@@ -64,7 +72,7 @@ export function useSettingsNavigation(isLoading: boolean): SettingsNavigation {
       content.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
-      window.removeEventListener("hashchange", scheduleUpdate);
+      window.removeEventListener("hashchange", revealHashedSection);
     };
   }, [isLoading]);
 

@@ -9,12 +9,16 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useTheme } from "next-themes";
+import { useEffect } from "react";
 import type { AiProvider } from "@path/shared";
+import { getDesktopApi } from "@/lib/Desktop";
 import { Button } from "@/components/Button";
 import { useSettingsEditor } from "../hooks/useSettingsEditor";
 import { useSettingsNavigation } from "../hooks/useSettingsNavigation";
 
 const providers: Array<{ id: AiProvider; name: string; description: string }> = [
+  { id: "openrouter", name: "OpenRouter", description: "One key for many models" },
   { id: "anthropic", name: "Anthropic", description: "Claude models" },
   { id: "openai", name: "OpenAI", description: "GPT and reasoning models" },
   { id: "google", name: "Google", description: "Gemini models" },
@@ -22,6 +26,13 @@ const providers: Array<{ id: AiProvider; name: string; description: string }> = 
 
 export default function SettingsPage() {
   const t = useTranslations();
+  const { resolvedTheme } = useTheme();
+
+  useEffect(() => {
+    if (resolvedTheme !== "light" && resolvedTheme !== "dark") return;
+
+    void getDesktopApi()?.app.setTitleBarTheme?.({ theme: resolvedTheme });
+  }, [resolvedTheme]);
 
   // The editor owns drafts and writes; section navigation follows this view's scroll position.
   const {

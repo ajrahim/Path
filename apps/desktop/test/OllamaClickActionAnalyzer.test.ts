@@ -22,16 +22,83 @@ afterEach(async () => {
 });
 
 describe("OllamaClickActionAnalyzer", () => {
-  it("lists only installed models that support vision", async () => {
-    // An installed model is not necessarily capable of receiving screenshots.
+  it("discovers text and vision models while excluding models that cannot generate text", async () => {
     const fetchMock = vi.fn(async (input: string, request?: RequestInit) => {
       if (input.endsWith("/api/tags")) {
         return new Response(
           JSON.stringify({
-            models: [{ name: "text-model:latest" }, { name: "vision-model:latest" }],
+            models: [
+              {
+                name: "text-model:latest",
+                size: 4_100_000_000,
+                modified_at: "2026-08-01T00:00:00Z",
+              },
+              {
+                name: "vision-model:latest",
+                size: 5_200_000_000,
+                modified_at: "2026-09-01T00:00:00Z",
+              },
+              { name: "embedding-model:latest" },
+            ],
           }),
           { status: 200 },
         );
+      }
+
+      if (input.endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [{ name: "vision-model:latest" }] }), {
+          status: 200,
+        });
+      }
+
+      const body = JSON.parse(String(request?.body));
+
+      return new Response(
+        JSON.stringify({
+          capabilities: {
+            "vision-model:latest": ["completion", "vision"],
+            "text-model:latest": ["completion"],
+            "embedding-model:latest": ["embedding"],
+          }[body.model as string],
+        }),
+        { status: 200 },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const analyzer = new OllamaClickActionAnalyzer();
+
+    await expect(analyzer.listModels()).resolves.toEqual([
+      {
+        id: "text-model:latest",
+        name: "text-model:latest",
+        sizeBytes: 4_100_000_000,
+        modifiedAt: "2026-08-01T00:00:00Z",
+        isLoaded: false,
+        supportedPurposes: ["text"],
+      },
+      {
+        id: "vision-model:latest",
+        name: "vision-model:latest",
+        sizeBytes: 5_200_000_000,
+        modifiedAt: "2026-09-01T00:00:00Z",
+        isLoaded: true,
+        supportedPurposes: ["visual", "text"],
+      },
+    ]);
+  });
+
+  it("reports no loaded models when the running list is unavailable", async () => {
+    const fetchMock = vi.fn(async (input: string, request?: RequestInit) => {
+      if (input.endsWith("/api/tags")) {
+        return new Response(JSON.stringify({ models: [{ name: "vision-model:latest" }] }), {
+          status: 200,
+        });
+      }
+
+      if (input.endsWith("/api/ps")) {
+        return new Response("unavailable", { status: 500 });
       }
 
       const body = JSON.parse(String(request?.body));
@@ -50,7 +117,14 @@ describe("OllamaClickActionAnalyzer", () => {
     const analyzer = new OllamaClickActionAnalyzer();
 
     await expect(analyzer.listModels()).resolves.toEqual([
-      { id: "vision-model:latest", name: "vision-model:latest" },
+      {
+        id: "vision-model:latest",
+        name: "vision-model:latest",
+        sizeBytes: null,
+        modifiedAt: null,
+        isLoaded: false,
+        supportedPurposes: ["visual", "text"],
+      },
     ]);
   });
 
@@ -110,32 +184,43 @@ describe("OllamaClickActionAnalyzer", () => {
     expect(body.options.num_predict).toBe(80);
   });
 
-  it("uses a newly selected model for subsequent analysis", async () => {
+  it("keeps concurrent visual and text requests on their own selected models", async () => {
     const screenshotPath = join(tmpdir(), `${randomUUID()}.png`);
 
     temporaryFiles.push(screenshotPath);
     await writeFile(screenshotPath, createPng());
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
+    const fetchMock = vi.fn(
+      async () =>
         new Response(JSON.stringify({ message: { content: "Import button" } }), { status: 200 }),
-      );
+    );
 
     vi.stubGlobal("fetch", fetchMock);
-    const analyzer = new OllamaClickActionAnalyzer("old-model");
+    const analyzer = new OllamaClickActionAnalyzer("default-model");
+    const visual = analyzer.analyze(
+      {
+        screenshotPath,
+        timestampMs: 1_000,
+        button: "left",
+        normalizedX: 0.5,
+        normalizedY: 0.5,
+      },
+      "vision-model",
+    );
 
-    analyzer.setModel("new-model");
-    await analyzer.analyze({
-      screenshotPath,
-      timestampMs: 1_000,
-      button: "left",
-      normalizedX: 0.5,
-      normalizedY: 0.5,
+    const text = analyzer.generateText("Write a guide", "text-model");
+
+    await Promise.all([visual, text]);
+    const requests = fetchMock.mock.calls.map((call) => {
+      const request = call[1] as RequestInit;
+
+      return JSON.parse(String(request.body));
     });
 
-    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const visualRequest = requests.find((request) => request.messages[0].images);
+    const textRequest = requests.find((request) => request.messages[0].content === "Write a guide");
 
-    expect(JSON.parse(String(request.body)).model).toBe("new-model");
+    expect(visualRequest.model).toBe("vision-model");
+    expect(textRequest.model).toBe("text-model");
   });
 
   it("caps the image dimensions around the click target", async () => {

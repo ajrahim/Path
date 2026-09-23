@@ -16,7 +16,7 @@ SQLite stores structured metadata, editable transcript segments, and click coord
 
 ### 4. Explicit AI model selection & privacy boundary
 
-Local Ollama and cloud AI models (Anthropic, OpenAI, Google) are strictly selected by the user. Failures never trigger unprompted fallback to another provider. Cloud requests transmit only bounded text context and processed click screenshots—never raw video or full audio streams.
+Local Ollama and cloud AI models (Anthropic, OpenAI, Google, OpenRouter) are strictly selected by the user, independently for Visual screenshot analysis and Text document generation. Older profiles initialize both roles from the previous single selection. Failures never trigger unprompted fallback to another provider. Cloud requests transmit only bounded text context and processed click screenshots—never raw video or full audio streams. Each local request carries its own model so overlapping visual and text operations cannot change one another's routing.
 
 ### 5. Flat renderer structure with strict unidirectional data flow
 

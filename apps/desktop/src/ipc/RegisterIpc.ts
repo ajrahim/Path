@@ -13,7 +13,9 @@ import {
   activityItemInputSchema,
   IPC_CHANNELS,
   isActiveRecordingStatus,
+  openSettingsInputSchema,
   recorderPopoverExpandedInputSchema,
+  titleBarThemeInputSchema,
   recordingIdInputSchema,
   renameRecordingInputSchema,
   startRecordingInputSchema,
@@ -25,7 +27,7 @@ import {
   updateGeneralSettingsInputSchema,
   updateGuideInstructionsInputSchema,
   updateLocalVisionModelInputSchema,
-  aiModelSelectionSchema,
+  updateAiModelSelectionInputSchema,
   type AppInfo,
 } from "@path/shared";
 import type { AiCredentialStore } from "../storage/AiCredentialStore";
@@ -37,6 +39,7 @@ import {
 import { listProviderModels } from "../ai/ProviderModels";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 import type { TrayController } from "../tray/TrayController";
+import { applyWindowTitleBarTheme } from "../windows/SettingsWindow";
 import type { RecordingController } from "../recording/RecordingController";
 import type { RegionSelector } from "../recording/RegionSelector";
 import type { RecordingMediaServer } from "../media/RecordingMediaServer";
@@ -56,7 +59,7 @@ export interface IpcDependencies {
   aiCredentials: AiCredentialStore;
   settings: DesktopSettingsService;
   aiService: SelectedAiService;
-  openSettingsWindow(): void;
+  openSettingsWindow(section?: string): void;
 }
 
 function platform(): AppInfo["platform"] {
@@ -92,7 +95,17 @@ export function registerIpcHandlers({
 
     tray.setRecorderPopoverExpanded(expanded);
   });
-  ipcMain.handle(IPC_CHANNELS.appOpenSettings, () => openSettingsWindow());
+  ipcMain.handle(IPC_CHANNELS.appSetTitleBarTheme, (event, input: unknown) => {
+    const { theme } = titleBarThemeInputSchema.parse(input);
+    const window = BrowserWindow.fromWebContents(event.sender);
+
+    if (window) applyWindowTitleBarTheme(window, theme);
+  });
+  ipcMain.handle(IPC_CHANNELS.appOpenSettings, (_event, input: unknown) => {
+    const { section } = openSettingsInputSchema.parse(input ?? {});
+
+    openSettingsWindow(section);
+  });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.get());
   ipcMain.handle(IPC_CHANNELS.settingsUpdateGeneral, (_event, input: unknown) =>
@@ -166,18 +179,23 @@ export function registerIpcHandlers({
   });
   ipcMain.handle(IPC_CHANNELS.settingsListAvailableAiModels, () => aiService.listModels());
   ipcMain.handle(IPC_CHANNELS.settingsUpdateAiModelSelection, async (_event, input: unknown) => {
-    const selection = aiModelSelectionSchema.parse(input);
+    const { purpose, selection } = updateAiModelSelectionInputSchema.parse(input);
     const available = await aiService.listModels();
     const exists =
       selection.source === "local"
-        ? available.local.some((model) => model.id === selection.modelId)
+        ? available.local.some(
+            (model) => model.id === selection.modelId && model.supportedPurposes.includes(purpose),
+          )
         : available.api.some(
-            (model) => model.provider === selection.provider && model.id === selection.modelId,
+            (model) =>
+              model.provider === selection.provider &&
+              model.id === selection.modelId &&
+              model.supportedPurposes.includes(purpose),
           );
 
-    if (!exists) throw new Error("The selected AI model is not available");
+    if (!exists) throw new Error(`The selected ${purpose} model is not available`);
 
-    return settings.updateAiModelSelection(selection);
+    return settings.updateAiModelSelection(purpose, selection);
   });
 
   ipcMain.handle(IPC_CHANNELS.guidesGenerate, async (_event, input: unknown) => {

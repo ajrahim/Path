@@ -1,8 +1,8 @@
 import { z } from "zod";
 
+import { aiProviders } from "./Contracts";
 import type {
   AiModel,
-  AiModelSelection,
   AvailableAiModels,
   AiProvider,
   AiProviderKeyStatus,
@@ -31,6 +31,7 @@ export const IPC_CHANNELS = {
   appShowTrayMenu: "app:show-tray-menu",
   appShowMainWindow: "app:show-main-window",
   appSetRecorderPopoverExpanded: "app:set-recorder-popover-expanded",
+  appSetTitleBarTheme: "app:set-title-bar-theme",
   appOpenSettings: "app:open-settings",
 
   settingsGet: "settings:get",
@@ -100,17 +101,25 @@ export const IPC_CHANNELS = {
 export const clickTrackingInputSchema = z.boolean();
 
 export const setAiProviderKeyInputSchema = z.strictObject({
-  provider: z.enum(["anthropic", "openai", "google"]),
+  provider: z.enum(aiProviders),
   key: z.string().trim().min(1).max(1_000),
 });
 
 export const aiProviderInputSchema = z.strictObject({
-  provider: z.enum(["anthropic", "openai", "google"]),
+  provider: z.enum(aiProviders),
 });
 
 export const updateGeneralSettingsInputSchema = z.strictObject({ minimizeToTray: z.boolean() });
 
 export const recorderPopoverExpandedInputSchema = z.strictObject({ expanded: z.boolean() });
+
+export const titleBarThemeInputSchema = z.strictObject({ theme: z.enum(["light", "dark"]) });
+
+const SETTINGS_SECTIONS = ["general", "storage", "keys"] as const;
+
+export const openSettingsInputSchema = z.strictObject({
+  section: z.enum(SETTINGS_SECTIONS).optional(),
+});
 
 export const updateGuideInstructionsInputSchema = z.strictObject({
   guideInstructions: z.string().trim().max(10_000),
@@ -128,11 +137,16 @@ export const aiModelSelectionSchema = z.discriminatedUnion("source", [
   }),
   z.strictObject({
     source: z.literal("api"),
-    provider: z.enum(["anthropic", "openai", "google"]),
+    provider: z.enum(aiProviders),
     modelId: z.string().trim().min(1).max(200),
     modelName: z.string().trim().min(1).max(200),
   }),
 ]);
+
+export const updateAiModelSelectionInputSchema = z.strictObject({
+  purpose: z.enum(["visual", "text"]),
+  selection: aiModelSelectionSchema,
+});
 
 export const projectChangeInputSchema = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("create"), name: z.string().trim().min(1).max(80) }),
@@ -230,9 +244,10 @@ export interface DesktopApi {
   app: {
     getInfo(): Promise<AppInfo>;
     showTrayMenu(): Promise<void>;
+    setTitleBarTheme(input: z.infer<typeof titleBarThemeInputSchema>): Promise<void>;
     showMainWindow(): Promise<void>;
     setRecorderPopoverExpanded(input: { expanded: boolean }): Promise<void>;
-    openSettings(): Promise<void>;
+    openSettings(input?: z.infer<typeof openSettingsInputSchema>): Promise<void>;
   };
 
   settings: {
@@ -250,7 +265,9 @@ export interface DesktopApi {
     listLocalModels(): Promise<AiModel[]>;
     updateLocalVisionModel(input: { model: string }): Promise<DesktopSettings>;
     listAvailableAiModels(): Promise<AvailableAiModels>;
-    updateAiModelSelection(input: AiModelSelection): Promise<DesktopSettings>;
+    updateAiModelSelection(
+      input: z.infer<typeof updateAiModelSelectionInputSchema>,
+    ): Promise<DesktopSettings>;
   };
 
   guides: {

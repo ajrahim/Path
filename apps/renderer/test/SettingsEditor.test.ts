@@ -24,7 +24,10 @@ const settings: DesktopSettings = {
   recordingsDirectory: "/recordings",
   guideInstructions: "Original instructions",
   localVisionModel: "vision",
-  aiModelSelection: { source: "local", modelId: "vision", modelName: "Vision" },
+  aiModelSelections: {
+    visual: { source: "local", modelId: "vision", modelName: "Vision" },
+    text: { source: "local", modelId: "vision", modelName: "Vision" },
+  },
 };
 
 beforeEach(() => {
@@ -34,6 +37,7 @@ beforeEach(() => {
     anthropic: false,
     openai: false,
     google: false,
+    openrouter: false,
   });
   bridge.getInfo.mockResolvedValue({ version: "0.1.0" });
 });
@@ -77,7 +81,7 @@ it("serializes settings saves before React has rendered the busy state", async (
 
 it("does not clear a different provider's draft when an earlier key save completes", async () => {
   const pending = Promise.withResolvers<{
-    keyStatus: { anthropic: boolean; openai: boolean; google: boolean };
+    keyStatus: { anthropic: boolean; openai: boolean; google: boolean; openrouter: boolean };
   }>();
 
   bridge.setAiProviderKey.mockReturnValue(pending.promise);
@@ -94,7 +98,9 @@ it("does not clear a different provider's draft when an earlier key save complet
   act(() => result.current.changeKeyDraft("second-test-value"));
 
   await act(async () => {
-    pending.resolve({ keyStatus: { anthropic: false, openai: true, google: false } });
+    pending.resolve({
+      keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
+    });
     await save;
   });
 
@@ -110,6 +116,7 @@ it("preserves a newly opened replacement draft when an earlier key removal compl
     anthropic: false,
     openai: true,
     google: false,
+    openrouter: false,
   });
   const { result } = await loadEditor();
   let removal: Promise<void>;
@@ -121,7 +128,7 @@ it("preserves a newly opened replacement draft when an earlier key removal compl
   act(() => result.current.changeKeyDraft("replacement-test-value"));
 
   await act(async () => {
-    pending.resolve({ anthropic: false, openai: false, google: false });
+    pending.resolve({ anthropic: false, openai: false, google: false, openrouter: false });
     await removal;
   });
 
@@ -149,7 +156,9 @@ it("preserves a reopened editor even when its provider and draft match an earlie
   act(() => result.current.changeKeyDraft("same-test-value"));
 
   await act(async () => {
-    pending.resolve({ keyStatus: { anthropic: false, openai: true, google: false } });
+    pending.resolve({
+      keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
+    });
     await save;
   });
 
@@ -158,7 +167,7 @@ it("preserves a reopened editor even when its provider and draft match an earlie
 
 it("closes the unchanged editor after its key is saved", async () => {
   bridge.setAiProviderKey.mockResolvedValue({
-    keyStatus: { anthropic: false, openai: true, google: false },
+    keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
   });
   const { result } = await loadEditor();
 
@@ -172,7 +181,12 @@ it("closes the unchanged editor after its key is saved", async () => {
 });
 
 it("closes an unchanged matching editor after removing its key", async () => {
-  bridge.removeAiProviderKey.mockResolvedValue({ anthropic: false, openai: false, google: false });
+  bridge.removeAiProviderKey.mockResolvedValue({
+    anthropic: false,
+    openai: false,
+    google: false,
+    openrouter: false,
+  });
   const { result } = await loadEditor();
 
   act(() => result.current.toggleKeyEditor("openai"));
