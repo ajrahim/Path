@@ -13,6 +13,9 @@ import {
   activityItemInputSchema,
   IPC_CHANNELS,
   isActiveRecordingStatus,
+  instructionFlowIdInputSchema,
+  migrateInstructionFlowsInputSchema,
+  saveInstructionFlowInputSchema,
   openSettingsInputSchema,
   recorderPopoverExpandedInputSchema,
   titleBarThemeInputSchema,
@@ -23,17 +26,23 @@ import {
   regionRectangleSchema,
   selectRegionInputSchema,
   setAiProviderKeyInputSchema,
+  timelineImportInputSchema,
+  timelineImportOffsetInputSchema,
   updateTranscriptInputSchema,
   updateGeneralSettingsInputSchema,
+  updateTimelineImportSettingsInputSchema,
+  updateGuideInputSchema,
   updateGuideInstructionsInputSchema,
   updateLocalVisionModelInputSchema,
   updateAiModelSelectionInputSchema,
   type AppInfo,
+  type TimelineImportKind,
 } from "@path/shared";
 import type { AiCredentialStore } from "../storage/AiCredentialStore";
 import {
   buildDocumentActivity,
   buildDocumentPrompt,
+  buildDocumentUpdatePrompt,
   normalizeDocumentMarkdown,
 } from "../ai/DocumentPrompt";
 import { listProviderModels } from "../ai/ProviderModels";
@@ -44,7 +53,9 @@ import type { RecordingController } from "../recording/RecordingController";
 import type { RegionSelector } from "../recording/RegionSelector";
 import type { RecordingMediaServer } from "../media/RecordingMediaServer";
 import type { DesktopSettingsService } from "../settings/DesktopSettingsService";
+import type { InstructionFlowService } from "../settings/InstructionFlowService";
 import type { SelectedAiService } from "../ai/SelectedAiService";
+import type { TimelineImportService } from "../recording/TimelineImportService";
 
 export interface IpcDependencies {
   recordings: RecordingRepository;
@@ -58,9 +69,22 @@ export interface IpcDependencies {
   dataDirectory: string;
   aiCredentials: AiCredentialStore;
   settings: DesktopSettingsService;
+  instructionFlows: InstructionFlowService;
   aiService: SelectedAiService;
+  timelineImports: TimelineImportService;
   openSettingsWindow(section?: string): void;
 }
+
+const TIMELINE_IMPORT_FILE_FILTERS: Record<TimelineImportKind, Electron.FileFilter[]> = {
+  log: [
+    { name: "Log files", extensions: ["log", "txt", "jsonl", "json", "csv"] },
+    { name: "All files", extensions: ["*"] },
+  ],
+  element: [
+    { name: "Element files", extensions: ["txt", "jsonl", "json", "log", "csv"] },
+    { name: "All files", extensions: ["*"] },
+  ],
+};
 
 function platform(): AppInfo["platform"] {
   return ["darwin", "win32", "linux"].includes(process.platform)
@@ -81,7 +105,9 @@ export function registerIpcHandlers({
   dataDirectory,
   aiCredentials,
   settings,
+  instructionFlows,
   aiService,
+  timelineImports,
   openSettingsWindow,
 }: IpcDependencies): void {
   ipcMain.handle(
@@ -96,10 +122,10 @@ export function registerIpcHandlers({
     tray.setRecorderPopoverExpanded(expanded);
   });
   ipcMain.handle(IPC_CHANNELS.appSetTitleBarTheme, (event, input: unknown) => {
-    const { theme } = titleBarThemeInputSchema.parse(input);
+    const { theme, dimmed = false } = titleBarThemeInputSchema.parse(input);
     const window = BrowserWindow.fromWebContents(event.sender);
 
-    if (window) applyWindowTitleBarTheme(window, theme);
+    if (window) applyWindowTitleBarTheme(window, theme, dimmed);
   });
   ipcMain.handle(IPC_CHANNELS.appOpenSettings, (_event, input: unknown) => {
     const { section } = openSettingsInputSchema.parse(input ?? {});
@@ -107,9 +133,26 @@ export function registerIpcHandlers({
     openSettingsWindow(section);
   });
 
+  ipcMain.handle(IPC_CHANNELS.instructionFlowsGet, () => instructionFlows.get());
+  ipcMain.handle(IPC_CHANNELS.instructionFlowsMigrate, (_event, input: unknown) =>
+    instructionFlows.migrate(migrateInstructionFlowsInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.instructionFlowsSelect, (_event, input: unknown) =>
+    instructionFlows.select(instructionFlowIdInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.instructionFlowsSave, (_event, input: unknown) =>
+    instructionFlows.save(saveInstructionFlowInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.instructionFlowsRemove, (_event, input: unknown) =>
+    instructionFlows.remove(instructionFlowIdInputSchema.parse(input)),
+  );
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settings.get());
   ipcMain.handle(IPC_CHANNELS.settingsUpdateGeneral, (_event, input: unknown) =>
     settings.updateGeneral(updateGeneralSettingsInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.settingsUpdateTimelineImports, (_event, input: unknown) =>
+    settings.updateTimelineImports(updateTimelineImportSettingsInputSchema.parse(input)),
   );
   ipcMain.handle(IPC_CHANNELS.settingsUpdateGuideInstructions, (_event, input: unknown) => {
     const { guideInstructions } = updateGuideInstructionsInputSchema.parse(input);
@@ -208,8 +251,38 @@ export function registerIpcHandlers({
 
     if (!session) throw new Error(`Recording not found: ${id}`);
 
-    const activity = buildDocumentActivity(transcript, clicks);
+    const importedEntries = await timelineImports.documentEntries(id);
+    const activity = buildDocumentActivity(transcript, clicks, importedEntries);
     const prompt = buildDocumentPrompt(session.title, activity, instructions);
+    const markdown = normalizeDocumentMarkdown(await aiService.generateText(prompt));
+
+    if (!markdown) throw new Error("The selected AI model returned no guide");
+
+    return { title: session.title, markdown };
+  });
+  ipcMain.handle(IPC_CHANNELS.guidesUpdate, async (_event, input: unknown) => {
+    const { id, instructions, currentMarkdown, updatePrompt, context } =
+      updateGuideInputSchema.parse(input);
+
+    const [session, transcript, clicks] = await Promise.all([
+      recordings.get(id),
+      recordings.listTranscript(id),
+      recordings.listClicks(id),
+    ]);
+
+    if (!session) throw new Error(`Recording not found: ${id}`);
+
+    const importedEntries = await timelineImports.documentEntries(id);
+    const activity = buildDocumentActivity(transcript, clicks, importedEntries);
+    const prompt = buildDocumentUpdatePrompt(
+      session.title,
+      activity,
+      instructions,
+      currentMarkdown,
+      updatePrompt,
+      context?.length ? await aiService.describeContext(context) : "",
+    );
+
     const markdown = normalizeDocumentMarkdown(await aiService.generateText(prompt));
 
     if (!markdown) throw new Error("The selected AI model returned no guide");
@@ -351,6 +424,38 @@ export function registerIpcHandlers({
     const { id } = recordingIdInputSchema.parse(input);
 
     return recording.retryProcessing(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsListTimelineImports, (_event, input: unknown) => {
+    const { id } = recordingIdInputSchema.parse(input);
+
+    return timelineImports.list(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsImportTimelineFile, (event, input: unknown) => {
+    const { recordingId, kind } = timelineImportInputSchema.parse(input);
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const options: Electron.OpenDialogOptions = {
+      properties: ["openFile"],
+      filters: TIMELINE_IMPORT_FILE_FILTERS[kind],
+    };
+
+    // The main process chooses the path; the renderer never supplies a filesystem location.
+    return timelineImports.importFile(recordingId, kind, async () => {
+      const result = owner
+        ? await dialog.showOpenDialog(owner, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsUpdateTimelineImportOffset, (_event, input: unknown) => {
+    const { recordingId, kind, offsetMs } = timelineImportOffsetInputSchema.parse(input);
+
+    return timelineImports.updateOffset(recordingId, kind, offsetMs);
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsRemoveTimelineImport, (_event, input: unknown) => {
+    const { recordingId, kind } = timelineImportInputSchema.parse(input);
+
+    return timelineImports.remove(recordingId, kind);
   });
   ipcMain.handle(IPC_CHANNELS.recordingsDeleteClick, async (_event, input: unknown) => {
     const { recordingId, id } = activityItemInputSchema.parse(input);

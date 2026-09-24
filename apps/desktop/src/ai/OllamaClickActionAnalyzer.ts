@@ -1,7 +1,9 @@
 import { readFile, stat } from "node:fs/promises";
 import {
+  localModelSupportsEffort,
   normalizeClickDescription,
   UNKNOWN_CLICK_CONTROL,
+  type AiEffort,
   type LocalAiModel,
   type MouseButton,
 } from "@path/shared";
@@ -107,6 +109,7 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
             ...metadata,
             isLoaded: loaded.has(name),
             supportedPurposes: capabilities.includes("vision") ? ["visual", "text"] : ["text"],
+            supportsEffort: capabilities.includes("thinking") || localModelSupportsEffort(name),
           };
         } catch {
           // A failed capability probe excludes only this model from discovery.
@@ -149,8 +152,16 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
     return normalizeClickDescription(response, input.button);
   }
 
-  async generateText(prompt: string, model = this.defaultModel): Promise<string> {
-    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS);
+  async generateText(
+    prompt: string,
+    model = this.defaultModel,
+    effort?: AiEffort,
+  ): Promise<string> {
+    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS, undefined, effort ?? false);
+  }
+
+  async describeImage(prompt: string, imageBase64: string, model: string): Promise<string> {
+    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS, [imageBase64]);
   }
 
   private async chat(
@@ -158,6 +169,7 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
     prompt: string,
     maxTokens: number,
     images?: string[],
+    think: false | AiEffort = false,
   ): Promise<string> {
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
@@ -166,7 +178,7 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
       body: JSON.stringify({
         model,
         stream: false,
-        think: false,
+        think,
         messages: [{ role: "user", content: prompt, images }],
         options: { temperature: 0, num_predict: maxTokens },
       }),

@@ -21,6 +21,7 @@ vi.mock("@/lib/Desktop", () => ({ getDesktopApi: () => ({ settings: bridge, app:
 
 const settings: DesktopSettings = {
   general: { minimizeToTray: true },
+  timelineImports: { maxFileSizeMb: 10 },
   recordingsDirectory: "/recordings",
   guideInstructions: "Original instructions",
   localVisionModel: "vision",

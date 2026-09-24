@@ -5,6 +5,7 @@ import type {
   CaptureRegion,
   ClickEvent,
   PersistedGuide,
+  RecordingMediaTiming,
   RecordingSession,
   RecordingSummary,
   TranscriptSegment,
@@ -49,6 +50,9 @@ function toSession(row: RecordingRow): RecordingSession {
     videoPath: row.videoPath,
     audioPath: row.audioPath,
     guideStatus: row.guideStatus,
+    mediaTiming: row.mediaStartedAt
+      ? { startedAt: row.mediaStartedAt, pauses: row.mediaPausesJson ?? [] }
+      : null,
   };
 }
 
@@ -118,6 +122,18 @@ export class RecordingRepository {
     const result = await this.db
       .update(recordings)
       .set({ status: "processing", durationMs, videoPath, updatedAt: new Date().toISOString() })
+      .where(eq(recordings.id, id));
+
+    if (result.changes === 0) {
+      throw new RecordingNotFoundError(id);
+    }
+  }
+
+  /** Stored once capture completes so imported wall-clock evidence can be aligned to media time. */
+  async recordMediaTiming(id: string, timing: RecordingMediaTiming): Promise<void> {
+    const result = await this.db
+      .update(recordings)
+      .set({ mediaStartedAt: timing.startedAt, mediaPausesJson: timing.pauses })
       .where(eq(recordings.id, id));
 
     if (result.changes === 0) {

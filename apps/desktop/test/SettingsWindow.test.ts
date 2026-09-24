@@ -92,4 +92,63 @@ describe("settings window caption theme", () => {
       height: 52,
     });
   });
+
+  it.each([
+    {
+      theme: "light" as const,
+      normal: { color: "#f3f4f6", symbolColor: "#242b35" },
+      dimmed: { color: "#929294", symbolColor: "#161a20" },
+    },
+    {
+      theme: "dark" as const,
+      normal: { color: "#181b20", symbolColor: "#e7ebf0" },
+      dimmed: { color: "#0e1013", symbolColor: "#8b8d90" },
+    },
+  ])("dims and restores the $theme caption with the modal", ({ theme, normal, dimmed }) => {
+    const window = {
+      isDestroyed: () => false,
+      setTitleBarOverlay: vi.fn(),
+    } as unknown as BrowserWindow;
+
+    applyWindowTitleBarTheme(window, theme, true);
+    applyWindowTitleBarTheme(window, theme, false);
+
+    if (process.platform !== "win32") {
+      expect(window.setTitleBarOverlay).not.toHaveBeenCalled();
+
+      return;
+    }
+
+    expect(window.setTitleBarOverlay).toHaveBeenNthCalledWith(1, { ...dimmed, height: 52 });
+    expect(window.setTitleBarOverlay).toHaveBeenNthCalledWith(2, { ...normal, height: 52 });
+  });
+
+  it("keeps a newer modal caption state when the initial saved theme resolves late", async () => {
+    const window = createSettingsWindow({
+      preloadPath: "preload.cjs",
+      rendererDirectory: "renderer",
+      rendererUrl: "http://localhost:3000",
+    });
+
+    let finishSavedThemeRead: (theme: string) => void = () => undefined;
+
+    vi.mocked(window.webContents.executeJavaScript).mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        finishSavedThemeRead = resolve;
+      }),
+    );
+    contentsEvents.get("did-finish-load")?.();
+    applyWindowTitleBarTheme(window, "light", true);
+    finishSavedThemeRead("dark");
+    windowEvents.get("ready-to-show")?.();
+    await vi.waitFor(() => expect(window.show).toHaveBeenCalledOnce());
+
+    if (process.platform === "win32") {
+      expect(window.setTitleBarOverlay).toHaveBeenCalledExactlyOnceWith({
+        color: "#929294",
+        symbolColor: "#161a20",
+        height: 52,
+      });
+    }
+  });
 });

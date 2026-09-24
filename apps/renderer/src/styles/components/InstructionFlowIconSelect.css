@@ -1,0 +1,60 @@
+.prompt-icon-select {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+}
+
+.prompt-icon-trigger {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-ink);
+}
+
+.prompt-icon-trigger:hover:not(:disabled),
+.prompt-icon-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.prompt-icon-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 34px);
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.prompt-icon-menu button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-ink);
+}
+
+.prompt-icon-menu button:hover,
+.prompt-icon-menu button:focus-visible {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.prompt-icon-menu button[aria-checked="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

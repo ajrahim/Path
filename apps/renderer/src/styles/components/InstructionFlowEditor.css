@@ -1,0 +1,16 @@
+.prompt-name-field {
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-name-control {
+  position: relative;
+}
+
+.prompt-editor-dialog .prompt-name-control input {
+  padding-right: 64px;
+}
+
+.prompt-editor-dialog input[readonly] {
+  color: var(--muted-ink);
+}

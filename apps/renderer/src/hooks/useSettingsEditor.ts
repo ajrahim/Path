@@ -5,13 +5,19 @@ import type {
   AiProviderKeyStatus,
   DesktopSettings,
   GeneralSettings,
+  TimelineImportSettings,
 } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
 
 const SETTINGS_NOTICE_MS = 3_000;
 
 type SettingsOperation =
-  "general" | "directory" | "open-directory" | `key-${AiProvider}` | `remove-${AiProvider}`;
+  | "general"
+  | "timeline-imports"
+  | "directory"
+  | "open-directory"
+  | `key-${AiProvider}`
+  | `remove-${AiProvider}`;
 
 interface KeyEditor {
   provider: AiProvider | null;
@@ -114,6 +120,7 @@ interface SettingsEditor extends Omit<SettingsEditorState, "notice"> {
   isLoading: boolean;
   isBusy: boolean;
   updateGeneral(general: GeneralSettings): Promise<void>;
+  updateTimelineImports(timelineImports: TimelineImportSettings): Promise<void>;
   chooseDirectory(): Promise<void>;
   openDirectory(): Promise<void>;
   saveKey(): Promise<void>;
@@ -230,6 +237,21 @@ export function useSettingsEditor(): SettingsEditor {
     });
   }
 
+  async function updateTimelineImports(timelineImports: TimelineImportSettings): Promise<void> {
+    const desktop = getDesktopApi();
+
+    if (!desktop || !state.settings) return;
+
+    await mutate({
+      operation: "timeline-imports",
+      successMessage: t("saved"),
+      failureMessage: t("saveError"),
+      run: async () => ({
+        settings: await desktop.settings.updateTimelineImports(timelineImports),
+      }),
+    });
+  }
+
   async function chooseDirectory(): Promise<void> {
     const desktop = getDesktopApi();
 
@@ -303,6 +325,7 @@ export function useSettingsEditor(): SettingsEditor {
     isLoading: state.busy === "loading",
     isBusy: state.busy !== null,
     updateGeneral,
+    updateTimelineImports,
     chooseDirectory,
     openDirectory,
     saveKey,

@@ -284,3 +284,33 @@ describe("DesktopSettingsService AI models", () => {
     expect(settings.get().general.minimizeToTray).toBe(false);
   });
 });
+
+describe("DesktopSettingsService timeline imports", () => {
+  it("defaults the import limit to 10 MB and persists a changed limit", async () => {
+    const { settings, repository, assets } = createSettings();
+
+    await settings.initialize();
+
+    expect(settings.get().timelineImports).toEqual({ maxFileSizeMb: 10 });
+
+    await settings.updateTimelineImports({ maxFileSizeMb: 25 });
+
+    const reloaded = new DesktopSettingsService(repository as never, assets as never, "recordings");
+
+    await reloaded.initialize();
+
+    expect(reloaded.get().timelineImports).toEqual({ maxFileSizeMb: 25 });
+  });
+
+  it.each([{ maxFileSizeMb: 0 }, { maxFileSizeMb: 101 }, { maxFileSizeMb: 2.5 }, "10", null])(
+    "ignores an invalid stored import limit: %j",
+    async (timelineImports) => {
+      const { settings } = createSettings({ timelineImports, general: { minimizeToTray: false } });
+
+      await settings.initialize();
+
+      expect(settings.get().timelineImports).toEqual({ maxFileSizeMb: 10 });
+      expect(settings.get().general.minimizeToTray).toBe(false);
+    },
+  );
+});

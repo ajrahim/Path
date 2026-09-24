@@ -1,5 +1,5 @@
-import type { RefObject } from "react";
-import { Captions, MousePointer2, RotateCcw, Search } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
+import { MousePointer2, RotateCcw, Search } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import type { ClickEvent, TranscriptSegment } from "@path/shared";
 import { activityKey, type OrderedTimelineEntry } from "@path/timeline";
@@ -9,10 +9,12 @@ import { cn } from "@/lib/ClassNames";
 import { ActivityActionMenu } from "./ActivityActionMenu";
 import { ActivityTypeSelect } from "./ActivityTypeSelect";
 import { ScreenshotAction } from "./ScreenshotAction";
+import { timelinePanelId, timelineTabId } from "./TimelineTabs";
 
 export type TimelineFilter = "all" | "clicks" | "speech";
 
 export function ActivityTimeline({
+  tabs,
   recordingSelected,
   timeline,
   allCount,
@@ -46,6 +48,7 @@ export function ActivityTimeline({
   onPreviewEnd,
   onUserScrollChange,
 }: {
+  tabs: ReactNode;
   recordingSelected: boolean;
   timeline: OrderedTimelineEntry[];
   allCount: number;
@@ -83,26 +86,23 @@ export function ActivityTimeline({
   const locale = useLocale();
 
   return (
-    <section className="transcript-panel">
+    <section
+      className="transcript-panel"
+      role="tabpanel"
+      id={timelinePanelId("activity")}
+      aria-labelledby={timelineTabId("activity")}
+    >
       <header>
         <div className="activity-heading">
-          <span className="section-label">{t("recording.activity")}</span>
-          <span
-            className="activity-summary"
-            title={analyzingClicks ? t("recording.analyzingClicks") : undefined}
-          >
-            {analyzingClicks
-              ? t("recording.analyzingClicks")
-              : t("recording.activityCount", { count: timeline.length })}
-          </span>
+          {tabs}
+          {analyzingClicks && (
+            <span className="activity-summary" title={t("recording.analyzingClicks")}>
+              {t("recording.analyzingClicks")}
+            </span>
+          )}
         </div>
-        <div className="activity-header-actions">
-          <ActivityTypeSelect
-            value={filter}
-            counts={{ all: allCount, clicks: clickCount, speech: speechCount }}
-            onChange={onFilterChange}
-          />
-          {canRetryAnalysis && (
+        {canRetryAnalysis && (
+          <div className="activity-header-actions">
             <button
               type="button"
               className="activity-retry"
@@ -112,17 +112,24 @@ export function ActivityTimeline({
             >
               <RotateCcw size={13} />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </header>
-      <div className="transcript-search activity-search">
-        <Search size={14} aria-hidden="true" />
-        <input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder={t("recording.searchTranscript")}
-          aria-label={t("recording.searchTranscript")}
-        />
+      <div className="activity-toolbar">
+        <div className="search-control activity-search-control">
+          <Search size={14} aria-hidden="true" />
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder={t("recording.searchTranscript")}
+            aria-label={t("recording.searchTranscript")}
+          />
+          <ActivityTypeSelect
+            value={filter}
+            counts={{ all: allCount, clicks: clickCount, speech: speechCount }}
+            onChange={onFilterChange}
+          />
+        </div>
       </div>
       {error && (
         <p className="activity-error" role="alert">
@@ -228,16 +235,19 @@ function ClickActivityRow({
       data-timestamp-ms={entry.timestampMs}
     >
       <div className="activity-entry-main" onClick={onSelect}>
-        <button
-          type="button"
-          className="activity-time"
-          aria-pressed={selected}
-          aria-label={`${clickLabel(t, entry.click.button)} ${time}`}
-          title={formatClickTimestamp(entry.click.createdAt, entry.click.timestampMs, locale)}
-        >
-          {time}
-        </button>
-        <span className="activity-copy">
+        <div className="activity-entry-meta">
+          <button
+            type="button"
+            className="activity-time"
+            aria-pressed={selected}
+            aria-label={`${clickLabel(t, entry.click.button)} ${time}`}
+            title={formatClickTimestamp(entry.click.createdAt, entry.click.timestampMs, locale)}
+          >
+            {time}
+          </button>
+          <span className="activity-meta-separator" aria-hidden="true">
+            -
+          </span>
           <button
             type="button"
             className="activity-type-badge activity-type-badge-click"
@@ -245,30 +255,30 @@ function ClickActivityRow({
           >
             {clickLabel(t, entry.click.button)}
           </button>
-          <span
-            className="activity-click-editor"
-            contentEditable
-            suppressContentEditableWarning
-            role="textbox"
-            aria-multiline="false"
-            aria-label={t("recording.editClickDescription")}
-            onFocus={onFocusActivity}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                event.currentTarget.blur();
-              }
+        </div>
+        <span
+          className="activity-click-editor"
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="false"
+          aria-label={t("recording.editClickDescription")}
+          onFocus={onFocusActivity}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
 
-              if (event.key === "Escape") {
-                event.currentTarget.textContent = label;
-                event.currentTarget.blur();
-              }
-            }}
-            onBlur={(event) => onSave(event.currentTarget.innerText, event.currentTarget)}
-          >
-            {label}
-          </span>
+            if (event.key === "Escape") {
+              event.currentTarget.textContent = label;
+              event.currentTarget.blur();
+            }
+          }}
+          onBlur={(event) => onSave(event.currentTarget.innerText, event.currentTarget)}
+        >
+          {label}
         </span>
       </div>
       <div className="activity-actions">
@@ -322,36 +332,39 @@ function TranscriptActivityRow({
       )}
     >
       <div className="activity-entry-main transcript-entry-main" onClick={onSelect}>
-        <button
-          type="button"
-          className="activity-time activity-time-range"
-          aria-pressed={selected}
-          aria-label={`${t("recording.transcriptActivity")} ${range}`}
-        >
-          {range}
-        </button>
-        <span className="activity-copy">
+        <div className="activity-entry-meta">
+          <button
+            type="button"
+            className="activity-time activity-time-range"
+            aria-pressed={selected}
+            aria-label={`${t("recording.transcriptActivity")} ${range}`}
+            title={range}
+          >
+            {formatPlayerTime(entry.segment.startMs / 1_000)}
+          </button>
+          <span className="activity-meta-separator" aria-hidden="true">
+            -
+          </span>
           <button
             type="button"
             className="activity-type-badge activity-type-badge-transcript"
             aria-pressed={selected}
           >
-            <Captions size={12} aria-hidden="true" />
             {t("recording.filterSpeech")}
           </button>
-          <span
-            className="activity-dialogue-editor"
-            contentEditable
-            suppressContentEditableWarning
-            role="textbox"
-            aria-multiline="true"
-            aria-label={t("recording.editDialogue")}
-            onFocus={onFocusActivity}
-            onClick={(event) => event.stopPropagation()}
-            onBlur={(event) => onSave(event.currentTarget.innerText, event.currentTarget)}
-          >
-            {entry.segment.text}
-          </span>
+        </div>
+        <span
+          className="activity-dialogue-editor"
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          aria-label={t("recording.editDialogue")}
+          onFocus={onFocusActivity}
+          onClick={(event) => event.stopPropagation()}
+          onBlur={(event) => onSave(event.currentTarget.innerText, event.currentTarget)}
+        >
+          {entry.segment.text}
         </span>
       </div>
       <div className="activity-actions">

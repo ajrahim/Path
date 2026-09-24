@@ -2,11 +2,21 @@
 
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PersistedGuide } from "@path/shared";
+import type { GuideContextItem, PersistedGuide } from "@path/shared";
 import { useGuideDocument } from "../src/hooks/useGuideDocument";
 
 const mocks = vi.hoisted(() => ({
   generate: vi.fn<(input: { id: string; instructions: string }) => Promise<{ markdown: string }>>(),
+  update:
+    vi.fn<
+      (input: {
+        id: string;
+        instructions: string;
+        currentMarkdown: string;
+        updatePrompt: string;
+        context?: GuideContextItem[];
+      }) => Promise<{ markdown: string }>
+    >(),
   exportMarkdown: vi.fn<(input: { suggestedName: string; markdown: string }) => Promise<boolean>>(),
   getDocument: vi.fn<(input: { id: string }) => Promise<PersistedGuide | null>>(),
   saveDocument: vi.fn<(input: { id: string; markdown: string }) => Promise<PersistedGuide>>(),
@@ -21,6 +31,7 @@ vi.mock("@/lib/Desktop", () => ({
       ? {
           guides: {
             generate: mocks.generate,
+            update: mocks.update,
             exportMarkdown: mocks.exportMarkdown,
             getDocument: mocks.getDocument,
             saveDocument: mocks.saveDocument,
@@ -34,6 +45,7 @@ const recording = { id: "recording-one", title: "First recording" };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.generate.mockReset();
+  mocks.update.mockReset();
   mocks.exportMarkdown.mockReset();
   mocks.getDocument.mockReset();
   mocks.saveDocument.mockReset();
@@ -401,6 +413,110 @@ describe("guide document workflow", () => {
     act(() => result.current.editMarkdown("Manual fix"));
 
     expect(result.current.canRetryGenerate).toBe(false);
+  });
+
+  it("updates with the current draft and original instructions as context", async () => {
+    mocks.update.mockResolvedValue({ markdown: "# Updated guide" });
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    act(() => result.current.editMarkdown("# Current guide"));
+    await act(() => result.current.updateGuide("Write a specification", "  Add examples  "));
+
+    expect(mocks.update).toHaveBeenCalledWith({
+      id: recording.id,
+      instructions: "Write a specification",
+      currentMarkdown: "# Current guide",
+      updatePrompt: "Add examples",
+    });
+    expect(result.current.markdown).toBe("# Updated guide");
+    expect(result.current.updating).toBe(false);
+    expect(result.current.versions).toEqual(["# Updated guide"]);
+    expect(result.current.activeVersion).toBe(0);
+    expect(result.current.atVersion).toBe(true);
+  });
+
+  it("passes attached context through to the desktop update", async () => {
+    mocks.update.mockResolvedValue({ markdown: "Updated" });
+    const { result } = renderHook(() => useGuideDocument(recording));
+    const context: GuideContextItem[] = [{ kind: "text", text: "Reference" }];
+
+    await act(() => result.current.updateGuide("Instructions", "Update", context));
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ context }));
+  });
+
+  it("blocks generation while an update is pending and reports update failures plainly", async () => {
+    const pending = Promise.withResolvers<{ markdown: string }>();
+
+    mocks.update.mockReturnValue(pending.promise);
+    mocks.generate.mockResolvedValue({ markdown: "# Generated guide" });
+    const { result } = renderHook(() => useGuideDocument(recording));
+    let request: Promise<boolean>;
+
+    act(() => {
+      request = result.current.updateGuide("Instructions", "Add examples");
+    });
+    await act(() => result.current.generateGuide("Instructions"));
+
+    expect(result.current.updating).toBe(true);
+    expect(mocks.generate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pending.reject(new Error("Model unavailable"));
+      await request;
+    });
+
+    expect(result.current.error).toBe("Model unavailable");
+    expect(result.current.canRetryGenerate).toBe(false);
+    expect(result.current.updating).toBe(false);
+  });
+
+  it("seeds versions from the saved document and restores earlier versions", async () => {
+    mocks.getDocument.mockResolvedValue({
+      recordingId: recording.id,
+      title: recording.title,
+      markdown: "# Saved guide",
+      updatedAt: "2026-09-20T00:00:00.000Z",
+    });
+    mocks.update.mockResolvedValue({ markdown: "# Updated guide" });
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.versions).toEqual(["# Saved guide"]);
+    expect(result.current.atVersion).toBe(true);
+
+    await act(() => result.current.updateGuide("Instructions", "Add examples"));
+
+    expect(result.current.versions).toEqual(["# Saved guide", "# Updated guide"]);
+    expect(result.current.activeVersion).toBe(1);
+
+    act(() => result.current.editMarkdown("# Manual edits"));
+
+    expect(result.current.atVersion).toBe(false);
+
+    act(() => result.current.selectVersion(0));
+
+    expect(result.current.markdown).toBe("# Saved guide");
+    expect(result.current.activeVersion).toBe(0);
+    expect(result.current.atVersion).toBe(true);
+
+    act(() => result.current.selectVersion(9));
+
+    expect(result.current.markdown).toBe("# Saved guide");
+  });
+
+  it("caps version history at twenty entries", async () => {
+    mocks.generate.mockImplementation(async ({ instructions }) => ({ markdown: instructions }));
+    const { result } = renderHook(() => useGuideDocument(recording));
+
+    for (let index = 0; index < 21; index += 1) {
+      await act(() => result.current.generateGuide(`Version ${index}`));
+    }
+
+    expect(result.current.versions).toHaveLength(20);
+    expect(result.current.versions[0]).toBe("Version 1");
+    expect(result.current.activeVersion).toBe(19);
+    expect(result.current.markdown).toBe("Version 20");
   });
 
   it("aborts pending image readers when the recording is unmounted", async () => {

@@ -1,0 +1,53 @@
+.timeline-tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--panel-muted);
+}
+
+.timeline-tabs button {
+  min-width: 0;
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 26px;
+  white-space: nowrap;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.timeline-tabs button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.timeline-tabs button[aria-selected="true"] {
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+}
+
+.timeline-tabs button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] .timeline-tabs button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface-raised));
+  box-shadow: none;
+}
+
+@container (max-width: 400px) {
+  .timeline-tabs button {
+    padding-inline: 8px;
+  }
+}

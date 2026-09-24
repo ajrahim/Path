@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { Provider } from "react-redux";
@@ -13,6 +14,8 @@ import type {
 } from "@path/shared";
 import messages from "@path/shared/messages/en.json";
 import { RecordingPane } from "../src/components/RecordingPane";
+import type { TimelineTab } from "../src/components/TimelineTabs";
+import { useTimelineImports } from "../src/hooks/useTimelineImports";
 import { createRendererStore } from "../src/state/RendererStore";
 import { capturedClick, transcriptSegment } from "./WorkspaceFixtures";
 
@@ -28,6 +31,10 @@ const bridge = vi.hoisted(() => ({
   screenshotUrl: vi.fn(),
   mediaUrl: vi.fn(),
   retryProcessing: vi.fn(),
+  listTimelineImports: vi.fn(),
+  importTimelineFile: vi.fn(),
+  updateTimelineImportOffset: vi.fn(),
+  removeTimelineImport: vi.fn(),
 }));
 
 vi.mock("@/lib/Desktop", () => ({ getDesktopApi: () => ({ recordings: bridge }) }));
@@ -100,6 +107,26 @@ beforeEach(() => {
     failedCount: 0,
   });
   bridge.mediaUrl.mockResolvedValue("https://media.test/rec-1");
+  bridge.listTimelineImports.mockResolvedValue({
+    window: {
+      startedAt: "2026-09-14T10:00:00.000Z",
+      endedAt: "2026-09-14T10:00:30.000Z",
+      isApproximate: false,
+    },
+    log: {
+      kind: "log",
+      fileName: "app.log",
+      offsetMs: 0,
+      importedAt: "2026-09-14T11:00:00.000Z",
+      entries: [
+        { id: 1, occurredAt: "2026-09-14T10:00:03.000Z", timestampMs: 3_000, text: "Opened form" },
+        { id: 2, occurredAt: "2026-09-14T10:00:07.250Z", timestampMs: 7_250, text: "Saved form" },
+      ],
+      outsideCount: 1,
+      unreadableLineCount: 0,
+    },
+    element: null,
+  });
   bridge.screenshotUrl.mockImplementation(
     async ({ id }: { id: string }) => `blob:screenshot-${id}`,
   );
@@ -138,13 +165,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderRecordingPane(props: Partial<Parameters<typeof RecordingPane>[0]> = {}) {
+type PaneProps = Parameters<typeof RecordingPane>[0];
+
+// Mirrors WorkspacePage, which owns the review tab and imports above the pane's remount boundary.
+function PaneWithReviewState(
+  props: Omit<PaneProps, "timelineTab" | "timelineImports" | "onTimelineTabChange">,
+) {
+  const [timelineTab, setTimelineTab] = useState<TimelineTab>("activity");
+  const timelineImports = useTimelineImports({
+    recordingId: props.recording?.id ?? null,
+    durationMs: props.recording?.durationMs ?? null,
+  });
+
+  return (
+    <RecordingPane
+      {...props}
+      timelineTab={timelineTab}
+      timelineImports={timelineImports}
+      onTimelineTabChange={setTimelineTab}
+    />
+  );
+}
+
+function renderRecordingPane(
+  props: Partial<Omit<PaneProps, "timelineTab" | "timelineImports" | "onTimelineTabChange">> = {},
+) {
   const store = createRendererStore();
 
   return render(
     <Provider store={store}>
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
-        <RecordingPane
+        <PaneWithReviewState
           recording={recording}
           onNewRecording={vi.fn()}
           onOpenSettings={vi.fn()}
@@ -167,6 +218,7 @@ describe("RecordingPane UI interactions", () => {
             id: "vision",
             name: "Vision",
             supportedPurposes: ["visual", "text"],
+            supportsEffort: false,
             sizeBytes: null,
             modifiedAt: null,
             isLoaded: false,
@@ -178,6 +230,7 @@ describe("RecordingPane UI interactions", () => {
             id: "vision",
             name: "Vision",
             supportedPurposes: ["visual", "text"],
+            supportsEffort: false,
             provider: "openai",
             vendor: null,
             contextLength: null,
@@ -205,6 +258,7 @@ describe("RecordingPane UI interactions", () => {
         id: "writer",
         name: "Writer",
         supportedPurposes: ["text"],
+        supportsEffort: false,
         sizeBytes: null,
         modifiedAt: null,
         isLoaded: false,
@@ -261,6 +315,36 @@ describe("RecordingPane UI interactions", () => {
     chooseFilter("All (4)");
 
     expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+  });
+
+  it("switches between review tabs and seeks from imported log rows", async () => {
+    const view = renderRecordingPane();
+
+    await waitFor(() => {
+      expect(view.container.querySelector("video")).not.toBeNull();
+      expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+    });
+
+    const tabs = screen.getByRole("tablist", { name: messages.recording.reviewTabs });
+    const activityTab = within(tabs).getByRole("tab", { name: messages.recording.activity });
+
+    expect(activityTab.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(within(tabs).getByRole("tab", { name: messages.recording.logs }));
+
+    expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(0);
+    expect(screen.getByText("app.log")).toBeTruthy();
+    expect(screen.getByText("1 outside the video")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /00:07\.250\s*Saved form/ }));
+    expect(view.container.querySelector("video")!.currentTime).toBe(7.25);
+
+    fireEvent.click(screen.getByRole("tab", { name: messages.recording.elements }));
+    expect(screen.getByText(messages.recording.elementImportEmpty)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: messages.recording.activity }));
+    expect(view.container.querySelectorAll(".activity-entry")).toHaveLength(4);
+    expect(bridge.listTimelineImports).toHaveBeenCalledWith({ id: "rec-1" });
   });
 
   it("seeks from activity times and badges without seeking while editing", async () => {

@@ -5,16 +5,33 @@ import type { CreateMainWindowOptions } from "./MainWindow";
 
 const TITLE_BAR_HEIGHT = 52;
 const THEME_STORAGE_KEY = "path.theme";
+const windowsWithAppliedTitleBarTheme = new WeakSet<BrowserWindow>();
+const TITLE_BAR_COLORS = {
+  light: { color: "#f3f4f6", symbolColor: "#242b35" },
+  dark: { color: "#181b20", symbolColor: "#e7ebf0" },
+};
+
+// Match the renderer's modal backdrop: 40% black over the caption and its glyphs.
+const DIMMED_TITLE_BAR_COLORS = {
+  light: { color: "#929294", symbolColor: "#161a20" },
+  dark: { color: "#0e1013", symbolColor: "#8b8d90" },
+};
 
 /** Windows caption glyphs are a native overlay, so renderer theme tokens cannot recolor them. */
-export function applyWindowTitleBarTheme(window: BrowserWindow, theme: "light" | "dark"): void {
+export function applyWindowTitleBarTheme(
+  window: BrowserWindow,
+  theme: "light" | "dark",
+  dimmed = false,
+): void {
   if (process.platform !== "win32" || window.isDestroyed()) return;
 
+  const colors = dimmed ? DIMMED_TITLE_BAR_COLORS : TITLE_BAR_COLORS;
+
   window.setTitleBarOverlay({
-    color: theme === "dark" ? "#181b20" : "#f3f4f6",
-    symbolColor: theme === "dark" ? "#e7ebf0" : "#242b35",
+    ...colors[theme],
     height: TITLE_BAR_HEIGHT,
   });
+  windowsWithAppliedTitleBarTheme.add(window);
 }
 
 export function createSettingsWindow(
@@ -61,6 +78,9 @@ export function createSettingsWindow(
     void window.webContents
       .executeJavaScript(`localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})`)
       .then((storedTheme: unknown) => {
+        // The renderer may already have applied a newer theme or opened a modal.
+        if (windowsWithAppliedTitleBarTheme.has(window)) return;
+
         applyWindowTitleBarTheme(window, storedTheme === "dark" ? "dark" : "light");
       })
       .finally(() => {

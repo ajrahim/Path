@@ -23,12 +23,18 @@ export interface AiModel {
 
 export type AiModelPurpose = "visual" | "text";
 
+export const aiEfforts = ["low", "medium", "high"] as const;
+
+/** Reasoning effort for thinking-capable text models; unset means the provider default. */
+export type AiEffort = (typeof aiEfforts)[number];
+
 /**
  * Installed Ollama model with discovery metadata. Nulls mean the daemon
  * answered but omitted the field; a down daemon yields no models at all.
  */
 export interface LocalAiModel extends AiModel {
   supportedPurposes: AiModelPurpose[];
+  supportsEffort: boolean;
   sizeBytes: number | null;
   modifiedAt: string | null;
   isLoaded: boolean;
@@ -42,6 +48,7 @@ export interface ApiModelPricing {
 
 export interface ApiAiModel extends AiModel {
   supportedPurposes: AiModelPurpose[];
+  supportsEffort: boolean;
   provider: AiProvider;
   vendor: string | null;
   contextLength: number | null;
@@ -51,8 +58,32 @@ export interface ApiAiModel extends AiModel {
 
 /** Explicit processing choice; an unavailable model must not trigger a provider fallback. */
 export type AiModelSelection =
-  | { source: "local"; modelId: string; modelName: string }
-  | { source: "api"; provider: AiProvider; modelId: string; modelName: string };
+  | { source: "local"; modelId: string; modelName: string; effort?: AiEffort }
+  | {
+      source: "api";
+      provider: AiProvider;
+      modelId: string;
+      modelName: string;
+      effort?: AiEffort;
+    };
+
+/**
+ * Reasoning-capable API families by model id. Direct catalogs omit capability
+ * metadata, so OpenAI reasoning and Gemini thinking models are matched by name.
+ * Anthropic and OpenRouter stay unsupported until their effort transports land.
+ */
+export function apiModelSupportsEffort(provider: AiProvider, modelId: string): boolean {
+  if (provider === "openai") return /^(?:o\d|gpt-5)/.test(modelId);
+
+  if (provider === "google") return /^gemini-(?:2\.5|[3-9])/.test(modelId);
+
+  return false;
+}
+
+/** Known Ollama thinking families by model name, used with the daemon's capability probe. */
+export function localModelSupportsEffort(modelName: string): boolean {
+  return /(?:deepseek-r1|qwen3|gpt-oss|thinking)/i.test(modelName);
+}
 
 export type AiModelSelections = Record<AiModelPurpose, AiModelSelection>;
 
@@ -71,9 +102,18 @@ export interface GeneralSettings {
   minimizeToTray: boolean;
 }
 
+export const DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB = 10;
+export const MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB = 1;
+export const MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB = 100;
+
+export interface TimelineImportSettings {
+  maxFileSizeMb: number;
+}
+
 /** Main-process settings; provider key presence is exposed separately from stored secrets. */
 export interface DesktopSettings {
   general: GeneralSettings;
+  timelineImports: TimelineImportSettings;
   recordingsDirectory: string;
   /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
   guideInstructions: string;
@@ -168,13 +208,74 @@ export interface RecordingSummary {
   transcriptStatus: TranscriptStatus;
 }
 
+/** Media offset where capture paused and how long it stayed paused, in milliseconds. */
+export interface MediaPause {
+  atMs: number;
+  durationMs: number;
+}
+
+/** Wall-clock time of media zero plus pauses; together they map real-world time to video time. */
+export interface RecordingMediaTiming {
+  startedAt: string;
+  pauses: MediaPause[];
+}
+
 /** Managed paths may refer to an earlier recording root after the user changes storage settings. */
 export interface RecordingSession extends RecordingSummary {
   captureRegion: CaptureRegion | null;
   videoPath: string | null;
   audioPath: string | null;
   guideStatus: GuideStatus;
+  /** Null for recordings captured before media timing was persisted. */
+  mediaTiming: RecordingMediaTiming | null;
 }
+
+export const timelineImportKinds = ["log", "element"] as const;
+
+/** A day in either direction covers time-zone and clock-skew corrections for imported files. */
+export const MAX_TIMELINE_IMPORT_OFFSET_MS = 86_400_000;
+
+/** Evidence captured outside Path: application log rows or tracked UI element paths. */
+export type TimelineImportKind = (typeof timelineImportKinds)[number];
+
+/** Real-world interval covered by the video; estimated for recordings without media timing. */
+export interface RecordingTimeWindow {
+  startedAt: string;
+  endedAt: string;
+  isApproximate: boolean;
+}
+
+/** An imported row with its original wall-clock time and its aligned media offset. */
+export interface TimelineImportEntry {
+  id: number;
+  occurredAt: string;
+  timestampMs: number;
+  text: string;
+}
+
+/** One imported file per kind; entries include only rows inside the video after the offset. */
+export interface TimelineImport {
+  kind: TimelineImportKind;
+  fileName: string;
+  offsetMs: number;
+  importedAt: string;
+  entries: TimelineImportEntry[];
+  outsideCount: number;
+  unreadableLineCount: number;
+}
+
+/** A null window means the recording has no media duration to align against yet. */
+export interface RecordingTimelineImports {
+  window: RecordingTimeWindow | null;
+  log: TimelineImport | null;
+  element: TimelineImport | null;
+}
+
+export type TimelineImportFileResult =
+  | { status: "imported"; timelineImport: TimelineImport }
+  | { status: "canceled" }
+  | { status: "too-large"; maxFileSizeMb: number }
+  | { status: "no-rows" };
 
 /** Editable dialogue with start/end offsets in milliseconds from the recording's media origin. */
 export interface TranscriptSegment {

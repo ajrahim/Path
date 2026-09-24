@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ListFilter,
@@ -8,7 +8,6 @@ import {
   Folder,
   FolderInput,
   LoaderCircle,
-  MoreHorizontal,
   MonitorUp,
   Pencil,
   Plus,
@@ -19,13 +18,13 @@ import {
   X,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import type { RecordingSummary } from "@path/shared";
+import type { RecordingProject, RecordingSummary } from "@path/shared";
 import { Button } from "@/components/Button";
 import { formatDuration, formatRecordingDate } from "@/lib/Format";
 import { cn } from "@/lib/ClassNames";
 import { useAppVersion } from "../hooks/useAppVersion";
 import { useRecordingHistory } from "../hooks/useRecordingHistory";
-import { HistoryMenu } from "./HistoryMenu";
+import { HistoryMenu, type HistoryMenuItem } from "./HistoryMenu";
 import { ProjectDialog, type ProjectDialogAction } from "./ProjectDialog";
 import { RecordingDeleteDialog } from "./RecordingDeleteDialog";
 import { RecordingRenameField } from "./RecordingRenameField";
@@ -148,6 +147,19 @@ export function HistorySidebar({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveError, setMoveError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RecordingSummary | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | {
+        target:
+          | { kind: "recording"; recording: RecordingSummary; location: string }
+          | { kind: "project"; project: RecordingProject };
+        x: number;
+        y: number;
+      }
+    | null
+  >(null);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const projectRefs = useRef(new Map<string, HTMLButtonElement>());
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   useEffect(() => {
     const request = refresh();
@@ -214,6 +226,102 @@ export function HistorySidebar({
     await remove(recording.id);
     onDeleted(recording.id);
     setPendingDelete(null);
+  }
+
+  function cursorPosition(event: React.MouseEvent<HTMLElement>): { x: number; y: number } {
+    // Keyboard-invoked menus report a zero point; anchor those to the row instead.
+    if (event.clientX === 0 && event.clientY === 0) {
+      const rect = event.currentTarget.getBoundingClientRect();
+
+      return { x: rect.left + 24, y: rect.bottom - 8 };
+    }
+
+    return { x: event.clientX, y: event.clientY };
+  }
+
+  function openRecordingMenu(
+    event: React.MouseEvent<HTMLElement>,
+    recording: RecordingSummary,
+    location: string,
+  ): void {
+    // Rename inputs keep their native edit menu.
+    if (event.target instanceof HTMLInputElement) return;
+
+    event.preventDefault();
+
+    if (renamingId === recording.id) return;
+
+    onSelect(recording.id);
+    setContextMenu({
+      target: { kind: "recording", recording, location },
+      ...cursorPosition(event),
+    });
+  }
+
+  function openProjectMenu(event: React.MouseEvent<HTMLElement>, project: RecordingProject): void {
+    event.preventDefault();
+
+    if (projectLibrary.saving) return;
+
+    setContextMenu({ target: { kind: "project", project }, ...cursorPosition(event) });
+  }
+
+  function returnMenuFocus(): void {
+    if (!contextMenu) return;
+
+    if (contextMenu.target.kind === "recording") {
+      rowRefs.current
+        .get(`${contextMenu.target.location}:${contextMenu.target.recording.id}`)
+        ?.focus();
+    } else {
+      projectRefs.current.get(contextMenu.target.project.id)?.focus();
+    }
+  }
+
+  function recordingMenuItems(recording: RecordingSummary, location: string): HistoryMenuItem[] {
+    return [
+      {
+        label: t("actions.rename"),
+        icon: <Pencil size={14} />,
+        onSelect: () => beginRename(recording, location),
+        disabled: isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id]),
+      },
+      {
+        label: t("projects.moveTitle"),
+        icon: <FolderInput size={14} />,
+        onSelect: () =>
+          setProjectAction({
+            kind: "move",
+            recordingId: recording.id,
+            projectId:
+              projectLibrary.projects.find((project) =>
+                project.recordingIds.includes(recording.id),
+              )?.id ?? null,
+          }),
+        disabled: projectLibrary.saving || projectLibrary.status !== "ready",
+      },
+      {
+        label: t("actions.delete"),
+        icon: <Trash2 size={14} />,
+        onSelect: () => setPendingDelete(recording),
+        danger: true,
+      },
+    ];
+  }
+
+  function projectMenuItems(project: RecordingProject): HistoryMenuItem[] {
+    return [
+      {
+        label: t("actions.rename"),
+        icon: <Pencil size={14} />,
+        onSelect: () => setProjectAction({ kind: "rename", project }),
+      },
+      {
+        label: t("projects.removeTitle"),
+        icon: <Trash2 size={14} />,
+        onSelect: () => setProjectAction({ kind: "remove", project }),
+      },
+    ];
   }
 
   function dropHandlers(projectId: string | null) {
@@ -295,8 +403,15 @@ export function HistorySidebar({
           setDraggingId(null);
           setDropTarget(null);
         }}
+        onContextMenu={(event) => openRecordingMenu(event, recording, location)}
       >
         <button
+          ref={(element) => {
+            const key = `${location}:${recording.id}`;
+
+            if (element) rowRefs.current.set(key, element);
+            else rowRefs.current.delete(key);
+          }}
           className="history-item-main"
           draggable={canDrag}
           title={`${recording.title} - ${metadata}`}
@@ -334,44 +449,6 @@ export function HistorySidebar({
             </span>
           </span>
         </button>
-        {!isRenaming && (
-          <div className="history-item-actions history-overflow">
-            <HistoryMenu
-              label={t("actions.more")}
-              className="history-row-menu"
-              items={[
-                {
-                  label: t("actions.rename"),
-                  icon: <Pencil size={14} />,
-                  onSelect: () => beginRename(recording, location),
-                  disabled: isSavingRename || Boolean(snapshot.mutationRequestIds[recording.id]),
-                },
-                {
-                  label: t("projects.moveTitle"),
-                  icon: <FolderInput size={14} />,
-                  onSelect: () =>
-                    setProjectAction({
-                      kind: "move",
-                      recordingId: recording.id,
-                      projectId:
-                        projectLibrary.projects.find((project) =>
-                          project.recordingIds.includes(recording.id),
-                        )?.id ?? null,
-                    }),
-                  disabled: projectLibrary.saving || projectLibrary.status !== "ready",
-                },
-                {
-                  label: t("actions.delete"),
-                  icon: <Trash2 size={14} />,
-                  onSelect: () => setPendingDelete(recording),
-                  danger: true,
-                },
-              ]}
-            >
-              <MoreHorizontal size={15} aria-hidden="true" />
-            </HistoryMenu>
-          </div>
-        )}
       </div>
     );
   }
@@ -529,8 +606,15 @@ export function HistorySidebar({
                   aria-label={project.name}
                   {...dropHandlers(project.id)}
                 >
-                  <div className="history-project-heading">
+                  <div
+                    className="history-project-heading"
+                    onContextMenu={(event) => openProjectMenu(event, project)}
+                  >
                     <button
+                      ref={(element) => {
+                        if (element) projectRefs.current.set(project.id, element);
+                        else projectRefs.current.delete(project.id);
+                      }}
                       type="button"
                       className="history-project-toggle"
                       aria-expanded={expanded}
@@ -550,25 +634,6 @@ export function HistorySidebar({
                       <Folder size={16} aria-hidden="true" />
                       <span title={project.name}>{project.name}</span>
                     </button>
-                    <HistoryMenu
-                      label={t("projects.projectActions", { name: project.name })}
-                      className="history-row-menu"
-                      disabled={projectLibrary.saving}
-                      items={[
-                        {
-                          label: t("actions.rename"),
-                          icon: <Pencil size={14} />,
-                          onSelect: () => setProjectAction({ kind: "rename", project }),
-                        },
-                        {
-                          label: t("projects.removeTitle"),
-                          icon: <Trash2 size={14} />,
-                          onSelect: () => setProjectAction({ kind: "remove", project }),
-                        },
-                      ]}
-                    >
-                      <MoreHorizontal size={15} aria-hidden="true" />
-                    </HistoryMenu>
                   </div>
                   {expanded && (
                     <div id={`project-${project.id}`} className="history-project-recordings">
@@ -599,6 +664,23 @@ export function HistorySidebar({
         </section>
       </div>
 
+      <HistoryMenu
+        label={
+          contextMenu?.target.kind === "project"
+            ? t("projects.projectActions", { name: contextMenu.target.project.name })
+            : t("actions.more")
+        }
+        anchor={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null}
+        items={
+          !contextMenu
+            ? []
+            : contextMenu.target.kind === "recording"
+              ? recordingMenuItems(contextMenu.target.recording, contextMenu.target.location)
+              : projectMenuItems(contextMenu.target.project)
+        }
+        onClose={closeContextMenu}
+        returnFocus={returnMenuFocus}
+      />
       <div className="history-footer">
         <Button
           className="history-settings"

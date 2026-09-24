@@ -1,31 +1,27 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import {
-  BookOpen,
-  Check,
-  ChevronDown,
-  FileCode2,
-  FileText,
-  MessageSquareText,
-  Pencil,
-  Plus,
-} from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { BUILT_IN_FLOWS, type InstructionFlow } from "../lib/InstructionFlows";
+import type { InstructionFlow } from "@path/shared";
+import { InstructionFlowGlyph } from "./InstructionFlowGlyph";
 
 export function InstructionFlowSelect({
   selectedFlow,
+  builtInFlows,
   customFlows,
   disabled,
   triggerRef,
+  variant = "field",
   onSelect,
   onEdit,
 }: {
   selectedFlow: InstructionFlow;
+  builtInFlows: InstructionFlow[];
   customFlows: InstructionFlow[];
   disabled: boolean;
   triggerRef: RefObject<HTMLButtonElement | null>;
+  variant?: "field" | "title";
   onSelect(id: string): void;
-  onEdit(): void;
+  onEdit?(): void;
 }) {
   const t = useTranslations("guide");
   const menuId = useId();
@@ -33,14 +29,6 @@ export function InstructionFlowSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const initialFocus = useRef<"selected" | "last">("selected");
-  const Icon =
-    selectedFlow.id === "help-guide"
-      ? BookOpen
-      : selectedFlow.id === "spec-document"
-        ? FileCode2
-        : selectedFlow.id === "provide-feedback"
-          ? MessageSquareText
-          : FileText;
 
   useEffect(() => {
     if (!open) return;
@@ -70,15 +58,6 @@ export function InstructionFlowSelect({
   }
 
   function renderOption(flow: InstructionFlow) {
-    const FlowIcon =
-      flow.id === "help-guide"
-        ? BookOpen
-        : flow.id === "spec-document"
-          ? FileCode2
-          : flow.id === "provide-feedback"
-            ? MessageSquareText
-            : FileText;
-
     const label =
       flow.id === "help-guide"
         ? t("helpGuide")
@@ -99,7 +78,7 @@ export function InstructionFlowSelect({
         title={label}
         onClick={() => choose(flow.id)}
       >
-        <FlowIcon aria-hidden="true" size={16} />
+        <InstructionFlowGlyph icon={flow.icon} aria-hidden="true" size={16} />
         <span>{label}</span>
         {flow.id === selectedFlow.id && (
           <Check className="guide-flow-check" aria-hidden="true" size={15} />
@@ -110,7 +89,7 @@ export function InstructionFlowSelect({
 
   return (
     <div
-      className="guide-flow-select"
+      className={`guide-flow-select${variant === "title" ? " guide-flow-select-title" : ""}`}
       ref={rootRef}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
@@ -139,23 +118,30 @@ export function InstructionFlowSelect({
             }
           }}
         >
-          <Icon className="guide-flow-document-icon" aria-hidden="true" size={16} />
+          <InstructionFlowGlyph
+            icon={selectedFlow.icon}
+            className="guide-flow-document-icon"
+            aria-hidden="true"
+            size={16}
+          />
           <span>{selectedFlow.name}</span>
           <ChevronDown className="guide-flow-chevron" aria-hidden="true" size={14} />
         </button>
-        <button
-          type="button"
-          className="guide-flow-edit"
-          title={t("editPrompt")}
-          aria-label={t("editPrompt")}
-          disabled={disabled}
-          onClick={() => {
-            setOpen(false);
-            onEdit();
-          }}
-        >
-          <Pencil aria-hidden="true" size={14} />
-        </button>
+        {variant === "field" && onEdit && (
+          <button
+            type="button"
+            className="guide-flow-edit"
+            title={t("editPrompt")}
+            aria-label={t("editPrompt")}
+            disabled={disabled}
+            onClick={() => {
+              setOpen(false);
+              onEdit();
+            }}
+          >
+            <Pencil aria-hidden="true" size={14} />
+          </button>
+        )}
       </div>
       {open && (
         <div
@@ -212,15 +198,19 @@ export function InstructionFlowSelect({
           }}
         >
           <div role="group" aria-label={t("documentFlow")}>
-            {BUILT_IN_FLOWS.map(renderOption)}
+            {builtInFlows.map(renderOption)}
           </div>
-          <div className="guide-flow-separator" role="separator" />
-          <div role="group" aria-labelledby={`${menuId}-custom`}>
-            <div id={`${menuId}-custom`} className="guide-flow-group-label">
-              {t("customFlows")}
-            </div>
-            <div className="guide-flow-custom-list">{customFlows.map(renderOption)}</div>
-          </div>
+          {customFlows.length > 0 && (
+            <>
+              <div className="guide-flow-separator" role="separator" />
+              <div role="group" aria-labelledby={`${menuId}-custom`}>
+                <div id={`${menuId}-custom`} className="guide-flow-group-label">
+                  {t("customFlows")}
+                </div>
+                <div className="guide-flow-custom-list">{customFlows.map(renderOption)}</div>
+              </div>
+            </>
+          )}
           <div className="guide-flow-separator" role="separator" />
           <button
             type="button"

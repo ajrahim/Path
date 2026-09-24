@@ -224,3 +224,155 @@ describe("HistorySidebar layout and version", () => {
     expect(image?.getAttribute("src")).toBe("http://127.0.0.1:9999/recordings/rec-4/thumbnail.png");
   });
 });
+
+describe("HistorySidebar context menus", () => {
+  // Dialog modality varies by jsdom version; these tests assert content, not modality.
+  window.HTMLDialogElement.prototype.showModal = function () {};
+  window.HTMLDialogElement.prototype.close = function () {};
+
+  const readyRecording = {
+    id: "rec-1",
+    title: "Demo recording",
+    status: "ready" as const,
+    captureMode: "display" as const,
+    durationMs: 12000,
+    thumbnailPath: null,
+    startedAt: "2026-09-14T07:00:00Z",
+    completedAt: "2026-09-14T07:00:12Z",
+    createdAt: "2026-09-14T07:00:00Z",
+    updatedAt: "2026-09-14T07:00:12Z",
+    transcriptStatus: "ready" as const,
+  };
+
+  async function renderSidebar(options: { projects?: unknown[] } = {}) {
+    const onSelect = vi.fn();
+    const desktop = {
+      app: { getInfo: vi.fn().mockResolvedValue({ version: "0.3.0" }) },
+      projects: { list: vi.fn().mockResolvedValue(options.projects ?? []) },
+      recordings: {
+        list: vi.fn().mockResolvedValue([readyRecording]),
+        thumbnailUrl: vi.fn().mockResolvedValue(null),
+      },
+    } as unknown as DesktopApi;
+
+    window.desktop = desktop;
+
+    const store = createRendererStore({ getDesktopApi: () => desktop });
+    const view = render(
+      <Provider store={store}>
+        <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+          <HistorySidebar
+            selectedId={null}
+            onSelect={onSelect}
+            onDeleted={vi.fn()}
+            onNewRecording={vi.fn()}
+            onOpenSettings={vi.fn()}
+          />
+        </NextIntlClientProvider>
+      </Provider>,
+    );
+
+    await act(async () => {});
+
+    return { view, onSelect };
+  }
+
+  it("renders no 3-dots trigger buttons", async () => {
+    const { view } = await renderSidebar({
+      projects: [{ id: "p1", name: "Demo", recordingIds: [] }],
+    });
+
+    expect(view.container.querySelector(".history-row-menu")).toBeNull();
+    expect(view.container.querySelector(".history-item-actions")).toBeNull();
+
+    const menuButtons = Array.from(view.container.querySelectorAll("button")).filter(
+      (button) => button.getAttribute("aria-haspopup") === "menu",
+    );
+
+    // Only the sort dropdown keeps a menu trigger.
+    expect(menuButtons).toHaveLength(1);
+  });
+
+  it("opens the recording menu at the cursor and selects the row", async () => {
+    const { view, onSelect } = await renderSidebar();
+    const row = view.container.querySelector('[data-recording-id="rec-1"]')!;
+    const prevented = fireEvent.contextMenu(row, { clientX: 120, clientY: 200 });
+
+    expect(prevented).toBe(false);
+    expect(onSelect).toHaveBeenCalledWith("rec-1");
+
+    const menu = view.getByRole("menu", { name: "More actions" });
+
+    expect(menu.style.top).toBe("204px");
+    expect(menu.style.left).toBe("112px");
+    expect(view.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    expect(view.getByRole("menuitem", { name: "Move to Project" })).toBeTruthy();
+    expect(view.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("starts a rename from the recording menu", async () => {
+    const { view } = await renderSidebar();
+    const row = view.container.querySelector('[data-recording-id="rec-1"]')!;
+
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 200 });
+    fireEvent.click(view.getByRole("menuitem", { name: "Rename" }));
+
+    expect(view.queryByRole("menu")).toBeNull();
+    expect(view.container.querySelector(".rename-input")).toBeTruthy();
+  });
+
+  it("opens the delete dialog from the recording menu", async () => {
+    const { view } = await renderSidebar();
+    const row = view.container.querySelector('[data-recording-id="rec-1"]')!;
+
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 200 });
+    fireEvent.click(view.getByRole("menuitem", { name: "Delete" }));
+
+    expect(view.getByText("Delete recording?")).toBeTruthy();
+  });
+
+  it("opens project actions from the project heading", async () => {
+    const { view } = await renderSidebar({
+      projects: [{ id: "p1", name: "Demo", recordingIds: [] }],
+    });
+    const heading = view.getByRole("button", { name: "Demo" });
+
+    fireEvent.contextMenu(heading, { clientX: 120, clientY: 200 });
+
+    expect(view.getByRole("menu", { name: "Project actions: Demo" })).toBeTruthy();
+    expect(view.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    expect(view.getByRole("menuitem", { name: "Remove Project" })).toBeTruthy();
+
+    fireEvent.click(view.getByRole("menuitem", { name: "Remove Project" }));
+
+    expect(
+      view.getByText('Remove "Demo"? Its recordings will remain in All. No recordings will be deleted.'),
+    ).toBeTruthy();
+  });
+
+  it("closes the menu on Escape and returns focus to the row", async () => {
+    const { view } = await renderSidebar();
+    const row = view.container.querySelector('[data-recording-id="rec-1"]')!;
+
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 200 });
+
+    const menu = view.getByRole("menu", { name: "More actions" });
+
+    fireEvent.keyDown(menu, { key: "Escape" });
+
+    expect(view.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(row.querySelector(".history-item-main"));
+  });
+
+  it("anchors keyboard-invoked menus to the row", async () => {
+    const { view, onSelect } = await renderSidebar();
+    const rowButton = view.container.querySelector(
+      '[data-recording-id="rec-1"] .history-item-main',
+    )!;
+
+    fireEvent.contextMenu(rowButton);
+
+    expect(onSelect).toHaveBeenCalledWith("rec-1");
+    expect(view.getByRole("menu", { name: "More actions" })).toBeTruthy();
+  });
+});

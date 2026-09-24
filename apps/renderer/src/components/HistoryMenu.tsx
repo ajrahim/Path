@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-interface HistoryMenuItem {
+export interface HistoryMenuItem {
   label: string;
   icon: ReactNode;
   onSelect(): void;
@@ -9,158 +9,138 @@ interface HistoryMenuItem {
   danger?: boolean;
 }
 
+interface HistoryMenuAnchor {
+  x: number;
+  y: number;
+}
+
+const MENU_WIDTH = 184;
+const MENU_MARGIN = 8;
+
+/** Cursor-anchored context menu for the history sidebar; opened by right-click. */
 export function HistoryMenu({
   label,
-  children,
+  anchor,
   items,
-  className = "",
-  disabled = false,
+  onClose,
+  returnFocus,
 }: {
   label: string;
-  children: ReactNode;
+  anchor: HistoryMenuAnchor | null;
   items: HistoryMenuItem[];
-  className?: string;
-  disabled?: boolean;
+  onClose(): void;
+  returnFocus(): void;
 }) {
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const id = useId();
 
-  function close() {
-    setPosition(null);
-  }
-
-  function open() {
-    const rect = triggerRef.current?.getBoundingClientRect();
-
-    if (!rect) return;
-    const height = items.length * 36 + 10;
-
-    setPosition({
-      top:
-        rect.bottom + height + 8 > window.innerHeight
-          ? Math.max(8, rect.top - height - 4)
-          : rect.bottom + 4,
-      left: Math.max(8, Math.min(rect.right - 184, window.innerWidth - 192)),
-    });
-  }
+  const height = items.length * 36 + 10;
+  const position = anchor
+    ? {
+        top:
+          anchor.y + height + MENU_MARGIN > window.innerHeight
+            ? Math.max(MENU_MARGIN, anchor.y - height - 4)
+            : Math.max(MENU_MARGIN, anchor.y + 4),
+        left: Math.max(
+          MENU_MARGIN,
+          Math.min(anchor.x - 8, window.innerWidth - MENU_WIDTH - MENU_MARGIN),
+        ),
+      }
+    : null;
 
   useEffect(() => {
-    if (!position) return;
+    if (!anchor) return;
     menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+
     const outside = (event: PointerEvent) => {
-      if (
-        !menuRef.current?.contains(event.target as Node) &&
-        !triggerRef.current?.contains(event.target as Node)
-      ) {
-        close();
-      }
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
     };
 
     const onScroll = (event: Event) => {
-      if (!menuRef.current?.contains(event.target as Node)) close();
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
     };
 
     document.addEventListener("pointerdown", outside);
-    window.addEventListener("resize", close);
+    window.addEventListener("resize", onClose);
     document.addEventListener("scroll", onScroll, true);
 
     return () => {
       document.removeEventListener("pointerdown", outside);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("resize", onClose);
       document.removeEventListener("scroll", onScroll, true);
     };
-  }, [position]);
+  }, [anchor, onClose]);
 
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={className}
-        title={label}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={Boolean(position)}
-        aria-controls={position ? id : undefined}
-        disabled={disabled}
-        onClick={() => (position ? close() : open())}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            open();
-          }
-        }}
-      >
-        {children}
-      </button>
-      {position &&
-        createPortal(
-          <div
-            ref={menuRef}
-            id={id}
-            className="history-action-menu"
-            role="menu"
-            aria-label={label}
-            style={position}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) close();
-            }}
-            onKeyDown={(event) => {
-              const buttons = [
-                ...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
-              ];
+  if (!anchor || !position) return null;
 
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  function dismiss(returnFocusAfter: boolean) {
+    onClose();
 
-              if (event.key === "Escape" || event.key === "Tab") {
-                if (event.key === "Escape") event.preventDefault();
-                triggerRef.current?.focus();
-                close();
+    if (returnFocusAfter) returnFocus();
+  }
 
-                return;
-              }
+  return createPortal(
+    <div
+      ref={menuRef}
+      id={id}
+      className="history-action-menu"
+      role="menu"
+      aria-label={label}
+      style={position}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onClose();
+      }}
+      onContextMenu={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        const buttons = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+        ];
 
-              let next: number;
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
 
-              if (event.key === "ArrowDown") {
-                next = (index + 1) % buttons.length;
-              } else if (event.key === "ArrowUp") {
-                next = (index - 1 + buttons.length) % buttons.length;
-              } else if (event.key === "Home") {
-                next = 0;
-              } else if (event.key === "End") {
-                next = buttons.length - 1;
-              } else {
-                return;
-              }
+        if (event.key === "Escape" || event.key === "Tab") {
+          if (event.key === "Escape") event.preventDefault();
+          dismiss(true);
 
-              event.preventDefault();
-              buttons[next]?.focus();
-            }}
-          >
-            {items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                disabled={item.disabled}
-                className={item.danger ? "danger" : undefined}
-                onClick={() => {
-                  close();
-                  triggerRef.current?.focus();
-                  item.onSelect();
-                }}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
-    </>
+          return;
+        }
+
+        let next: number;
+
+        if (event.key === "ArrowDown") {
+          next = (index + 1) % buttons.length;
+        } else if (event.key === "ArrowUp") {
+          next = (index - 1 + buttons.length) % buttons.length;
+        } else if (event.key === "Home") {
+          next = 0;
+        } else if (event.key === "End") {
+          next = buttons.length - 1;
+        } else {
+          return;
+        }
+
+        event.preventDefault();
+        buttons[next]?.focus();
+      }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          tabIndex={-1}
+          disabled={item.disabled}
+          className={item.danger ? "danger" : undefined}
+          onClick={() => {
+            dismiss(true);
+            item.onSelect();
+          }}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>,
+    document.body,
   );
 }

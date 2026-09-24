@@ -77,6 +77,7 @@ describe("OllamaClickActionAnalyzer", () => {
         modifiedAt: "2026-08-01T00:00:00Z",
         isLoaded: false,
         supportedPurposes: ["text"],
+        supportsEffort: false,
       },
       {
         id: "vision-model:latest",
@@ -85,6 +86,7 @@ describe("OllamaClickActionAnalyzer", () => {
         modifiedAt: "2026-09-01T00:00:00Z",
         isLoaded: true,
         supportedPurposes: ["visual", "text"],
+        supportsEffort: false,
       },
     ]);
   });
@@ -124,8 +126,72 @@ describe("OllamaClickActionAnalyzer", () => {
         modifiedAt: null,
         isLoaded: false,
         supportedPurposes: ["visual", "text"],
+        supportsEffort: false,
       },
     ]);
+  });
+
+  it("flags thinking-capable models from daemon capabilities and known families", async () => {
+    const fetchMock = vi.fn(async (input: string, request?: RequestInit) => {
+      if (input.endsWith("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [{ name: "qwen3:latest" }, { name: "custom-thinker:latest" }],
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (input.endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      }
+
+      const body = JSON.parse(String(request?.body));
+
+      return new Response(
+        JSON.stringify({
+          capabilities: {
+            "qwen3:latest": ["completion"],
+            "custom-thinker:latest": ["completion", "thinking"],
+          }[body.model as string],
+        }),
+        { status: 200 },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const analyzer = new OllamaClickActionAnalyzer();
+
+    await expect(analyzer.listModels()).resolves.toMatchObject([
+      { id: "custom-thinker:latest", supportsEffort: true },
+      { id: "qwen3:latest", supportsEffort: true },
+    ]);
+  });
+
+  it("sends the selected think level for text generation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: "# Guide" } }), { status: 200 }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const analyzer = new OllamaClickActionAnalyzer();
+
+    await expect(analyzer.generateText("Write a guide", "qwen3:latest", "high")).resolves.toBe(
+      "# Guide",
+    );
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+
+    expect(body.think).toBe("high");
+
+    await expect(analyzer.generateText("Write a guide", "qwen3:latest")).resolves.toBe("# Guide");
+
+    const defaultBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body));
+
+    expect(defaultBody.think).toBe(false);
   });
 
   it("sends the screenshot, timestamp, and click position to a local model", async () => {

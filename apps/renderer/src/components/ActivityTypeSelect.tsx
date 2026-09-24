@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Captions, Check, ChevronDown, ListFilter, MousePointer2 } from "lucide-react";
+import { Captions, Check, ListFilter, MousePointer2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 type ActivityType = "all" | "clicks" | "speech";
@@ -27,20 +27,19 @@ export function ActivityTypeSelect({
   ] as const;
 
   const selected = options.find((option) => option.value === value)!;
-  const Icon = selected.Icon;
 
   function open() {
     const rect = triggerRef.current?.getBoundingClientRect();
 
     if (!rect) return;
-    const menuHeight = options.length * 36 + 12;
+    const menuHeight = options.length * 36 + 18;
 
     setPosition({
       top:
         rect.bottom + menuHeight + 12 <= window.innerHeight
           ? rect.bottom + 4
           : Math.max(8, rect.top - menuHeight - 4),
-      left: Math.max(8, Math.min(rect.right - 184, window.innerWidth - 192)),
+      left: Math.max(8, Math.min(rect.right - 180, window.innerWidth - 188)),
     });
   }
 
@@ -90,7 +89,9 @@ export function ActivityTypeSelect({
         type="button"
         className="activity-type-trigger"
         aria-label={t("filterActivity")}
-        title={t("filterActivity")}
+        aria-describedby={`${id}-selection`}
+        title={`${t("filterActivity")}: ${selected.label} (${counts[value]})`}
+        data-active={value !== "all"}
         aria-haspopup="menu"
         aria-expanded={Boolean(position)}
         aria-controls={position ? id : undefined}
@@ -107,11 +108,10 @@ export function ActivityTypeSelect({
           }
         }}
       >
-        <Icon className="activity-filter-icon" size={16} aria-hidden="true" />
-        <span>
+        <ListFilter size={15} aria-hidden="true" />
+        <span id={`${id}-selection`} className="sr-only">
           {selected.label} ({counts[value]})
         </span>
-        <ChevronDown className="activity-filter-chevron" size={14} aria-hidden="true" />
       </button>
       {position &&
         createPortal(
@@ -183,7 +183,7 @@ export function ActivityTypeSelect({
                   onChange(optionValue);
                 }}
               >
-                <OptionIcon size={16} aria-hidden="true" />
+                <OptionIcon size={15} aria-hidden="true" />
                 <span>
                   {label} ({counts[optionValue]})
                 </span>

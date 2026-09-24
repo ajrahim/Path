@@ -58,9 +58,9 @@ describe("listProviderModels", () => {
     );
 
     await expect(listProviderModels("openai", "secret-key")).resolves.toMatchObject([
-      { id: "gpt-3.5-turbo", supportedPurposes: ["text"] },
-      { id: "gpt-4o", supportedPurposes: ["visual", "text"] },
-      { id: "gpt-5", supportedPurposes: ["visual", "text"] },
+      { id: "gpt-3.5-turbo", supportedPurposes: ["text"], supportsEffort: false },
+      { id: "gpt-4o", supportedPurposes: ["visual", "text"], supportsEffort: false },
+      { id: "gpt-5", supportedPurposes: ["visual", "text"], supportsEffort: true },
     ]);
   });
 
@@ -122,6 +122,7 @@ describe("listProviderModels", () => {
         provider: "openrouter",
         vendor: "router",
         supportedPurposes: ["text"],
+        supportsEffort: false,
         contextLength: 64000,
         pricing: { promptPerMillion: 0.5, completionPerMillion: 1.5 },
         isFree: false,
@@ -132,6 +133,7 @@ describe("listProviderModels", () => {
         provider: "openrouter",
         vendor: "router",
         supportedPurposes: ["visual", "text"],
+        supportsEffort: false,
         contextLength: null,
         pricing: { promptPerMillion: 0, completionPerMillion: 0 },
         isFree: true,
@@ -142,6 +144,7 @@ describe("listProviderModels", () => {
         provider: "openrouter",
         vendor: "router",
         supportedPurposes: ["visual", "text"],
+        supportsEffort: false,
         contextLength: 128000,
         pricing: { promptPerMillion: 1.5, completionPerMillion: 6 },
         isFree: false,
@@ -217,6 +220,11 @@ describe("listProviderModels", () => {
                 supportedGenerationMethods: ["generateContent"],
               },
               {
+                name: "models/gemini-2.5-flash",
+                displayName: "Gemini 2.5 Flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+              {
                 name: "models/gemini-2.5-flash-preview-tts",
                 supportedGenerationMethods: ["generateContent"],
               },
@@ -233,8 +241,14 @@ describe("listProviderModels", () => {
     );
 
     await expect(listProviderModels("google", "secret-key")).resolves.toMatchObject([
-      { id: "gemini-test", name: "Gemini Test", supportedPurposes: ["visual", "text"] },
-      { id: "gemma-2-27b-it", supportedPurposes: ["text"] },
+      { id: "gemini-2.5-flash", supportedPurposes: ["visual", "text"], supportsEffort: true },
+      {
+        id: "gemini-test",
+        name: "Gemini Test",
+        supportedPurposes: ["visual", "text"],
+        supportsEffort: false,
+      },
+      { id: "gemma-2-27b-it", supportedPurposes: ["text"], supportsEffort: false },
     ]);
   });
 

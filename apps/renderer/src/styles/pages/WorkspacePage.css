@@ -421,17 +421,6 @@ html[data-theme="dark"] .recording-workspace {
   -webkit-app-region: no-drag;
 }
 
-.header-action-divider {
-  width: 1px;
-  height: 24px;
-  flex: 0 0 1px;
-  background: rgb(255 255 255 / 28%);
-}
-
-.header-actions .header-settings {
-  margin-left: 0;
-}
-
 .workspace-title-editable {
   border-radius: 4px;
 }

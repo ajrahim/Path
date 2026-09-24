@@ -1,11 +1,13 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
   CaptureRegion,
   CaptureMode,
   GuideFormat,
   GuideStatus,
+  MediaPause,
   MouseButton,
   RecordingStatus,
+  TimelineImportKind,
   TranscriptStatus,
 } from "@path/shared";
 
@@ -31,6 +33,9 @@ export const recordings = sqliteTable(
     guideStatus: text("guide_status").$type<GuideStatus>().notNull().default("none"),
 
     startedAt: text("started_at").notNull(),
+    // Wall-clock media zero and pauses; null for recordings captured before timing was stored.
+    mediaStartedAt: text("media_started_at"),
+    mediaPausesJson: text("media_pauses_json", { mode: "json" }).$type<MediaPause[] | null>(),
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
@@ -107,6 +112,37 @@ export const documents = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [index("documents_recording_idx").on(table.recordingId)],
+);
+
+/** One imported log or element file per kind; a new import replaces the previous one. */
+export const timelineImports = sqliteTable(
+  "timeline_imports",
+  {
+    id: text("id").primaryKey(),
+    recordingId: text("recording_id")
+      .notNull()
+      .references(() => recordings.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<TimelineImportKind>().notNull(),
+    fileName: text("file_name").notNull(),
+    offsetMs: integer("offset_ms").notNull().default(0),
+    unreadableLineCount: integer("unreadable_line_count").notNull().default(0),
+    importedAt: text("imported_at").notNull(),
+  },
+  (table) => [uniqueIndex("timeline_imports_recording_kind_idx").on(table.recordingId, table.kind)],
+);
+
+/** Rows keep their original wall-clock time so offset changes re-align them without re-import. */
+export const timelineImportEntries = sqliteTable(
+  "timeline_import_entries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    importId: text("import_id")
+      .notNull()
+      .references(() => timelineImports.id, { onDelete: "cascade" }),
+    occurredAtMs: integer("occurred_at_ms").notNull(),
+    text: text("text").notNull(),
+  },
+  (table) => [index("timeline_import_entries_time_idx").on(table.importId, table.occurredAtMs)],
 );
 
 /** JSON values stay untyped here so their owning service controls validation and compatibility. */

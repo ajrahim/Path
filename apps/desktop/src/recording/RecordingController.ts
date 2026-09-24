@@ -45,6 +45,8 @@ export class RecordingController {
   private state: RecordingState = "IDLE";
   private active: ActiveRecording | null = null;
   private clock: SessionClock | null = null;
+  // Wall-clock time of media zero, taken with the session clock's monotonic origin.
+  private mediaStartedAt: string | null = null;
   private writeQueue = Promise.resolve();
   private clickCaptureQueue = Promise.resolve();
   private error: string | null = null;
@@ -145,6 +147,7 @@ export class RecordingController {
 
       this.active = { id, input, rawVideoPath, finalVideoPath, source };
       this.clock = null;
+      this.mediaStartedAt = null;
       this.writeQueue = Promise.resolve();
       this.emitState();
 
@@ -233,6 +236,7 @@ export class RecordingController {
     // Start media-relative time at the worker acknowledgement, excluding setup latency.
     this.clearPreparationTimer();
     this.clock = new SessionClock();
+    this.mediaStartedAt = new Date().toISOString();
     this.state = transitionRecordingState(this.state, "PREPARED");
     this.emitState();
 
@@ -309,6 +313,14 @@ export class RecordingController {
 
     this.state = transitionRecordingState(this.state, "STOPPED");
     this.emitState();
+
+    if (this.clock && this.mediaStartedAt) {
+      await this.recordings.recordMediaTiming(this.active.id, {
+        startedAt: this.mediaStartedAt,
+        pauses: this.clock.pauses(),
+      });
+    }
+
     await this.recordings.markProcessing(this.active.id, durationMs, this.active.rawVideoPath);
 
     try {
@@ -660,6 +672,7 @@ export class RecordingController {
     this.clearPreparationTimer();
     this.active = null;
     this.clock = null;
+    this.mediaStartedAt = null;
     this.writeQueue = Promise.resolve();
   }
 }

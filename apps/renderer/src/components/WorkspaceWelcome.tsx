@@ -41,9 +41,9 @@ export function WorkspaceWelcome({ onNewRecording }: { onNewRecording(): void })
               type="button"
               className="workspace-welcome-option"
               key={id}
-              disabled={!flows.loaded}
-              onClick={() => {
-                if (flows.selectFlow(id)) onNewRecording();
+              disabled={!flows.loaded || flows.isBusy}
+              onClick={async () => {
+                if (await flows.selectFlow(id)) onNewRecording();
               }}
             >
               <span className="welcome-option-top">

@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -47,9 +41,8 @@ export function LocalModelSelect({
   const format = useFormatter();
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const tabRefs = useRef<Record<AiModelPurpose, HTMLButtonElement | null>>({
+  const triggerRefs = useRef<Record<AiModelPurpose, HTMLButtonElement | null>>({
     visual: null,
     text: null,
   });
@@ -71,33 +64,6 @@ export function LocalModelSelect({
   const [expandedProvider, setExpandedProvider] = useState<AiProvider | null>(null);
   const [open, setOpen] = useState(false);
   const selection = selections[purpose];
-  const selectionSummary = t("modelSelectionSummary", {
-    visual: selections.visual?.modelName ?? t("chooseModel"),
-    text: selections.text?.modelName ?? t("chooseModel"),
-  });
-
-  function changePurpose(nextPurpose: AiModelPurpose): void {
-    setPurpose(nextPurpose);
-    setQuery("");
-  }
-
-  function navigatePurposes(event: ReactKeyboardEvent<HTMLButtonElement>): void {
-    let nextPurpose: AiModelPurpose;
-
-    if (event.key === "Home") {
-      nextPurpose = "visual";
-    } else if (event.key === "End") {
-      nextPurpose = "text";
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      nextPurpose = purpose === "visual" ? "text" : "visual";
-    } else {
-      return;
-    }
-
-    event.preventDefault();
-    changePurpose(nextPurpose);
-    tabRefs.current[nextPurpose]?.focus();
-  }
 
   async function refreshCatalog(): Promise<void> {
     const status = await refreshModels();
@@ -118,7 +84,7 @@ export function LocalModelSelect({
     function closeOnEscape(event: KeyboardEvent): void {
       if (event.key === "Escape") {
         setOpen(false);
-        triggerRef.current?.focus();
+        triggerRefs.current[purpose]?.focus();
       }
     }
 
@@ -129,12 +95,12 @@ export function LocalModelSelect({
       document.removeEventListener("pointerdown", closeMenu);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [open, purpose]);
 
   async function chooseModel(selection: AiModelSelection): Promise<void> {
     if (await selectModel(purpose, selection)) {
       setOpen(false);
-      triggerRef.current?.focus();
+      triggerRefs.current[purpose]?.focus();
     }
   }
 
@@ -232,44 +198,61 @@ export function LocalModelSelect({
 
   return (
     <div className="local-model-select" ref={rootRef}>
-      <button
-        type="button"
-        ref={triggerRef}
-        className="local-model-trigger"
-        aria-label={t("selectAiModel")}
-        aria-describedby={`${menuId}-selection-summary`}
-        title={selectionSummary}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        disabled={disabled}
-        onClick={() => {
-          if (!open) setQuery("");
-          setOpen((current) => !current);
-        }}
-      >
-        <span className="local-model-trigger-choice">
-          <Eye aria-hidden="true" size={13} />
-          <span className="local-model-trigger-name">
-            {selections.visual?.modelName ?? t("visualModel")}
-          </span>
-        </span>
-        <span className="local-model-trigger-divider" aria-hidden="true" />
-        <span className="local-model-trigger-choice">
-          <FileText aria-hidden="true" size={13} />
-          <span className="local-model-trigger-name">
-            {selections.text?.modelName ?? t("textModel")}
-          </span>
-        </span>
-        <ChevronDown aria-hidden="true" size={12} />
-      </button>
-      <span className="sr-only" id={`${menuId}-selection-summary`}>
-        {selectionSummary}
-      </span>
+      {MODEL_PURPOSES.map((modelPurpose) => {
+        const label = t(modelPurpose === "visual" ? "visualModel" : "textModel");
+        const modelName = selections[modelPurpose]?.modelName ?? t("chooseModel");
+        const expanded = open && purpose === modelPurpose;
+        const Icon = modelPurpose === "visual" ? Eye : FileText;
+
+        return (
+          <button
+            key={modelPurpose}
+            type="button"
+            ref={(element) => {
+              triggerRefs.current[modelPurpose] = element;
+            }}
+            id={`${menuId}-${modelPurpose}-trigger`}
+            className="local-model-trigger"
+            aria-label={label}
+            title={`${label}: ${modelName}`}
+            aria-haspopup="dialog"
+            aria-expanded={expanded}
+            aria-controls={expanded ? menuId : undefined}
+            disabled={disabled || isSaving}
+            onClick={() => {
+              if (expanded) {
+                setOpen(false);
+
+                return;
+              }
+
+              setPurpose(modelPurpose);
+              setQuery("");
+              setExpandedProvider(null);
+              setOpen(true);
+              // The chat picker shares these selections; refresh when either picker opens.
+              void refreshCatalog();
+            }}
+          >
+            <span className="local-model-trigger-choice">
+              <Icon aria-hidden="true" size={13} />
+              <span className="local-model-trigger-name">
+                {selections[modelPurpose]?.modelName ?? label}
+              </span>
+            </span>
+            <ChevronDown aria-hidden="true" size={12} />
+          </button>
+        );
+      })}
       {open && (
-        <div className="local-model-menu" id={menuId} role="dialog" aria-label={t("aiModels")}>
+        <div
+          className="local-model-menu"
+          id={menuId}
+          role="dialog"
+          aria-label={t(purpose === "visual" ? "visualModels" : "textModels")}
+        >
           <header>
-            <span>{t("aiModels")}</span>
+            <span>{t(purpose === "visual" ? "visualModels" : "textModels")}</span>
             <button
               type="button"
               title={t("refreshAiModels")}
@@ -280,40 +263,7 @@ export function LocalModelSelect({
               <RefreshCw aria-hidden="true" size={14} />
             </button>
           </header>
-          <div className="local-model-purposes" role="tablist" aria-label={t("modelPurpose")}>
-            {MODEL_PURPOSES.map((modelPurpose) => (
-              <button
-                key={modelPurpose}
-                ref={(element) => {
-                  tabRefs.current[modelPurpose] = element;
-                }}
-                type="button"
-                role="tab"
-                id={`${menuId}-${modelPurpose}-tab`}
-                aria-controls={`${menuId}-${modelPurpose}-panel`}
-                aria-selected={purpose === modelPurpose}
-                aria-label={t(modelPurpose === "visual" ? "visualModel" : "textModel")}
-                aria-describedby={`${menuId}-${modelPurpose}-selection`}
-                tabIndex={purpose === modelPurpose ? 0 : -1}
-                onClick={() => changePurpose(modelPurpose)}
-                onKeyDown={navigatePurposes}
-              >
-                <span>{t(modelPurpose === "visual" ? "visualModel" : "textModel")}</span>
-                <small
-                  id={`${menuId}-${modelPurpose}-selection`}
-                  title={selections[modelPurpose]?.modelName}
-                >
-                  {selections[modelPurpose]?.modelName ?? t("chooseModel")}
-                </small>
-              </button>
-            ))}
-          </div>
-          <div
-            className="local-model-panel"
-            role="tabpanel"
-            id={`${menuId}-${purpose}-panel`}
-            aria-labelledby={`${menuId}-${purpose}-tab`}
-          >
+          <div className="local-model-panel">
             <div className="local-model-search">
               <Search size={14} aria-hidden="true" />
               <input

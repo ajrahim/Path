@@ -18,16 +18,25 @@ import { useRecordingHistory } from "../hooks/useRecordingHistory";
 import { useRecordingMedia } from "../hooks/useRecordingMedia";
 import { useRecordingPlayback } from "../hooks/useRecordingPlayback";
 import { useRecordingActivity } from "../hooks/useRecordingActivity";
+import type { TimelineImports } from "../hooks/useTimelineImports";
 import { ActivityTimeline, type TimelineFilter } from "./ActivityTimeline";
 import { ScreenshotHoverCard, ScreenshotViewer, screenshotHoverPosition } from "./ScreenshotViewer";
+import { TimelineImportPanel } from "./TimelineImportPanel";
+import { TimelineTabs, type TimelineTab } from "./TimelineTabs";
 import { VideoStage } from "./VideoStage";
 
 export function RecordingPane({
   recording,
+  timelineTab,
+  timelineImports,
+  onTimelineTabChange,
   onNewRecording,
   onOpenSettings,
 }: {
   recording: RecordingSummary | null;
+  timelineTab: TimelineTab;
+  timelineImports: TimelineImports;
+  onTimelineTabChange(tab: TimelineTab): void;
   onNewRecording(): void;
   onOpenSettings(): void;
 }) {
@@ -290,6 +299,8 @@ export function RecordingPane({
     emptyTimelineLabel = t("recording.noFilteredActivity");
   }
 
+  const timelineTabs = <TimelineTabs value={timelineTab} onChange={onTimelineTabChange} />;
+
   return (
     <main className="recording-panel">
       <VideoStage
@@ -320,49 +331,71 @@ export function RecordingPane({
         onNewRecording={onNewRecording}
         onOpenSettings={onOpenSettings}
       />
-      <ActivityTimeline
-        recordingSelected={Boolean(recording)}
-        timeline={timeline}
-        allCount={allTimeline.length}
-        clickCount={activity.clicks.length}
-        speechCount={activity.transcript.length}
-        filter={timelineFilter}
-        query={timelineQuery}
-        selectedActivityKey={activity.selectedActivityKey}
-        activePlaybackKey={activePlaybackKey}
-        playing={playback.playing}
-        pendingIds={activity.pendingIds}
-        analyzingClicks={activity.analyzingClicks}
-        error={activity.error}
-        emptyLabel={emptyTimelineLabel}
-        canRetryAnalysis={canRetryAnalysis}
-        listRef={activityListRef}
-        onScrollPause={pauseActivityScroll}
-        onFilterChange={setTimelineFilter}
-        onQueryChange={setTimelineQuery}
-        onRetryAnalysis={() => void activity.retryAnalysis()}
-        onSelectClick={selectClick}
-        onSelectTranscript={selectTranscript}
-        onFocusActivity={activity.selectActivity}
-        onSaveClickDescription={(click, text, editor) =>
-          void saveClickDescription(click, text, editor)
-        }
-        onSaveTranscript={(segment, text, editor) => void saveTranscript(segment, text, editor)}
-        onRemoveClick={(click) => void removeClick(click)}
-        onRemoveTranscript={(segment) => void activity.removeTranscript(segment)}
-        onOpenScreenshot={(click, url) => {
-          setViewerError(null);
-          setOpenScreenshot({ click, url });
-        }}
-        onInsertScreenshot={(click, url) => void insertScreenshotIntoGuide(click, url)}
-        onPreviewScreenshot={(click, url, anchor) =>
-          setHoverScreenshot({ click, url, ...screenshotHoverPosition(anchor) })
-        }
-        onPreviewEnd={() => setHoverScreenshot(null)}
-        onUserScrollChange={(scrolling) => {
-          isUserScrollingRef.current = scrolling;
-        }}
-      />
+      {timelineTab === "activity" ? (
+        <ActivityTimeline
+          tabs={timelineTabs}
+          recordingSelected={Boolean(recording)}
+          timeline={timeline}
+          allCount={allTimeline.length}
+          clickCount={activity.clicks.length}
+          speechCount={activity.transcript.length}
+          filter={timelineFilter}
+          query={timelineQuery}
+          selectedActivityKey={activity.selectedActivityKey}
+          activePlaybackKey={activePlaybackKey}
+          playing={playback.playing}
+          pendingIds={activity.pendingIds}
+          analyzingClicks={activity.analyzingClicks}
+          error={activity.error}
+          emptyLabel={emptyTimelineLabel}
+          canRetryAnalysis={canRetryAnalysis}
+          listRef={activityListRef}
+          onScrollPause={pauseActivityScroll}
+          onFilterChange={setTimelineFilter}
+          onQueryChange={setTimelineQuery}
+          onRetryAnalysis={() => void activity.retryAnalysis()}
+          onSelectClick={selectClick}
+          onSelectTranscript={selectTranscript}
+          onFocusActivity={activity.selectActivity}
+          onSaveClickDescription={(click, text, editor) =>
+            void saveClickDescription(click, text, editor)
+          }
+          onSaveTranscript={(segment, text, editor) => void saveTranscript(segment, text, editor)}
+          onRemoveClick={(click) => void removeClick(click)}
+          onRemoveTranscript={(segment) => void activity.removeTranscript(segment)}
+          onOpenScreenshot={(click, url) => {
+            setViewerError(null);
+            setOpenScreenshot({ click, url });
+          }}
+          onInsertScreenshot={(click, url) => void insertScreenshotIntoGuide(click, url)}
+          onPreviewScreenshot={(click, url, anchor) =>
+            setHoverScreenshot({ click, url, ...screenshotHoverPosition(anchor) })
+          }
+          onPreviewEnd={() => setHoverScreenshot(null)}
+          onUserScrollChange={(scrolling) => {
+            isUserScrollingRef.current = scrolling;
+          }}
+        />
+      ) : (
+        <TimelineImportPanel
+          // Search, selection, and scroll position belong to one recording's tab.
+          key={`${recordingId ?? "none"}-${timelineTab}`}
+          tabs={timelineTabs}
+          kind={timelineTab}
+          recordingSelected={Boolean(recording)}
+          timeWindow={timelineImports.window}
+          timelineImport={timelineImports.imports[timelineTab]}
+          isLoading={timelineImports.isLoading}
+          isBusy={timelineImports.busyKind === timelineTab}
+          error={timelineImports.errors[timelineTab]}
+          currentTimeMs={playback.currentTime * 1_000}
+          playing={playback.playing}
+          onImport={() => void timelineImports.importFile(timelineTab)}
+          onOffsetChange={(offsetMs) => void timelineImports.updateOffset(timelineTab, offsetMs)}
+          onRemove={() => void timelineImports.removeImport(timelineTab)}
+          onSeek={(timestampMs) => playback.seek(timestampMs / 1_000)}
+        />
+      )}
       {hoverScreenshot && <ScreenshotHoverCard {...hoverScreenshot} showHotspot={showHotspots} />}
       {openScreenshot && (
         <ScreenshotViewer

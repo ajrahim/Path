@@ -21,6 +21,7 @@ const configuredModels = vi.hoisted(() => ({
         pricing: null,
         isFree: false,
         supportedPurposes: ["visual", "text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
       {
         id: "router/vision-pro",
@@ -31,6 +32,7 @@ const configuredModels = vi.hoisted(() => ({
         pricing: { promptPerMillion: 1.5, completionPerMillion: 6 },
         isFree: false,
         supportedPurposes: ["visual", "text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
       {
         id: "cloud-text",
@@ -41,6 +43,7 @@ const configuredModels = vi.hoisted(() => ({
         pricing: null,
         isFree: false,
         supportedPurposes: ["text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
     ],
     local: [
@@ -51,6 +54,7 @@ const configuredModels = vi.hoisted(() => ({
         modifiedAt: "2026-09-01T00:00:00.000Z",
         isLoaded: true,
         supportedPurposes: ["visual", "text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
       {
         id: "gemma:latest",
@@ -59,6 +63,7 @@ const configuredModels = vi.hoisted(() => ({
         modifiedAt: null,
         isLoaded: false,
         supportedPurposes: ["visual", "text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
       {
         id: "writer:latest",
@@ -67,6 +72,7 @@ const configuredModels = vi.hoisted(() => ({
         modifiedAt: null,
         isLoaded: false,
         supportedPurposes: ["text"] as AiModelPurpose[],
+        supportsEffort: false,
       },
     ],
     ollama: { status: "running" as const, endpoint: "http://127.0.0.1:11434" },
@@ -99,7 +105,7 @@ function setup() {
     </NextIntlClientProvider>,
   );
 
-  fireEvent.click(view.getByRole("button", { name: "Select AI model" }));
+  fireEvent.click(view.getByRole("button", { name: "Visual" }));
 
   return view;
 }
@@ -122,7 +128,7 @@ it("searches local model IDs and API provider names, then selects the matching A
     modelId: "cloud-vision",
     modelName: "Cloud Vision",
   });
-  expect(document.activeElement).toBe(view.getByRole("button", { name: "Select AI model" }));
+  expect(document.activeElement).toBe(view.getByRole("button", { name: "Visual" }));
 });
 
 it("opens Settings on the API keys page when no provider keys are configured", () => {
@@ -157,7 +163,7 @@ it("handles no results, clears the query, and resets it when reopening without c
   fireEvent.change(search, { target: { value: "gemma" } });
   fireEvent.keyDown(search, { key: "Escape" });
   expect(view.queryByRole("dialog")).toBeNull();
-  fireEvent.click(view.getByRole("button", { name: "Select AI model" }));
+  fireEvent.click(view.getByRole("button", { name: "Visual" }));
   expect(
     (view.getByRole("textbox", { name: messages.navigation.searchModels }) as HTMLInputElement)
       .value,
@@ -271,70 +277,82 @@ it("selects an OpenRouter model directly once its key is configured", async () =
   expect(openKeySettings).not.toHaveBeenCalled();
 });
 
-it("shows each purpose's current selection and only offers compatible models", async () => {
+it("opens separate purpose pickers and saves only the chosen purpose", async () => {
   const view = setup();
-  const visualTab = view.getByRole("tab", { name: "Visual" });
-  const textTab = view.getByRole("tab", { name: "Text" });
+  const visualTrigger = view.getByRole("button", { name: "Visual" });
+  const textTrigger = view.getByRole("button", { name: "Text" });
 
-  const trigger = view.getByRole("button", { name: "Select AI model" });
-
-  expect(trigger.textContent).toBe("Llama VisionWriter");
-  expect(trigger.getAttribute("title")).toBe("Visual: Llama Vision | Text: Writer");
-  expect(trigger.querySelector(".local-model-trigger-divider")).toBeTruthy();
-  expect(visualTab.textContent).toBe("VisualLlama Vision");
-  expect(textTab.textContent).toBe("TextWriter");
-  expect(visualTab.getAttribute("aria-selected")).toBe("true");
+  expect(visualTrigger.textContent).toBe("Llama Vision");
+  expect(textTrigger.textContent).toBe("Writer");
+  expect(visualTrigger.getAttribute("title")).toBe("Visual: Llama Vision");
+  expect(textTrigger.getAttribute("title")).toBe("Text: Writer");
+  expect(visualTrigger.getAttribute("aria-expanded")).toBe("true");
+  expect(textTrigger.getAttribute("aria-expanded")).toBe("false");
+  expect(view.queryByRole("tablist")).toBeNull();
   expect(view.queryByRole("menuitemradio", { name: "Writer" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: /^OpenAI/ }));
   expect(view.queryByRole("menuitemradio", { name: "Cloud Text" })).toBeNull();
 
-  fireEvent.click(textTab);
-  expect(textTab.getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(textTrigger);
+  expect(view.getAllByRole("dialog")).toHaveLength(1);
+  expect(visualTrigger.getAttribute("aria-expanded")).toBe("false");
+  expect(textTrigger.getAttribute("aria-expanded")).toBe("true");
   expect(view.getByRole("menuitemradio", { name: "Writer" }).getAttribute("aria-checked")).toBe(
     "true",
   );
   expect(
     view.getByRole("menuitemradio", { name: /^Llama Vision/ }).getAttribute("aria-checked"),
   ).toBe("false");
+  fireEvent.click(view.getByRole("button", { name: /^OpenAI/ }));
   fireEvent.click(view.getByRole("menuitemradio", { name: "Cloud Text" }));
 
   await waitFor(() => expect(view.queryByRole("dialog")).toBeNull());
+  expect(selectModel).toHaveBeenCalledTimes(1);
   expect(selectModel).toHaveBeenCalledWith("text", {
     source: "api",
     provider: "openai",
     modelId: "cloud-text",
     modelName: "Cloud Text",
   });
+  expect(document.activeElement).toBe(textTrigger);
 });
 
-it("supports arrow, Home, and End navigation between purpose tabs and returns focus on Escape", () => {
+it("resets search on purpose switch and returns focus to the active trigger on Escape", () => {
   const view = setup();
-  const visualTab = view.getByRole("tab", { name: "Visual" });
-  const textTab = view.getByRole("tab", { name: "Text" });
+  const visualTrigger = view.getByRole("button", { name: "Visual" });
+  const textTrigger = view.getByRole("button", { name: "Text" });
   const search = view.getByRole("textbox", { name: messages.navigation.searchModels });
 
   fireEvent.change(search, { target: { value: "missing" } });
-  visualTab.focus();
-  fireEvent.keyDown(visualTab, { key: "ArrowRight" });
-  expect(document.activeElement).toBe(textTab);
-  expect(textTab.getAttribute("tabindex")).toBe("0");
-  expect(visualTab.getAttribute("tabindex")).toBe("-1");
+  fireEvent.click(textTrigger);
   expect((search as HTMLInputElement).value).toBe("");
-  expect(view.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(textTab.id);
-  expect(view.getByRole("tabpanel").id).toBe(textTab.getAttribute("aria-controls"));
-
-  fireEvent.keyDown(textTab, { key: "ArrowRight" });
-  expect(document.activeElement).toBe(visualTab);
-  fireEvent.keyDown(visualTab, { key: "End" });
-  expect(document.activeElement).toBe(textTab);
-  fireEvent.keyDown(textTab, { key: "Home" });
-  expect(document.activeElement).toBe(visualTab);
-  fireEvent.keyDown(visualTab, { key: "ArrowLeft" });
-  expect(document.activeElement).toBe(textTab);
-  fireEvent.keyDown(textTab, { key: "Escape" });
+  expect(document.activeElement).toBe(search);
+  fireEvent.keyDown(search, { key: "Escape" });
   expect(view.queryByRole("dialog")).toBeNull();
-  expect(document.activeElement).toBe(view.getByRole("button", { name: "Select AI model" }));
+  expect(document.activeElement).toBe(textTrigger);
+
+  fireEvent.click(visualTrigger);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(view.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(visualTrigger);
   expect(selectModel).not.toHaveBeenCalled();
+});
+
+it("disables both model pickers during recording", () => {
+  const view = render(
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      <LocalModelSelect disabled />
+    </NextIntlClientProvider>,
+  );
+
+  for (const name of ["Visual", "Text"]) {
+    const trigger = view.getByRole("button", { name });
+
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(trigger);
+  }
+
+  expect(view.queryByRole("dialog")).toBeNull();
 });
 
 it("does not label a selected local model uninstalled while Ollama is unavailable", () => {
@@ -351,7 +369,7 @@ it("does not label a selected local model uninstalled while Ollama is unavailabl
 
   expect(view.getByText("Ollama is unavailable")).toBeTruthy();
   expect(view.queryByRole("alert")).toBeNull();
-  fireEvent.click(view.getByRole("tab", { name: "Text" }));
+  fireEvent.click(view.getByRole("button", { name: "Text" }));
   expect(view.queryByRole("alert")).toBeNull();
 });
 
@@ -368,7 +386,7 @@ it("uses the active purpose for empty and unavailable model messages", () => {
   const view = setup();
 
   expect(view.getByText("No local vision models found")).toBeTruthy();
-  fireEvent.click(view.getByRole("tab", { name: "Text" }));
+  fireEvent.click(view.getByRole("button", { name: "Text" }));
   expect(view.getByText("No local text models found")).toBeTruthy();
   expect(view.getByRole("alert").textContent).toContain("Selected text model is unavailable");
   fireEvent.click(view.getByRole("button", { name: /^OpenAI/ }));
@@ -386,6 +404,6 @@ it("shows an empty role catalog when OpenRouter is configured without compatible
 
   expect(view.getByText("No visual models are available.")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Configure API keys in Settings" })).toBeNull();
-  fireEvent.click(view.getByRole("tab", { name: "Text" }));
+  fireEvent.click(view.getByRole("button", { name: "Text" }));
   expect(view.getByText("No text models are available.")).toBeTruthy();
 });

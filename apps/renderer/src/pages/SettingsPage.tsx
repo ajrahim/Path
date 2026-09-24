@@ -5,17 +5,29 @@ import {
   FolderOpen,
   KeyRound,
   LoaderCircle,
+  Moon,
+  Plus,
   Settings2,
+  Sparkles,
+  Sun,
   Trash2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
-import { useEffect } from "react";
-import type { AiProvider } from "@path/shared";
+import { useEffect, useState } from "react";
+import {
+  MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
+  MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
+  type AiProvider,
+  type InstructionFlow,
+} from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
 import { Button } from "@/components/Button";
 import { useSettingsEditor } from "../hooks/useSettingsEditor";
 import { useSettingsNavigation } from "../hooks/useSettingsNavigation";
+import { useInstructionFlows } from "../hooks/useInstructionFlows";
+import { InstructionFlowEditor } from "../components/InstructionFlowEditor";
+import { InstructionFlowGlyph } from "../components/InstructionFlowGlyph";
 
 const providers: Array<{ id: AiProvider; name: string; description: string }> = [
   { id: "openrouter", name: "OpenRouter", description: "One key for many models" },
@@ -26,15 +38,21 @@ const providers: Array<{ id: AiProvider; name: string; description: string }> = 
 
 export default function SettingsPage() {
   const t = useTranslations();
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
+  const flows = useInstructionFlows({ selectOnCreate: false });
+  const promptEditorOpen = flows.editor !== null;
 
   useEffect(() => {
     if (resolvedTheme !== "light" && resolvedTheme !== "dark") return;
 
-    void getDesktopApi()?.app.setTitleBarTheme?.({ theme: resolvedTheme });
-  }, [resolvedTheme]);
+    // Native caption buttons sit above the renderer and need the same dimming as its backdrop.
+    void getDesktopApi()?.app.setTitleBarTheme?.({
+      theme: resolvedTheme,
+      dimmed: promptEditorOpen,
+    });
+  }, [resolvedTheme, promptEditorOpen]);
 
-  // The editor owns drafts and writes; section navigation follows this view's scroll position.
+  // Keep drafts in the shared shell when navigating between section pages.
   const {
     settings,
     keyStatus,
@@ -46,6 +64,7 @@ export default function SettingsPage() {
     isLoading,
     isBusy,
     updateGeneral,
+    updateTimelineImports,
     chooseDirectory,
     openDirectory,
     saveKey,
@@ -82,27 +101,47 @@ export default function SettingsPage() {
           <nav aria-label={t("settings.title")}>
             <a
               href="#general"
-              aria-current={activeSection === "general" ? "location" : undefined}
-              onClick={() => setActiveSection("general")}
+              aria-current={activeSection === "general" ? "page" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection("general");
+              }}
             >
               <Settings2 size={16} />
               {t("settings.general")}
             </a>
             <a
               href="#storage"
-              aria-current={activeSection === "storage" ? "location" : undefined}
-              onClick={() => setActiveSection("storage")}
+              aria-current={activeSection === "storage" ? "page" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection("storage");
+              }}
             >
               <FolderOpen size={16} />
               {t("settings.storage")}
             </a>
             <a
               href="#keys"
-              aria-current={activeSection === "keys" ? "location" : undefined}
-              onClick={() => setActiveSection("keys")}
+              aria-current={activeSection === "keys" ? "page" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection("keys");
+              }}
             >
               <KeyRound size={16} />
               {t("settings.apiKeys")}
+            </a>
+            <a
+              href="#prompts"
+              aria-current={activeSection === "prompts" ? "page" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection("prompts");
+              }}
+            >
+              <Sparkles size={16} />
+              {t("settings.prompts")}
             </a>
           </nav>
           <span className="settings-version">
@@ -120,146 +159,264 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <section id="general" className="settings-section">
-            <SectionHeading
-              icon={Settings2}
-              title={t("settings.general")}
-              description={t("settings.generalDescription")}
-            />
-            <div className="settings-card">
-              <SettingsToggle
-                title={t("settings.minimizeToTray")}
-                description={t("settings.minimizeToTrayDescription")}
-                checked={settings?.general.minimizeToTray ?? true}
-                disabled={isBusy || !settings}
-                onChange={(minimizeToTray) =>
-                  settings && void updateGeneral({ ...settings.general, minimizeToTray })
-                }
+          {activeSection === "general" && (
+            <section
+              id="general"
+              className="settings-section"
+              aria-labelledby="settings-general-title"
+            >
+              <SectionHeading
+                icon={Settings2}
+                title={t("settings.general")}
+                description={t("settings.generalDescription")}
+                id="settings-general-title"
               />
-            </div>
-          </section>
-
-          <section id="storage" className="settings-section">
-            <SectionHeading
-              icon={FolderOpen}
-              title={t("settings.storage")}
-              description={t("settings.storageDescription")}
-            />
-            <div className="settings-card settings-storage-card">
-              <div className="settings-folder">
-                <FolderOpen size={18} />
-                <div>
-                  <span>{t("settings.recordingsLocation")}</span>
-                  <code title={settings?.recordingsDirectory}>
-                    {settings?.recordingsDirectory ?? "—"}
-                  </code>
+              <div className="settings-card">
+                <div className="settings-theme-row">
+                  <span>
+                    <strong id="settings-theme-label">{t("settings.theme")}</strong>
+                    <small>{t("settings.themeDescription")}</small>
+                  </span>
+                  <div
+                    className="settings-theme-options"
+                    role="radiogroup"
+                    aria-labelledby="settings-theme-label"
+                  >
+                    {(["light", "dark"] as const).map((theme) => (
+                      <label key={theme}>
+                        <input
+                          type="radio"
+                          name="theme"
+                          value={theme}
+                          checked={resolvedTheme === theme}
+                          onChange={() => setTheme(theme)}
+                        />
+                        <span>
+                          {theme === "light" ? (
+                            <Sun size={15} aria-hidden="true" />
+                          ) : (
+                            <Moon size={15} aria-hidden="true" />
+                          )}
+                          {t(`settings.${theme}Theme`)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div className="settings-card-actions">
-                <Button
-                  variant="secondary"
-                  onClick={() => void openDirectory()}
+                <SettingsToggle
+                  title={t("settings.minimizeToTray")}
+                  description={t("settings.minimizeToTrayDescription")}
+                  checked={settings?.general.minimizeToTray ?? true}
                   disabled={isBusy || !settings}
-                >
-                  <ExternalLink size={14} />
-                  {t("settings.openFolder")}
-                </Button>
-                <Button onClick={() => void chooseDirectory()} disabled={isBusy}>
-                  {busy === "directory" && <LoaderCircle className="settings-spinner" size={14} />}
-                  {t("settings.changeFolder")}
-                </Button>
+                  onChange={(minimizeToTray) =>
+                    settings && void updateGeneral({ ...settings.general, minimizeToTray })
+                  }
+                />
+                {settings && (
+                  <SettingsNumberField
+                    // Remount after a save so the draft reflects the stored value.
+                    key={settings.timelineImports.maxFileSizeMb}
+                    title={t("settings.timelineImportLimit")}
+                    description={t("settings.timelineImportLimitDescription")}
+                    label={t("settings.timelineImportLimitLabel")}
+                    unit={t("settings.megabytes")}
+                    value={settings.timelineImports.maxFileSizeMb}
+                    min={MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB}
+                    max={MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB}
+                    disabled={isBusy}
+                    onCommit={(maxFileSizeMb) => void updateTimelineImports({ maxFileSizeMb })}
+                  />
+                )}
               </div>
-              <p className="settings-note">{t("settings.storageNote")}</p>
-            </div>
-          </section>
+            </section>
+          )}
 
-          <section id="keys" className="settings-section">
-            <SectionHeading
-              icon={Bot}
-              title={t("settings.apiKeys")}
-              description={t("settings.apiKeysDescription")}
-            />
-            <div className="settings-card settings-provider-list">
-              {providers.map((provider) => {
-                const configured = keyStatus[provider.id];
-                const editing = editingProvider === provider.id;
+          {activeSection === "storage" && (
+            <section
+              id="storage"
+              className="settings-section"
+              aria-labelledby="settings-storage-title"
+            >
+              <SectionHeading
+                icon={FolderOpen}
+                title={t("settings.storage")}
+                description={t("settings.storageDescription")}
+                id="settings-storage-title"
+              />
+              <div className="settings-card settings-storage-card">
+                <div className="settings-folder">
+                  <FolderOpen size={18} />
+                  <div>
+                    <span>{t("settings.recordingsLocation")}</span>
+                    <code title={settings?.recordingsDirectory}>
+                      {settings?.recordingsDirectory ?? "—"}
+                    </code>
+                  </div>
+                </div>
+                <div className="settings-card-actions">
+                  <Button
+                    variant="secondary"
+                    onClick={() => void openDirectory()}
+                    disabled={isBusy || !settings}
+                  >
+                    <ExternalLink size={14} />
+                    {t("settings.openFolder")}
+                  </Button>
+                  <Button onClick={() => void chooseDirectory()} disabled={isBusy}>
+                    {busy === "directory" && (
+                      <LoaderCircle className="settings-spinner" size={14} />
+                    )}
+                    {t("settings.changeFolder")}
+                  </Button>
+                </div>
+                <p className="settings-note">{t("settings.storageNote")}</p>
+              </div>
+            </section>
+          )}
 
-                return (
-                  <div className="settings-provider" key={provider.id}>
-                    <div className="settings-provider-summary">
-                      <span className={`provider-monogram provider-${provider.id}`}>
-                        {provider.name[0]}
-                      </span>
-                      <div>
-                        <strong>{provider.name}</strong>
-                        <span>{provider.description}</span>
-                      </div>
-                      <span
-                        className={
-                          configured ? "settings-key-status configured" : "settings-key-status"
-                        }
-                      >
-                        {configured && <Check size={12} />}
-                        {configured ? t("settings.configured") : t("settings.notConfigured")}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => toggleKeyEditor(provider.id)}
-                      >
-                        {configured ? t("settings.replaceKey") : t("settings.setKey")}
-                      </Button>
-                      {configured && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t("settings.removeKey")}
-                          disabled={isBusy}
-                          onClick={() => void removeKey(provider.id)}
+          {activeSection === "keys" && (
+            <section id="keys" className="settings-section" aria-labelledby="settings-keys-title">
+              <SectionHeading
+                icon={Bot}
+                title={t("settings.apiKeys")}
+                description={t("settings.apiKeysDescription")}
+                id="settings-keys-title"
+              />
+              <div className="settings-card settings-provider-list">
+                {providers.map((provider) => {
+                  const configured = keyStatus[provider.id];
+                  const editing = editingProvider === provider.id;
+
+                  return (
+                    <div className="settings-provider" key={provider.id}>
+                      <div className="settings-provider-summary">
+                        <span className={`provider-monogram provider-${provider.id}`}>
+                          {provider.name[0]}
+                        </span>
+                        <div>
+                          <strong>{provider.name}</strong>
+                          <span>{provider.description}</span>
+                        </div>
+                        <span
+                          className={
+                            configured ? "settings-key-status configured" : "settings-key-status"
+                          }
                         >
-                          <Trash2 size={15} />
+                          {configured && <Check size={12} />}
+                          {configured ? t("settings.configured") : t("settings.notConfigured")}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => toggleKeyEditor(provider.id)}
+                        >
+                          {configured ? t("settings.replaceKey") : t("settings.setKey")}
                         </Button>
+                        {configured && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t("settings.removeKey")}
+                            disabled={isBusy}
+                            onClick={() => void removeKey(provider.id)}
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        )}
+                      </div>
+                      {editing && (
+                        <form
+                          className="settings-key-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveKey();
+                          }}
+                        >
+                          <KeyRound size={15} />
+                          <input
+                            type="password"
+                            autoComplete="off"
+                            autoFocus
+                            value={keyDraft}
+                            onChange={(event) => changeKeyDraft(event.target.value)}
+                            placeholder={t("guide.providers.keyPlaceholder", {
+                              provider: provider.name,
+                            })}
+                            aria-label={t("guide.providers.apiKey")}
+                          />
+                          <Button size="sm" type="submit" disabled={!keyDraft.trim() || isBusy}>
+                            {busy === `key-${provider.id}` && (
+                              <LoaderCircle className="settings-spinner" size={13} />
+                            )}
+                            {t("guide.providers.saveKey")}
+                          </Button>
+                        </form>
                       )}
                     </div>
-                    {editing && (
-                      <form
-                        className="settings-key-form"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          void saveKey();
-                        }}
-                      >
-                        <KeyRound size={15} />
-                        <input
-                          type="password"
-                          autoComplete="off"
-                          autoFocus
-                          value={keyDraft}
-                          onChange={(event) => changeKeyDraft(event.target.value)}
-                          placeholder={t("guide.providers.keyPlaceholder", {
-                            provider: provider.name,
-                          })}
-                          aria-label={t("guide.providers.apiKey")}
-                        />
-                        <Button size="sm" type="submit" disabled={!keyDraft.trim() || isBusy}>
-                          {busy === `key-${provider.id}` && (
-                            <LoaderCircle className="settings-spinner" size={13} />
-                          )}
-                          {t("guide.providers.saveKey")}
-                        </Button>
-                      </form>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="settings-security-note">
-              <KeyRound size={14} />
-              {t("settings.keysSecurityNote")}
-            </p>
-          </section>
+                  );
+                })}
+              </div>
+              <p className="settings-security-note">
+                <KeyRound size={14} />
+                {t("settings.keysSecurityNote")}
+              </p>
+            </section>
+          )}
+
+          {activeSection === "prompts" && (
+            <section
+              id="prompts"
+              className="settings-section"
+              aria-labelledby="settings-prompts-title"
+            >
+              <div className="settings-prompts-heading">
+                <SectionHeading
+                  icon={Sparkles}
+                  title={t("settings.prompts")}
+                  description={t("settings.promptsDescription")}
+                  id="settings-prompts-title"
+                />
+                <Button
+                  disabled={!flows.loaded || flows.isBusy}
+                  onClick={() => void flows.selectFlow("create")}
+                >
+                  <Plus size={15} aria-hidden="true" />
+                  {t("guide.newPrompt")}
+                </Button>
+              </div>
+              {flows.error && (
+                <div className="settings-banner settings-banner-error" role="alert">
+                  {flows.error}
+                </div>
+              )}
+              {!flows.loaded ? (
+                <p className="settings-note" role="status">
+                  {t("settings.promptsLoading")}
+                </p>
+              ) : (
+                <>
+                  <PromptGroup
+                    id="default-prompts"
+                    title={t("settings.defaultPrompts")}
+                    flows={flows.builtInFlows}
+                    disabled={flows.isBusy}
+                    onEdit={flows.editFlow}
+                  />
+                  <PromptGroup
+                    id="custom-prompts"
+                    title={t("guide.customFlows")}
+                    flows={flows.customFlows}
+                    disabled={flows.isBusy}
+                    onEdit={flows.editFlow}
+                    emptyMessage={t("settings.noCustomPrompts")}
+                  />
+                </>
+              )}
+            </section>
+          )}
         </div>
       </div>
+      <InstructionFlowEditor flows={flows} />
     </main>
   );
 }
@@ -268,10 +425,12 @@ function SectionHeading({
   icon: Icon,
   title,
   description,
+  id,
 }: {
   icon: typeof Settings2;
   title: string;
   description: string;
+  id: string;
 }) {
   return (
     <header className="settings-section-heading">
@@ -279,10 +438,58 @@ function SectionHeading({
         <Icon size={17} />
       </span>
       <div>
-        <h2>{title}</h2>
+        <h2 id={id}>{title}</h2>
         <p>{description}</p>
       </div>
     </header>
+  );
+}
+
+function PromptGroup({
+  id,
+  title,
+  flows,
+  disabled,
+  onEdit,
+  emptyMessage,
+}: {
+  id: string;
+  title: string;
+  flows: InstructionFlow[];
+  disabled: boolean;
+  onEdit(id: string): void;
+  emptyMessage?: string;
+}) {
+  const t = useTranslations();
+
+  return (
+    <section className="settings-prompt-group" aria-labelledby={id}>
+      <div className="settings-prompt-group-heading">
+        <h3 id={id}>{title}</h3>
+      </div>
+      {flows.length === 0 ? (
+        <p className="settings-prompts-empty">{emptyMessage}</p>
+      ) : (
+        <div className="settings-card settings-prompt-list">
+          {flows.map((flow) => (
+            <button
+              key={flow.id}
+              type="button"
+              className="settings-prompt-row"
+              disabled={disabled}
+              aria-label={t("settings.editNamedPrompt", { name: flow.name })}
+              onClick={() => onEdit(flow.id)}
+            >
+              <span className="settings-prompt-glyph">
+                <InstructionFlowGlyph icon={flow.icon} size={18} aria-hidden="true" />
+              </span>
+              <span className="settings-prompt-name">{flow.name}</span>
+              <span className="settings-prompt-edit">{t("settings.editPromptAction")}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -313,5 +520,74 @@ function SettingsToggle({
       />
       <i aria-hidden="true" />
     </label>
+  );
+}
+
+/** Whole-number setting; commits a valid changed value on Enter or blur and reverts otherwise. */
+function SettingsNumberField({
+  title,
+  description,
+  label,
+  unit,
+  value,
+  min,
+  max,
+  disabled,
+  onCommit,
+}: {
+  title: string;
+  description: string;
+  label: string;
+  unit: string;
+  value: number;
+  min: number;
+  max: number;
+  disabled: boolean;
+  onCommit(value: number): void;
+}) {
+  const [draft, setDraft] = useState(value.toString());
+
+  function commit(): void {
+    const next = Number(draft.trim());
+
+    if (!draft.trim() || !Number.isInteger(next) || next < min || next > max || next === value) {
+      setDraft(value.toString());
+
+      return;
+    }
+
+    onCommit(next);
+  }
+
+  return (
+    <div className="settings-number-row">
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <label>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={min}
+          max={max}
+          step={1}
+          value={draft}
+          disabled={disabled}
+          aria-label={label}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+
+            if (event.key === "Escape") setDraft(value.toString());
+          }}
+        />
+        <span aria-hidden="true">{unit}</span>
+      </label>
+    </div>
   );
 }

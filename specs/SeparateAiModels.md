@@ -8,7 +8,7 @@ Choose the Visual model for screenshot analysis independently from the Text mode
 
 ## Scope
 
-- One header trigger shows the selected Visual and Text model names at 11px with an eye icon for Visual and a document icon for Text, separated by a vertical line within a 230px cap. Long names truncate with ellipses; the tooltip and accessible description retain both full names. It opens the existing searchable model menu, where Visual and Text tabs filter choices to the active role.
+- Separate header dropdowns show the selected Visual and Text model names at 11px, with an eye icon for Visual and a document icon for Text. Each name truncates within a 160px cap, with its full name in the tooltip. Each dropdown opens the searchable model menu directly for its role; only one menu opens at a time. The header theme toggle is removed; appearance remains available in Settings.
 - Visual requires image understanding and text output. Text includes supported text-generation models, including text-only Ollama and API models.
 - Each role persists independently through the typed, validated desktop bridge. An invalid or failed save preserves the previous selection.
 - Older settings initialize both roles from the previous explicit selection, preserving local/cloud choices. A later update changes only its target role.

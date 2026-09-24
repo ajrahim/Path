@@ -44,20 +44,16 @@ export function formatDefaultRecordingTitle(
   return `${dateStr} - ${timeStr} recording`;
 }
 
-/** Show capture time and media offset separately; they come from different clocks. */
-export function formatClickTimestamp(
-  capturedAt: string,
-  timestampMs: number,
-  locale: string,
-  timeZone?: string,
-): string {
+/** Media offset with millisecond precision, such as `01:02.345`. */
+export function formatMediaOffset(timestampMs: number): string {
   const offset = Math.max(0, Math.floor(timestampMs));
-  const videoTime = `${formatDuration(offset, "")}.${(offset % 1000).toString().padStart(3, "0")}`;
-  const date = new Date(capturedAt);
 
-  if (!Number.isFinite(date.getTime())) return videoTime;
+  return `${formatDuration(offset, "")}.${(offset % 1000).toString().padStart(3, "0")}`;
+}
 
-  const actualTime = new Intl.DateTimeFormat(locale, {
+/** Full wall-clock time with milliseconds and zone, for comparing against external logs. */
+export function formatWallClockTimestamp(date: Date, locale: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -69,8 +65,29 @@ export function formatClickTimestamp(
     timeZoneName: "shortOffset",
     timeZone,
   }).format(date);
+}
 
-  return `${actualTime} | ${videoTime}`;
+export function formatWallClockTime(value: string | number | Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
+/** Show capture time and media offset separately; they come from different clocks. */
+export function formatClickTimestamp(
+  capturedAt: string,
+  timestampMs: number,
+  locale: string,
+  timeZone?: string,
+): string {
+  const videoTime = formatMediaOffset(timestampMs);
+  const date = new Date(capturedAt);
+
+  if (!Number.isFinite(date.getTime())) return videoTime;
+
+  return `${formatWallClockTimestamp(date, locale, timeZone)} | ${videoTime}`;
 }
 
 export function formatPlayerTime(value: number): string {

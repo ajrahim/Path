@@ -19,6 +19,28 @@ describe("session clock pause", () => {
     expect(clock.elapsedMs()).toBe(3_000);
   });
 
+  it("records each resumed pause at its media offset with its duration", () => {
+    let now = 1_000;
+    const clock = new SessionClock({ now: () => now });
+
+    now = 3_000;
+    clock.pause();
+    now = 8_000;
+    clock.resume();
+    now = 10_000;
+    clock.pause();
+    now = 11_500;
+    clock.resume();
+    now = 12_000;
+    clock.pause();
+
+    expect(clock.pauses()).toEqual([
+      { atMs: 2_000, durationMs: 5_000 },
+      { atMs: 4_000, durationMs: 1_500 },
+    ]);
+    expect(clock.elapsedMs()).toBe(4_500);
+  });
+
   it("ignores repeated pauses and resumes without a matching pause", () => {
     let now = 0;
     const clock = new SessionClock({ now: () => now });

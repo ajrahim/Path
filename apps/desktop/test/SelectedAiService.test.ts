@@ -41,7 +41,7 @@ describe("SelectedAiService", () => {
     );
 
     await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
-    expect(ollama.generateText).toHaveBeenCalledWith("Write a guide", "gemma4:latest");
+    expect(ollama.generateText).toHaveBeenCalledWith("Write a guide", "gemma4:latest", undefined);
   });
 
   it("uses independent local visual and API text selections", async () => {
@@ -550,6 +550,7 @@ describe("SelectedAiService", () => {
           provider: "openrouter",
           vendor: "router",
           supportedPurposes: ["visual", "text"],
+          supportsEffort: false,
           contextLength: 128000,
           pricing: { promptPerMillion: 1.5, completionPerMillion: 6 },
           isFree: false,
@@ -589,6 +590,123 @@ describe("SelectedAiService", () => {
     expect(catalog.local).toEqual([]);
     expect(catalog.ollama).toEqual({ status: "unavailable", endpoint: "http://127.0.0.1:11434" });
     vi.unstubAllGlobals();
+  });
+
+  it("sends reasoning effort without temperature for OpenAI reasoning models", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "# Guide" } }] }), {
+        status: 200,
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new SelectedAiService(
+      {
+        get: () =>
+          settingsWithModel({
+            source: "api",
+            provider: "openai",
+            modelId: "gpt-5",
+            modelName: "GPT-5",
+            effort: "high",
+          }),
+      } as never,
+      { get: vi.fn().mockResolvedValue("secret") } as never,
+      {} as never,
+    );
+
+    await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+
+    expect(body.reasoning_effort).toBe("high");
+    expect(body).not.toHaveProperty("temperature");
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores effort for standard models and keeps deterministic temperature", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "# Guide" } }] }), {
+        status: 200,
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new SelectedAiService(
+      {
+        get: () =>
+          settingsWithModel({
+            source: "api",
+            provider: "openai",
+            modelId: "gpt-4o",
+            modelName: "GPT-4o",
+            effort: "high",
+          }),
+      } as never,
+      { get: vi.fn().mockResolvedValue("secret") } as never,
+      {} as never,
+    );
+
+    await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+
+    expect(body.temperature).toBe(0);
+    expect(body).not.toHaveProperty("reasoning_effort");
+    vi.unstubAllGlobals();
+  });
+
+  it("maps effort to Gemini thinking budgets and levels", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: "# Guide" }] } }] }),
+        { status: 200 },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+    const settings = {
+      get: () =>
+        settingsWithModel({
+          source: "api",
+          provider: "google",
+          modelId: "gemini-2.5-flash",
+          modelName: "Gemini 2.5 Flash",
+          effort: "high",
+        }),
+    } as never;
+    const service = new SelectedAiService(
+      settings,
+      { get: vi.fn().mockResolvedValue("secret") } as never,
+      {} as never,
+    );
+
+    await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
+
+    const flashBody = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+
+    expect(flashBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 24576 });
+    vi.unstubAllGlobals();
+  });
+
+  it("passes effort through to the local model for text generation", async () => {
+    const ollama = { generateText: vi.fn().mockResolvedValue("# Guide") };
+    const service = new SelectedAiService(
+      {
+        get: () =>
+          settingsWithModel({
+            source: "local",
+            modelId: "qwen3:latest",
+            modelName: "Qwen 3",
+            effort: "low",
+          }),
+      } as never,
+      {} as never,
+      ollama as never,
+    );
+
+    await expect(service.generateText("Write a guide")).resolves.toBe("# Guide");
+    expect(ollama.generateText).toHaveBeenCalledWith("Write a guide", "qwen3:latest", "low");
   });
 
   it("does not retry non-transient API errors", async () => {

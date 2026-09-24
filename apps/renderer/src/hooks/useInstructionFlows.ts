@@ -1,256 +1,302 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
   BUILT_IN_FLOWS,
   FLOW_STORAGE_KEY,
   loadInstructionFlows,
+  resolveInstructionFlows,
+  type InstructionFlowIcon,
   type InstructionFlow,
   type InstructionFlowState,
-} from "../lib/InstructionFlows";
+} from "@path/shared";
+import { getDesktopApi } from "../lib/Desktop";
 
 interface FlowEditor {
-  mode: "create" | "copy" | "edit";
   editingId: string | null;
+  isBuiltIn: boolean;
   name: string;
   instructions: string;
+  icon: InstructionFlowIcon;
+  original: InstructionFlow | null;
   error: string | null;
 }
 
 interface FlowWorkflow {
   flows: InstructionFlowState;
   loaded: boolean;
+  isBusy: boolean;
   error: string | null;
   editor: FlowEditor | null;
 }
 
 type FlowAction =
-  | { type: "loaded"; flows: InstructionFlowState }
+  | { type: "snapshot"; flows: InstructionFlowState; loaded?: boolean }
   | { type: "load-failed"; error: string }
-  | { type: "persisted"; flows: InstructionFlowState; closeEditor: boolean }
-  | { type: "failed"; error: string }
+  | { type: "busy"; value: boolean }
+  | { type: "saved"; flows: InstructionFlowState; editor: FlowEditor | null }
+  | { type: "failed"; error: string; editor?: FlowEditor | null }
   | { type: "edit"; editor: FlowEditor | null }
-  | { type: "draft"; field: "name" | "instructions"; value: string }
-  | { type: "editor-failed"; error: string };
+  | { type: "draft"; changes: Partial<Pick<FlowEditor, "name" | "instructions" | "icon">> };
 
-// Saved flows and an unsaved editor draft intentionally advance through separate actions.
 function reduceFlows(state: FlowWorkflow, action: FlowAction): FlowWorkflow {
   switch (action.type) {
-    case "loaded":
-      return { ...state, flows: action.flows, loaded: true, error: null };
-
-    case "load-failed":
-      return { ...state, loaded: true, error: action.error };
-
-    case "persisted":
+    case "snapshot":
       return {
         ...state,
-        flows: action.flows,
-        error: null,
-        editor: action.closeEditor ? null : state.editor,
+        flows: action.flows.revision >= state.flows.revision ? action.flows : state.flows,
+        loaded: action.loaded ?? state.loaded,
       };
-
-    case "failed":
+    case "load-failed":
       return { ...state, error: action.error };
-
+    case "busy":
+      return { ...state, isBusy: action.value, error: action.value ? null : state.error };
+    case "saved":
+      return {
+        ...state,
+        flows: action.flows.revision >= state.flows.revision ? action.flows : state.flows,
+        editor: action.editor === state.editor ? null : state.editor,
+        error: null,
+      };
+    case "failed":
+      return action.editor && action.editor === state.editor
+        ? { ...state, editor: { ...state.editor, error: action.error } }
+        : { ...state, error: action.error };
     case "edit":
       return { ...state, editor: action.editor };
-
     case "draft":
       return state.editor
-        ? { ...state, editor: { ...state.editor, [action.field]: action.value } }
+        ? { ...state, editor: { ...state.editor, ...action.changes, error: null } }
         : state;
-
-    case "editor-failed":
-      return state.editor ? { ...state, editor: { ...state.editor, error: action.error } } : state;
   }
 }
 
-interface InstructionFlows {
-  selectedFlow: InstructionFlow;
-  customFlows: InstructionFlow[];
-  loaded: boolean;
-  error: string | null;
-  editor: FlowEditor | null;
-  selectFlow(id: string): boolean;
-  editSelectedFlow(): void;
-  closeEditor(): void;
-  renameDraft(value: string): void;
-  reviseInstructions(value: string): void;
-  saveFlow(): void;
-  deleteFlow(): void;
-}
-
-/** Restores saved instruction flows and owns their create, copy, and edit workflow. */
-export function useInstructionFlows(): InstructionFlows {
+/** Desktop snapshots synchronize saved prompts; editor drafts stay local until a successful save. */
+export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?: boolean } = {}) {
   const t = useTranslations();
   const [state, dispatch] = useReducer(reduceFlows, {
-    flows: { selectedId: "help-guide", customFlows: [] },
+    flows: loadInstructionFlows(null),
     loaded: false,
+    isBusy: false,
     error: null,
     editor: null,
   });
 
-  const { flows, editor } = state;
-  const closeEditor = useCallback(() => dispatch({ type: "edit", editor: null }), []);
+  const sessionRef = useRef(0);
+  const operationRef = useRef(false);
+  const allFlows = resolveInstructionFlows(state.flows);
+  const builtInFlows = allFlows.filter((flow) => BUILT_IN_FLOWS.some(({ id }) => id === flow.id));
   const selectedFlow =
-    [...BUILT_IN_FLOWS, ...flows.customFlows].find((flow) => flow.id === flows.selectedId) ??
-    BUILT_IN_FLOWS[0];
+    allFlows.find(({ id }) => id === state.flows.selectedId) ?? BUILT_IN_FLOWS[0];
 
   useEffect(() => {
-    let active = true;
+    const session = ++sessionRef.current;
+    const api = getDesktopApi()?.instructionFlows;
+    const unsubscribe = api?.onChanged((flows) => {
+      if (session === sessionRef.current) dispatch({ type: "snapshot", flows });
+    });
 
-    function loadFlows(): void {
+    async function load(): Promise<void> {
+      let flows: InstructionFlowState | null = null;
+
       try {
-        const stored = window.localStorage.getItem(FLOW_STORAGE_KEY);
-        const loaded = loadInstructionFlows(stored);
+        if (!api) {
+          dispatch({ type: "snapshot", flows: loadInstructionFlows(null), loaded: true });
 
-        if (!active) return;
+          return;
+        }
 
-        dispatch({ type: "loaded", flows: loaded });
-        window.localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(loaded));
+        flows = await api.get();
+
+        if (session === sessionRef.current) dispatch({ type: "snapshot", flows });
+        // Legacy data is retained as a recovery source. Desktop migration tracks imported IDs,
+        // so another window cannot overwrite edits or resurrect a deleted migrated prompt.
+        const legacy = window.localStorage.getItem(FLOW_STORAGE_KEY);
+
+        if (legacy) {
+          const { selectedId, customFlows } = loadInstructionFlows(legacy);
+
+          flows = await api.migrate({ selectedId, customFlows });
+        }
+
+        if (session === sessionRef.current) dispatch({ type: "snapshot", flows, loaded: true });
       } catch (error) {
-        if (active) {
-          dispatch({
-            type: "load-failed",
-            error: error instanceof Error ? error.message : t("settings.loadError"),
-          });
+        if (session === sessionRef.current) {
+          if (flows) dispatch({ type: "snapshot", flows, loaded: true });
+          dispatch({ type: "load-failed", error: message(error, t("settings.loadError")) });
         }
       }
     }
 
-    loadFlows();
+    void load();
 
     return () => {
-      active = false;
+      sessionRef.current += 1;
+      unsubscribe?.();
     };
   }, [t]);
 
-  function persistFlows(next: InstructionFlowState, closeEditor: boolean): void {
-    // Commit to storage first: a failed write leaves the selected flow and draft intact.
-    window.localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(next));
-    dispatch({ type: "persisted", flows: next, closeEditor });
-  }
+  const closeEditor = useCallback(() => {
+    if (!operationRef.current) dispatch({ type: "edit", editor: null });
+  }, []);
 
-  function selectFlow(id: string): boolean {
-    if (!state.loaded) return false;
+  async function mutate(
+    run: (
+      api: NonNullable<ReturnType<typeof getDesktopApi>>["instructionFlows"],
+    ) => Promise<InstructionFlowState>,
+    editor: FlowEditor | null = null,
+  ): Promise<boolean> {
+    if (!state.loaded || operationRef.current) return false;
+    const api = getDesktopApi()?.instructionFlows;
 
-    if (id === "create") {
-      dispatch({
-        type: "edit",
-        editor: { mode: "create", editingId: null, name: "", instructions: "", error: null },
-      });
-
-      return true;
-    }
-
-    if (![...BUILT_IN_FLOWS, ...flows.customFlows].some((flow) => flow.id === id)) return false;
-
-    try {
-      persistFlows({ ...flows, selectedId: id }, false);
-
-      return true;
-    } catch (error) {
-      dispatch({
-        type: "failed",
-        error: error instanceof Error ? error.message : t("settings.saveError"),
-      });
+    if (!api) {
+      dispatch({ type: "failed", editor, error: t("settings.desktopRequired") });
 
       return false;
     }
+
+    const session = sessionRef.current;
+
+    operationRef.current = true;
+    dispatch({ type: "busy", value: true });
+    try {
+      const flows = await run(api);
+
+      if (session !== sessionRef.current) return false;
+      dispatch({ type: "saved", flows, editor });
+
+      return true;
+    } catch (error) {
+      if (session === sessionRef.current) {
+        dispatch({ type: "failed", editor, error: message(error, t("settings.saveError")) });
+      }
+
+      return false;
+    } finally {
+      operationRef.current = false;
+      if (session === sessionRef.current) dispatch({ type: "busy", value: false });
+    }
   }
 
-  function editSelectedFlow(): void {
-    if (!state.loaded) return;
+  async function selectFlow(id: string): Promise<boolean> {
+    if (!state.loaded || operationRef.current) return false;
+    if (id === "create") {
+      dispatch({
+        type: "edit",
+        editor: {
+          editingId: null,
+          isBuiltIn: false,
+          name: "",
+          instructions: "",
+          icon: "file-text",
+          original: null,
+          error: null,
+        },
+      });
 
-    const custom = flows.customFlows.some((flow) => flow.id === selectedFlow.id);
+      return true;
+    }
 
+    if (!allFlows.some((flow) => flow.id === id)) return false;
+
+    return mutate((api) => api.select({ id }));
+  }
+
+  function editFlow(id: string): void {
+    if (!state.loaded || operationRef.current) return;
+    const flow = allFlows.find((candidate) => candidate.id === id);
+
+    if (!flow) return;
     dispatch({
       type: "edit",
       editor: {
-        mode: custom ? "edit" : "copy",
-        editingId: custom ? selectedFlow.id : null,
-        name: custom ? selectedFlow.name : t("guide.customCopy", { name: selectedFlow.name }),
-        instructions: selectedFlow.instructions,
+        editingId: flow.id,
+        isBuiltIn: builtInFlows.some((candidate) => candidate.id === id),
+        name: flow.name,
+        instructions: flow.instructions,
+        icon: flow.icon,
+        original: flow,
         error: null,
       },
     });
   }
 
-  function saveFlow(): void {
-    if (!editor) return;
+  async function saveFlow(): Promise<boolean> {
+    const editor = state.editor;
 
+    if (!editor) return false;
     const name = editor.name.trim();
     const instructions = editor.instructions.trim();
 
     if (!name || !instructions) {
-      dispatch({ type: "editor-failed", error: t("guide.flowRequired") });
+      dispatch({ type: "failed", editor, error: t("guide.flowRequired") });
 
-      return;
+      return false;
     }
 
     if (
-      [...BUILT_IN_FLOWS, ...flows.customFlows].some(
+      allFlows.some(
         (flow) => flow.id !== editor.editingId && flow.name.toLowerCase() === name.toLowerCase(),
       )
     ) {
-      dispatch({ type: "editor-failed", error: t("guide.flowDuplicate") });
+      dispatch({ type: "failed", editor, error: t("guide.flowDuplicate") });
 
-      return;
+      return false;
     }
 
-    try {
-      const flow = { id: editor.editingId ?? `custom-${crypto.randomUUID()}`, name, instructions };
-
-      persistFlows(
-        {
-          selectedId: flow.id,
-          customFlows: editor.editingId
-            ? flows.customFlows.map((existing) =>
-                existing.id === editor.editingId ? flow : existing,
-              )
-            : [...flows.customFlows, flow],
-        },
-        true,
-      );
-    } catch (error) {
-      dispatch({
-        type: "editor-failed",
-        error: error instanceof Error ? error.message : t("settings.saveError"),
-      });
-    }
+    return mutate(
+      (api) =>
+        api.save({
+          ...(editor.editingId ? { id: editor.editingId } : {}),
+          ...(editor.original
+            ? {
+                expected: {
+                  name: editor.original.name,
+                  instructions: editor.original.instructions,
+                  icon: editor.original.icon,
+                },
+              }
+            : {}),
+          name,
+          instructions,
+          icon: editor.icon,
+          select: !editor.editingId && selectOnCreate,
+        }),
+      editor,
+    );
   }
 
-  function deleteFlow(): void {
-    if (!editor?.editingId) return;
+  async function deleteFlow(): Promise<boolean> {
+    const editor = state.editor;
 
-    try {
-      persistFlows(
-        {
-          selectedId: "help-guide",
-          customFlows: flows.customFlows.filter((flow) => flow.id !== editor.editingId),
-        },
-        true,
-      );
-    } catch (error) {
-      dispatch({
-        type: "editor-failed",
-        error: error instanceof Error ? error.message : t("settings.saveError"),
-      });
-    }
+    if (!editor?.editingId || editor.isBuiltIn) return false;
+    const id = editor.editingId;
+
+    return mutate((api) => api.remove({ id }), editor);
   }
 
   return {
     selectedFlow,
-    customFlows: flows.customFlows,
+    builtInFlows,
+    customFlows: state.flows.customFlows,
     loaded: state.loaded,
+    isBusy: state.isBusy,
     error: state.error,
-    editor,
+    editor: state.editor,
     selectFlow,
-    editSelectedFlow,
+    editFlow,
+    editSelectedFlow: () => editFlow(selectedFlow.id),
     closeEditor,
-    renameDraft: (value) => dispatch({ type: "draft", field: "name", value }),
-    reviseInstructions: (value) => dispatch({ type: "draft", field: "instructions", value }),
+    renameDraft: (name: string) => {
+      if (!state.editor?.isBuiltIn) dispatch({ type: "draft", changes: { name } });
+    },
+    reviseInstructions: (instructions: string) =>
+      dispatch({ type: "draft", changes: { instructions } }),
+    changeIcon: (icon: InstructionFlowIcon) => dispatch({ type: "draft", changes: { icon } }),
     saveFlow,
     deleteFlow,
   };
+}
+
+function message(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

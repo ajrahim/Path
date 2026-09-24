@@ -10,10 +10,11 @@ import { useRecordingHistory } from "@/hooks/useRecordingHistory";
 import { RecordingPane } from "@/components/RecordingPane";
 import { SourceDialog } from "@/components/SourceDialog";
 import { useRecording } from "@/hooks/useRecording";
+import { useTimelineImports } from "@/hooks/useTimelineImports";
 import { getDesktopApi } from "@/lib/Desktop";
 import { LocalModelSelect } from "@/components/LocalModelSelect";
 import { WorkspaceWelcome } from "@/components/WorkspaceWelcome";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import type { TimelineTab } from "@/components/TimelineTabs";
 
 export default function WorkspacePage() {
   const t = useTranslations();
@@ -29,6 +30,7 @@ export default function WorkspacePage() {
   const [titleSaving, setTitleSaving] = useState(false);
   const isTitleSavingRef = useRef(false);
   const [titleError, setTitleError] = useState(false);
+  const [timelineTab, setTimelineTab] = useState<TimelineTab>("activity");
   const [pendingSelectionId, setPendingSelectionId] = useState<string | null>(null);
   const [switchSaving, setSwitchSaving] = useState(false);
   const guideStateRef = useRef<GuidePaneState | null>(null);
@@ -49,6 +51,13 @@ export default function WorkspacePage() {
     snapshot.recordings.find((recording) => recording.id === activeSelectedId) ?? null;
 
   const showWelcome = !selected && !recordingActive;
+
+  // Owned above the status-keyed recording pane so an import started while the recording
+  // processes, and the selected review tab, survive the remount when processing finishes.
+  const timelineImports = useTimelineImports({
+    recordingId: selected?.id ?? null,
+    durationMs: selected?.durationMs ?? null,
+  });
 
   let titleStatus = t("navigation.saved");
 
@@ -240,8 +249,6 @@ export default function WorkspacePage() {
         </div>
         <div className="header-actions">
           <LocalModelSelect disabled={recordingActive} />
-          <span className="header-action-divider" aria-hidden="true" />
-          <ThemeToggle />
         </div>
       </header>
       <div className={`workspace-grid${sidebarVisible ? "" : " workspace-sidebar-hidden"}`}>
@@ -274,6 +281,9 @@ export default function WorkspacePage() {
               <RecordingPane
                 key={`recording-${selected?.id ?? "empty"}-${selected?.status ?? "none"}`}
                 recording={selected}
+                timelineTab={timelineTab}
+                timelineImports={timelineImports}
+                onTimelineTabChange={setTimelineTab}
                 onNewRecording={() => setSourceDialogOpen(true)}
                 onOpenSettings={openSettings}
               />

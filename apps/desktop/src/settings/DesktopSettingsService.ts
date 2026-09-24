@@ -1,12 +1,17 @@
 import { app } from "electron";
 import { resolve } from "node:path";
 import type { AppSettingsRepository } from "@path/database";
-import { aiModelSelectionSchema } from "@path/shared";
+import {
+  aiModelSelectionSchema,
+  DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
+  updateTimelineImportSettingsInputSchema,
+} from "@path/shared";
 import type {
   AiModelPurpose,
   AiModelSelection,
   DesktopSettings,
   GeneralSettings,
+  TimelineImportSettings,
 } from "@path/shared";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 
@@ -34,6 +39,7 @@ export class DesktopSettingsService {
 
     this.current = {
       general: { minimizeToTray: true },
+      timelineImports: { maxFileSizeMb: DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB },
       recordingsDirectory: resolve(defaultRecordingsDirectory),
       guideInstructions: "",
       localVisionModel: "llama3.2-vision:latest",
@@ -64,6 +70,8 @@ export class DesktopSettingsService {
           minimizeToTray:
             typeof general.minimizeToTray === "boolean" ? general.minimizeToTray : true,
         },
+        timelineImports:
+          parseTimelineImportSettings(stored.timelineImports) ?? this.current.timelineImports,
         recordingsDirectory:
           typeof stored.recordingsDirectory === "string" && stored.recordingsDirectory
             ? resolve(stored.recordingsDirectory)
@@ -97,6 +105,7 @@ export class DesktopSettingsService {
     // Callers receive snapshots so they cannot mutate the service's current settings by reference.
     return {
       general: { ...this.current.general },
+      timelineImports: { ...this.current.timelineImports },
       recordingsDirectory: this.current.recordingsDirectory,
       guideInstructions: this.current.guideInstructions,
       localVisionModel: this.current.localVisionModel,
@@ -109,6 +118,13 @@ export class DesktopSettingsService {
 
   async updateGeneral(general: GeneralSettings): Promise<DesktopSettings> {
     this.current.general = { ...general };
+    await this.persist();
+
+    return this.get();
+  }
+
+  async updateTimelineImports(timelineImports: TimelineImportSettings): Promise<DesktopSettings> {
+    this.current.timelineImports = { ...timelineImports };
     await this.persist();
 
     return this.get();
@@ -187,6 +203,12 @@ export class DesktopSettingsService {
     if (!["darwin", "win32"].includes(process.platform)) return;
     app.setLoginItemSettings({ openAtLogin: false });
   }
+}
+
+function parseTimelineImportSettings(value: unknown): TimelineImportSettings | null {
+  const result = updateTimelineImportSettingsInputSchema.safeParse(value);
+
+  return result.success ? result.data : null;
 }
 
 function parseAiModelSelection(value: unknown): AiModelSelection | null {

@@ -1,0 +1,329 @@
+/* The panel adds a metadata line, so it stacks its rows instead of the Activity grid. */
+.transcript-panel.timeline-import-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-import-panel > header {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.timeline-import-panel > .activity-toolbar {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.timeline-import-panel .activity-search {
+  flex-basis: 160px;
+}
+
+.timeline-import-panel > .transcript-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: safe center;
+  gap: 16px;
+  padding: 24px 20px;
+  overflow-y: auto;
+  text-align: center;
+}
+
+.timeline-import-panel > .transcript-empty > * {
+  flex-shrink: 0;
+}
+
+.timeline-import-panel > .transcript-empty > span {
+  max-width: 36ch;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.timeline-import-empty > .path-button {
+  margin-top: 4px;
+}
+
+/*
+ * `.transcript-empty svg` styles the empty-state illustration (size, tile, and accent color),
+ * including a dark-theme rule in global.css. The import button's icon stays a plain glyph that
+ * uses the button's text color; 16px matches the icon's size prop.
+ */
+.timeline-import-panel > .timeline-import-empty > .path-button svg {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+}
+
+.timeline-import-action {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-ink);
+}
+
+.timeline-import-action:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+
+.timeline-import-remove:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.timeline-import-action:disabled {
+  opacity: 0.4;
+}
+
+.timeline-import-action:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.timeline-import-spinner {
+  animation: timeline-import-spin 0.8s linear infinite;
+}
+
+@keyframes timeline-import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.timeline-import-meta {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  margin: 4px 20px 12px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.timeline-import-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.timeline-import-meta svg {
+  flex: 0 0 auto;
+}
+
+.timeline-import-file {
+  max-width: 220px;
+}
+
+.timeline-import-file > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-import-approximate {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.timeline-import-offset {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--muted-ink);
+  font-size: 12px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.timeline-import-offset:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.timeline-import-offset input {
+  width: 64px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.timeline-import-list {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0 20px 16px;
+  overflow-y: auto;
+}
+
+.timeline-import-list ol {
+  box-sizing: border-box;
+  margin: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.timeline-import-row {
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.timeline-import-row:hover,
+.timeline-import-row:focus-within {
+  background: var(--surface);
+}
+
+.timeline-import-row.selected {
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface-raised));
+}
+
+.timeline-import-row.timeline-import-row-active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.timeline-import-row button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-import-row button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.timeline-import-time {
+  flex: 0 0 76px;
+  color: var(--accent);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-import-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-import-more {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--panel-muted);
+  color: var(--muted-ink);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.timeline-element-path {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.timeline-element-segment {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted-ink);
+}
+
+.timeline-element-segment:last-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.timeline-element-segment code {
+  font: inherit;
+}
+
+.timeline-element-segment svg {
+  color: var(--faint-ink);
+}
+
+html[data-theme="dark"] .timeline-import-time {
+  color: var(--primary-on-dark);
+}
+
+html[data-theme="dark"] .timeline-import-row:is(:hover, :focus-within) {
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface-raised));
+}
+
+html[data-theme="dark"] .timeline-import-row.selected {
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface-raised));
+}
+
+html[data-theme="dark"] .timeline-import-row.timeline-import-row-active {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-raised));
+  box-shadow: inset 2px 0 0 var(--primary-on-dark);
+}
+
+html[data-theme="dark"] .timeline-import-approximate {
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-raised));
+}
+
+@container (max-width: 400px) {
+  .timeline-import-meta {
+    margin-inline: 12px;
+  }
+
+  .timeline-import-panel > .transcript-empty,
+  .timeline-import-list {
+    padding-inline: 12px;
+  }
+
+  .timeline-import-time {
+    flex-basis: 64px;
+  }
+}

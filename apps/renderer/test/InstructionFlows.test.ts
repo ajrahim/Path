@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_FLOWS, loadInstructionFlows } from "../src/lib/InstructionFlows";
+import { BUILT_IN_FLOWS, loadInstructionFlows } from "@path/shared";
 
 describe("instruction flows", () => {
   it("provides help and spec presets with distinct output requirements", () => {
@@ -49,7 +49,10 @@ describe("instruction flows", () => {
       customFlows: [{ id: "custom-qa", name: "QA Checklist", instructions: "Write test cases." }],
     };
 
-    expect(loadInstructionFlows(JSON.stringify(state))).toEqual(state);
+    expect(loadInstructionFlows(JSON.stringify(state))).toMatchObject({
+      ...state,
+      customFlows: [{ ...state.customFlows[0], icon: "file-text" }],
+    });
   });
 
   it("recovers from malformed storage and invalid selections", () => {
@@ -61,6 +64,6 @@ describe("instruction flows", () => {
           customFlows: [null, {}, { id: "help-guide", name: "Override", instructions: "No" }],
         }),
       ),
-    ).toEqual({ selectedId: "help-guide", customFlows: [] });
+    ).toMatchObject({ selectedId: "help-guide", customFlows: [] });
   });
 });

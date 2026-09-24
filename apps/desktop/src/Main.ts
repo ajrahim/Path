@@ -1,4 +1,5 @@
-import { app, session } from "electron";
+import { app, BrowserWindow, session } from "electron";
+import { IPC_CHANNELS } from "@path/shared";
 import { createRequire } from "node:module";
 import { stat } from "node:fs/promises";
 import { existsSync, mkdirSync } from "node:fs";
@@ -8,6 +9,7 @@ import {
   openDatabase,
   RecordingRepository,
   ProjectRepository,
+  TimelineImportRepository,
 } from "@path/database";
 import { registerIpcHandlers } from "./ipc/RegisterIpc";
 import { ManagedRecordingAssets } from "./storage/ManagedRecordingAssets";
@@ -32,8 +34,10 @@ import { FfmpegMediaProcessor } from "./media/FfmpegMediaProcessor";
 import { RecordingMediaServer } from "./media/RecordingMediaServer";
 import { UiohookInputCapture } from "./input/UiohookInputCapture";
 import { ClickCaptureCoordinator } from "./recording/ClickCaptureCoordinator";
+import { TimelineImportService } from "./recording/TimelineImportService";
 import { WhisperCppTranscriptProvider } from "@path/transcription";
 import { DesktopSettingsService } from "./settings/DesktopSettingsService";
+import { InstructionFlowService } from "./settings/InstructionFlowService";
 import { OllamaClickActionAnalyzer } from "./ai/OllamaClickActionAnalyzer";
 import { SelectedAiService } from "./ai/SelectedAiService";
 import { resolveUserDataDirectory } from "./storage/UserDataDirectory";
@@ -80,11 +84,20 @@ if (!hasSingleInstanceLock) {
     const defaultRecordingsDirectory = join(dataDirectory, "recordings");
     const assets = new ManagedRecordingAssets(defaultRecordingsDirectory);
     const settings = new DesktopSettingsService(appSettings, assets, defaultRecordingsDirectory);
+    const instructionFlows = new InstructionFlowService(appSettings, (state) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+
+        window.webContents.send(IPC_CHANNELS.instructionFlowsChanged, state);
+      }
+    });
+
     const aiCredentials = new AiCredentialStore(
       join(dataDirectory, "credentials", "ai-providers.json"),
     );
 
     await settings.initialize();
+    await instructionFlows.initialize();
 
     // Interrupted captures cannot be resumed; recover their status before history is exposed.
     const unfinishedRecordings = await recordings.listUnfinished();
@@ -233,7 +246,13 @@ if (!hasSingleInstanceLock) {
       dataDirectory,
       aiCredentials,
       settings,
+      instructionFlows,
       aiService,
+      timelineImports: new TimelineImportService(
+        recordings,
+        new TimelineImportRepository(connection.db),
+        settings,
+      ),
       openSettingsWindow,
     });
 

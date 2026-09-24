@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, copyFileSync, readFileSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { openDatabase, ProjectRepository, RecordingRepository } from "../src";
 
@@ -27,15 +28,17 @@ describe("ProjectRepository", () => {
     const recordingId = randomUUID();
 
     try {
-      const recordings = new RecordingRepository(connection.db);
+      const now = new Date().toISOString();
 
-      await recordings.create({
-        id: recordingId,
-        title: "Original",
-        captureMode: "display",
-        startedAt: new Date().toISOString(),
-      });
-      await recordings.saveDocument(recordingId, "# Keep this document");
+      // Seed with SQL matching the legacy schema; current repositories expect later columns.
+      connection.db.run(sql`
+        INSERT INTO recordings (id, title, status, capture_mode, started_at, created_at, updated_at)
+        VALUES (${recordingId}, 'Original', 'ready', 'display', ${now}, ${now}, ${now})
+      `);
+      connection.db.run(sql`
+        INSERT INTO documents (id, recording_id, title, format, language, markdown, created_at, updated_at)
+        VALUES (${randomUUID()}, ${recordingId}, 'Original', 'help-guide', 'en', '# Keep this document', ${now}, ${now})
+      `);
       connection.close();
       connection = openDatabase(path, migrations);
       const repository = new ProjectRepository(connection.db);

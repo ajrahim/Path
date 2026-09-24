@@ -15,6 +15,8 @@ const desktopApi: DesktopApi = {
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     updateGeneral: (input) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGeneral, input),
+    updateTimelineImports: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateTimelineImports, input),
     updateGuideInstructions: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGuideInstructions, input),
     chooseRecordingsDirectory: () =>
@@ -33,8 +35,24 @@ const desktopApi: DesktopApi = {
     updateAiModelSelection: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateAiModelSelection, input),
   },
+  instructionFlows: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsGet),
+    migrate: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsMigrate, input),
+    select: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsSelect, input),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsSave, input),
+    remove: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsRemove, input),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+
+      ipcRenderer.on(IPC_CHANNELS.instructionFlowsChanged, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.instructionFlowsChanged, handler);
+    },
+  },
   guides: {
     generate: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGenerate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesUpdate, input),
     exportMarkdown: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesExportMarkdown, input),
     getDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetDocument, input),
     saveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveDocument, input),
@@ -60,6 +78,14 @@ const desktopApi: DesktopApi = {
     deleteClick: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsDeleteClick, input),
     updateClick: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsUpdateClick, input),
     retryProcessing: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsRetryProcessing, input),
+    listTimelineImports: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsListTimelineImports, input),
+    importTimelineFile: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsImportTimelineFile, input),
+    updateTimelineImportOffset: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsUpdateTimelineImportOffset, input),
+    removeTimelineImport: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsRemoveTimelineImport, input),
   },
   recording: {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.recordingListSources),

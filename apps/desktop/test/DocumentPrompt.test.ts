@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocumentActivity,
   buildDocumentPrompt,
+  buildDocumentUpdatePrompt,
   normalizeDocumentMarkdown,
 } from "../src/ai/DocumentPrompt";
 
@@ -33,6 +34,35 @@ describe("document generation prompt", () => {
   });
 });
 
+describe("document update prompt", () => {
+  it("frames the request as an update to the original intent with full context", () => {
+    const prompt = buildDocumentUpdatePrompt(
+      "Recording",
+      "[1.0s] Click: left click",
+      "Create a spec document with acceptance criteria.",
+      "# Current guide",
+      "Add a troubleshooting section.",
+    );
+
+    expect(prompt).toContain("change to the original document intent");
+    expect(prompt).toContain(
+      "Original document instructions: Create a spec document with acceptance criteria.",
+    );
+    expect(prompt).toContain("[1.0s] Click: left click");
+    expect(prompt).toContain("# Current guide");
+    expect(prompt).toContain("Add a troubleshooting section.");
+    expect(prompt).toContain("complete updated Markdown document only");
+  });
+
+  it("covers missing activity and an empty current document", () => {
+    const prompt = buildDocumentUpdatePrompt("Recording", "", " ", "", "Summarize the steps.");
+
+    expect(prompt).toContain("No activity was captured.");
+    expect(prompt).toContain("No document exists yet.");
+    expect(prompt).toContain("Summarize the steps.");
+  });
+});
+
 describe("document activity", () => {
   it("combines evidence chronologically and identifies undescribed clicks", () => {
     expect(
@@ -55,6 +85,47 @@ describe("document activity", () => {
     expect(lines).toHaveLength(300);
     expect(lines[0]).toBe("[0.0s] Speech: Item 0");
     expect(lines.at(-1)).toBe("[299.0s] Speech: Item 299");
+  });
+
+  it("interleaves imported logs and element paths as labeled, single-line evidence", () => {
+    const activity = buildDocumentActivity(
+      [{ startMs: 2_000, text: "Open the menu" }],
+      [],
+      [
+        { kind: "element", timestampMs: 2_500, text: "Header > #nav > .menu > #first" },
+        { kind: "log", timestampMs: 1_000, text: "Error: failed\n    at save (form.ts:10)" },
+      ],
+    );
+
+    expect(activity).toBe(
+      [
+        "[1.0s] Log: Error: failed at save (form.ts:10)",
+        "[2.0s] Speech: Open the menu",
+        "[2.5s] UI element: Header > #nav > .menu > #first",
+      ].join("\n"),
+    );
+  });
+
+  it("bounds imported rows separately and samples them across the recording", () => {
+    const transcript = Array.from({ length: 300 }, (_, index) => ({
+      startMs: index * 1_000,
+      text: `Speech ${index}`,
+    }));
+
+    const importedEntries = Array.from({ length: 1_000 }, (_, index) => ({
+      kind: "log" as const,
+      timestampMs: index * 300,
+      text: `Row ${index} ${"x".repeat(400)}`,
+    }));
+
+    const lines = buildDocumentActivity(transcript, [], importedEntries).split("\n");
+    const logLines = lines.filter((line) => line.includes("] Log: "));
+
+    expect(lines.filter((line) => line.includes("] Speech: "))).toHaveLength(300);
+    expect(logLines).toHaveLength(200);
+    expect(logLines[0]).toContain("Log: Row 0 ");
+    expect(logLines.at(-1)).toContain("Log: Row 995 ");
+    expect(logLines.every((line) => line.endsWith("…"))).toBe(true);
   });
 });
 

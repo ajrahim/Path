@@ -14,7 +14,6 @@ vi.mock("../src/components/RecordingPane", () => ({ RecordingPane: () => null })
 vi.mock("../src/components/GuidePane", () => ({ GuidePane: () => null }));
 vi.mock("../src/components/SourceDialog", () => ({ SourceDialog: () => null }));
 vi.mock("../src/components/LocalModelSelect", () => ({ LocalModelSelect: () => null }));
-vi.mock("../src/components/ThemeToggle", () => ({ ThemeToggle: () => null }));
 
 const recording: RecordingSummary = {
   id: "first",

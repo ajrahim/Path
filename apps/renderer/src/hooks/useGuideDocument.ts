@@ -1,3 +1,4 @@
+import type { GuideContextItem } from "@path/shared";
 import { useEffect, useReducer, useRef, type RefObject } from "react";
 import { useTranslations } from "next-intl";
 import type { RecordingSummary } from "@path/shared";
@@ -5,16 +6,22 @@ import { getDesktopApi } from "@/lib/Desktop";
 import { subscribeGuideImages } from "@/lib/GuideImageBus";
 import { renderMarkdownToHtml } from "@/lib/RenderMarkdown";
 
+const MAX_GUIDE_VERSIONS = 20;
+
 interface DocumentState {
   markdown: string;
   savedMarkdown: string;
   loading: boolean;
   generating: boolean;
+  updating: boolean;
   exporting: boolean;
   saving: boolean;
   copied: boolean;
   error: string | null;
   canRetryGenerate: boolean;
+  versions: string[];
+  activeVersion: number;
+  atVersion: boolean;
 }
 
 const EMPTY_DOCUMENT: DocumentState = {
@@ -22,11 +29,15 @@ const EMPTY_DOCUMENT: DocumentState = {
   savedMarkdown: "",
   loading: false,
   generating: false,
+  updating: false,
   exporting: false,
   saving: false,
   copied: false,
   error: null,
   canRetryGenerate: false,
+  versions: [],
+  activeVersion: -1,
+  atVersion: false,
 };
 
 type DocumentAction =
@@ -35,9 +46,17 @@ type DocumentAction =
   | { type: "loaded"; markdown: string }
   | { type: "edited"; markdown: string }
   | { type: "saved"; markdown: string }
-  | { type: "pending"; operation: "generating" | "exporting" | "saving"; pending: boolean }
+  | {
+      type: "pending";
+      operation: "generating" | "updating" | "exporting" | "saving";
+      pending: boolean;
+    }
   | { type: "copied"; copied: boolean }
-  | { type: "error"; error: string | null; canRetryGenerate?: boolean };
+  | { type: "error"; error: string | null; canRetryGenerate?: boolean }
+  | { type: "versions-seeded"; versions: string[] }
+  | { type: "version-committed"; versions: string[]; activeVersion: number }
+  | { type: "version-selected"; activeVersion: number }
+  | { type: "version-diverged" };
 
 // Editing invalidates copy confirmation while each asynchronous operation retains its own status.
 function reduceDocument(state: DocumentState, action: DocumentAction): DocumentState {
@@ -79,6 +98,28 @@ function reduceDocument(state: DocumentState, action: DocumentAction): DocumentS
         error: action.error,
         canRetryGenerate: action.canRetryGenerate ?? false,
       };
+
+    case "versions-seeded":
+      return {
+        ...state,
+        versions: action.versions,
+        activeVersion: action.versions.length - 1,
+        atVersion: action.versions.length > 0,
+      };
+
+    case "version-committed":
+      return {
+        ...state,
+        versions: action.versions,
+        activeVersion: action.activeVersion,
+        atVersion: true,
+      };
+
+    case "version-selected":
+      return { ...state, activeVersion: action.activeVersion, atVersion: true };
+
+    case "version-diverged":
+      return { ...state, atVersion: false };
   }
 }
 
@@ -89,8 +130,11 @@ interface DocumentSession {
   revision: number;
   copying: number;
   generating: boolean;
+  updating: boolean;
   exporting: boolean;
   saving: boolean;
+  versions: string[];
+  activeVersion: number;
   readers: Set<FileReader>;
   copiedTimer?: ReturnType<typeof setTimeout>;
   focusFrame?: number;
@@ -106,6 +150,12 @@ interface GuideDocument extends DocumentState {
   exportMarkdown(): Promise<void>;
   saveDocument(): Promise<boolean>;
   generateGuide(instructions: string): Promise<void>;
+  updateGuide(
+    instructions: string,
+    updatePrompt: string,
+    context?: GuideContextItem[],
+  ): Promise<boolean>;
+  selectVersion(index: number): void;
 }
 
 /** Owns one recording's Markdown draft, its persisted document, and browser resources. */
@@ -126,8 +176,11 @@ export function useGuideDocument(
       revision: 0,
       copying: 0,
       generating: false,
+      updating: false,
       exporting: false,
       saving: false,
+      versions: [],
+      activeVersion: -1,
       readers: new Set(),
     };
 
@@ -148,7 +201,10 @@ export function useGuideDocument(
             if (document) {
               session.markdown = document.markdown;
               session.revision += 1;
+              session.versions = document.markdown ? [document.markdown] : [];
+              session.activeVersion = session.versions.length - 1;
               dispatch({ type: "loaded", markdown: document.markdown });
+              dispatch({ type: "versions-seeded", versions: [...session.versions] });
             } else {
               dispatch({ type: "loading", loading: false });
             }
@@ -192,10 +248,38 @@ export function useGuideDocument(
     dispatch({ type: "edited", markdown });
   }
 
+  function commitVersion(session: DocumentSession, markdown: string): void {
+    commitMarkdown(session, markdown);
+
+    // Generated output is restorable history; cap it so long sessions stay small.
+    session.versions = [...session.versions, markdown].slice(-MAX_GUIDE_VERSIONS);
+    session.activeVersion = session.versions.length - 1;
+
+    dispatch({
+      type: "version-committed",
+      versions: [...session.versions],
+      activeVersion: session.activeVersion,
+    });
+  }
+
   function editMarkdown(markdown: string): void {
     const session = sessionRef.current;
 
-    if (session?.active) commitMarkdown(session, markdown);
+    if (!session?.active) return;
+
+    commitMarkdown(session, markdown);
+    dispatch({ type: "version-diverged" });
+  }
+
+  function selectVersion(index: number): void {
+    const session = sessionRef.current;
+    const version = session?.active ? session.versions[index] : undefined;
+
+    if (!session || version === undefined) return;
+
+    session.activeVersion = index;
+    commitMarkdown(session, version);
+    dispatch({ type: "version-selected", activeVersion: index });
   }
 
   function insertGuideImage(dataUrl: string, alt: string): void {
@@ -209,6 +293,7 @@ export function useGuideDocument(
 
     if (!input) {
       commitMarkdown(session, `${session.markdown}${session.markdown ? "\n\n" : ""}${snippet}`);
+      dispatch({ type: "version-diverged" });
 
       return;
     }
@@ -220,6 +305,7 @@ export function useGuideDocument(
       session,
       `${session.markdown.slice(0, start)}${snippet}${session.markdown.slice(end)}`,
     );
+    dispatch({ type: "version-diverged" });
     const insertedRevision = session.revision;
 
     if (session.focusFrame !== undefined) cancelAnimationFrame(session.focusFrame);
@@ -400,7 +486,9 @@ export function useGuideDocument(
     const session = sessionRef.current;
     const desktop = getDesktopApi();
 
-    if (!recording || !desktop || !session?.active || session.generating) return;
+    if (!recording || !desktop || !session?.active || session.generating || session.updating) {
+      return;
+    }
 
     const revision = session.revision;
 
@@ -411,7 +499,7 @@ export function useGuideDocument(
       const generated = await desktop.guides.generate({ id: recording.id, instructions });
 
       if (session.active && session.revision === revision) {
-        commitMarkdown(session, generated.markdown);
+        commitVersion(session, generated.markdown);
       }
     } catch (error) {
       if (session.active && session.revision === revision) {
@@ -427,6 +515,62 @@ export function useGuideDocument(
     }
   }
 
+  async function updateGuide(
+    instructions: string,
+    updatePrompt: string,
+    context?: GuideContextItem[],
+  ): Promise<boolean> {
+    const session = sessionRef.current;
+    const desktop = getDesktopApi();
+    const request = updatePrompt.trim();
+
+    if (
+      !recording ||
+      !desktop ||
+      !session?.active ||
+      !request ||
+      session.generating ||
+      session.updating
+    ) {
+      return false;
+    }
+
+    const revision = session.revision;
+    const currentMarkdown = session.markdown;
+
+    session.updating = true;
+    dispatch({ type: "pending", operation: "updating", pending: true });
+
+    try {
+      const updated = await desktop.guides.update({
+        id: recording.id,
+        instructions,
+        currentMarkdown,
+        updatePrompt: request,
+        ...(context?.length ? { context } : {}),
+      });
+
+      if (session.active && session.revision === revision) {
+        commitVersion(session, updated.markdown);
+      }
+
+      return true;
+    } catch (error) {
+      // Updates are retried by sending a new chat prompt, never by regenerating the flow.
+      if (session.active && session.revision === revision) {
+        dispatch({
+          type: "error",
+          error: error instanceof Error ? error.message : t("guide.updateFailed"),
+        });
+      }
+
+      return false;
+    } finally {
+      session.updating = false;
+      if (session.active) dispatch({ type: "pending", operation: "updating", pending: false });
+    }
+  }
+
   return {
     ...state,
     isDirty: state.markdown !== state.savedMarkdown,
@@ -438,6 +582,8 @@ export function useGuideDocument(
     exportMarkdown,
     saveDocument,
     generateGuide,
+    updateGuide,
+    selectVersion,
   };
 }
 

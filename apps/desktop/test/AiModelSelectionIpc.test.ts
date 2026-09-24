@@ -22,6 +22,7 @@ const models: AvailableAiModels = {
       id: "writer",
       name: "Writer",
       supportedPurposes: ["text"],
+      supportsEffort: false,
       sizeBytes: null,
       modifiedAt: null,
       isLoaded: false,
@@ -33,6 +34,7 @@ const models: AvailableAiModels = {
       name: "Vision",
       provider: "openai",
       supportedPurposes: ["visual", "text"],
+      supportsEffort: false,
       vendor: null,
       contextLength: null,
       pricing: null,
@@ -50,6 +52,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   registerIpcHandlers({
+    instructionFlows: {} as never,
+    timelineImports: {} as never,
     settings: { updateAiModelSelection } as never,
     aiService: { listModels } as never,
     recordings: {} as never,

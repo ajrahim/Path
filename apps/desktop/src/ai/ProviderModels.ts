@@ -1,3 +1,4 @@
+import { apiModelSupportsEffort } from "@path/shared";
 import type {
   AiModel,
   AiModelPurpose,
@@ -169,6 +170,8 @@ function openRouterModels(response: ProviderResponse): ApiAiModel[] {
           name: typeof model.name === "string" ? model.name : model.id,
           provider: "openrouter",
           supportedPurposes: inputModalities.includes("image") ? ["visual", "text"] : ["text"],
+          // OpenRouter reasoning passthrough is out of scope; effort stays hidden there.
+          supportsEffort: false,
           vendor,
           contextLength:
             typeof model.context_length === "number" && Number.isFinite(model.context_length)
@@ -277,6 +280,7 @@ function directApiModels(provider: AiProvider, models: AiModel[]): ApiAiModel[] 
         ...model,
         provider,
         supportedPurposes,
+        supportsEffort: apiModelSupportsEffort(provider, model.id),
         vendor: null,
         contextLength: null,
         pricing: null,

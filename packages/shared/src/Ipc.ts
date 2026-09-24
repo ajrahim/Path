@@ -1,6 +1,19 @@
+import { guideContextItemSchema, MAX_GUIDE_CONTEXT_ITEMS } from "./GuideContext";
 import { z } from "zod";
+import type {
+  InstructionFlowState,
+  MigrateInstructionFlowsInput,
+  SaveInstructionFlowInput,
+} from "./InstructionFlows";
 
-import { aiProviders } from "./Contracts";
+import {
+  aiEfforts,
+  aiProviders,
+  MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
+  MAX_TIMELINE_IMPORT_OFFSET_MS,
+  MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
+  timelineImportKinds,
+} from "./Contracts";
 import type {
   AiModel,
   AvailableAiModels,
@@ -22,6 +35,10 @@ import type {
   GeneratedGuide,
   GeneralSettings,
   PersistedGuide,
+  RecordingTimelineImports,
+  TimelineImport,
+  TimelineImportFileResult,
+  TimelineImportSettings,
   TranscriptSegment,
 } from "./Contracts";
 
@@ -36,6 +53,7 @@ export const IPC_CHANNELS = {
 
   settingsGet: "settings:get",
   settingsUpdateGeneral: "settings:update-general",
+  settingsUpdateTimelineImports: "settings:update-timeline-imports",
   settingsUpdateGuideInstructions: "settings:update-guide-instructions",
   settingsChooseRecordingsDirectory: "settings:choose-recordings-directory",
   settingsOpenRecordingsDirectory: "settings:open-recordings-directory",
@@ -48,7 +66,15 @@ export const IPC_CHANNELS = {
   settingsListAvailableAiModels: "settings:list-available-ai-models",
   settingsUpdateAiModelSelection: "settings:update-ai-model-selection",
 
+  instructionFlowsGet: "instruction-flows:get",
+  instructionFlowsMigrate: "instruction-flows:migrate",
+  instructionFlowsSelect: "instruction-flows:select",
+  instructionFlowsSave: "instruction-flows:save",
+  instructionFlowsRemove: "instruction-flows:remove",
+  instructionFlowsChanged: "instruction-flows:changed",
+
   guidesGenerate: "guides:generate",
+  guidesUpdate: "guides:update",
   guidesExportMarkdown: "guides:export-markdown",
   guidesGetDocument: "guides:get-document",
   guidesSaveDocument: "guides:save-document",
@@ -72,6 +98,10 @@ export const IPC_CHANNELS = {
   recordingsDeleteClick: "recordings:delete-click",
   recordingsUpdateClick: "recordings:update-click",
   recordingsRetryProcessing: "recordings:retry-processing",
+  recordingsListTimelineImports: "recordings:list-timeline-imports",
+  recordingsImportTimelineFile: "recordings:import-timeline-file",
+  recordingsUpdateTimelineImportOffset: "recordings:update-timeline-import-offset",
+  recordingsRemoveTimelineImport: "recordings:remove-timeline-import",
 
   recordingListSources: "recording:list-sources",
   recordingStart: "recording:start",
@@ -111,11 +141,22 @@ export const aiProviderInputSchema = z.strictObject({
 
 export const updateGeneralSettingsInputSchema = z.strictObject({ minimizeToTray: z.boolean() });
 
+export const updateTimelineImportSettingsInputSchema = z.strictObject({
+  maxFileSizeMb: z
+    .number()
+    .int()
+    .min(MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB)
+    .max(MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB),
+});
+
 export const recorderPopoverExpandedInputSchema = z.strictObject({ expanded: z.boolean() });
 
-export const titleBarThemeInputSchema = z.strictObject({ theme: z.enum(["light", "dark"]) });
+export const titleBarThemeInputSchema = z.strictObject({
+  theme: z.enum(["light", "dark"]),
+  dimmed: z.boolean().optional(),
+});
 
-const SETTINGS_SECTIONS = ["general", "storage", "keys"] as const;
+const SETTINGS_SECTIONS = ["general", "storage", "keys", "prompts"] as const;
 
 export const openSettingsInputSchema = z.strictObject({
   section: z.enum(SETTINGS_SECTIONS).optional(),
@@ -134,12 +175,14 @@ export const aiModelSelectionSchema = z.discriminatedUnion("source", [
     source: z.literal("local"),
     modelId: z.string().trim().min(1).max(200),
     modelName: z.string().trim().min(1).max(200),
+    effort: z.enum(aiEfforts).optional(),
   }),
   z.strictObject({
     source: z.literal("api"),
     provider: z.enum(aiProviders),
     modelId: z.string().trim().min(1).max(200),
     modelName: z.string().trim().min(1).max(200),
+    effort: z.enum(aiEfforts).optional(),
   }),
 ]);
 
@@ -168,6 +211,13 @@ export const recordingIdInputSchema = z.strictObject({ id: z.string().uuid() });
 
 export const generateGuideInputSchema = recordingIdInputSchema.extend({
   instructions: z.string().trim().max(10_000),
+});
+
+export const updateGuideInputSchema = recordingIdInputSchema.extend({
+  instructions: z.string().trim().max(10_000),
+  currentMarkdown: z.string().max(10_000_000),
+  updatePrompt: z.string().trim().min(1).max(10_000),
+  context: z.array(guideContextItemSchema).max(MAX_GUIDE_CONTEXT_ITEMS).optional(),
 });
 
 export const renameRecordingInputSchema = recordingIdInputSchema.extend({
@@ -208,6 +258,15 @@ export const updateTranscriptInputSchema = activityItemInputSchema.extend({
 
 export const updateClickDescriptionInputSchema = activityItemInputSchema.extend({
   description: z.string().trim().min(1).max(2_000),
+});
+
+export const timelineImportInputSchema = z.strictObject({
+  recordingId: z.string().uuid(),
+  kind: z.enum(timelineImportKinds),
+});
+
+export const timelineImportOffsetInputSchema = timelineImportInputSchema.extend({
+  offsetMs: z.number().int().min(-MAX_TIMELINE_IMPORT_OFFSET_MS).max(MAX_TIMELINE_IMPORT_OFFSET_MS),
 });
 
 export const saveGuideDocumentInputSchema = recordingIdInputSchema.extend({
@@ -253,6 +312,7 @@ export interface DesktopApi {
   settings: {
     get(): Promise<DesktopSettings>;
     updateGeneral(input: GeneralSettings): Promise<DesktopSettings>;
+    updateTimelineImports(input: TimelineImportSettings): Promise<DesktopSettings>;
     updateGuideInstructions(input: { guideInstructions: string }): Promise<DesktopSettings>;
     chooseRecordingsDirectory(): Promise<DesktopSettings | null>;
     openRecordingsDirectory(): Promise<void>;
@@ -270,8 +330,18 @@ export interface DesktopApi {
     ): Promise<DesktopSettings>;
   };
 
+  instructionFlows: {
+    get(): Promise<InstructionFlowState>;
+    migrate(input: MigrateInstructionFlowsInput): Promise<InstructionFlowState>;
+    select(input: { id: string }): Promise<InstructionFlowState>;
+    save(input: SaveInstructionFlowInput): Promise<InstructionFlowState>;
+    remove(input: { id: string }): Promise<InstructionFlowState>;
+    onChanged(listener: (state: InstructionFlowState) => void): () => void;
+  };
+
   guides: {
     generate(input: z.infer<typeof generateGuideInputSchema>): Promise<GeneratedGuide>;
+    update(input: z.infer<typeof updateGuideInputSchema>): Promise<GeneratedGuide>;
     exportMarkdown(input: z.infer<typeof exportMarkdownInputSchema>): Promise<boolean>;
     getDocument(input: RecordingIdInput): Promise<PersistedGuide | null>;
     saveDocument(input: z.infer<typeof saveGuideDocumentInputSchema>): Promise<PersistedGuide>;
@@ -301,6 +371,14 @@ export interface DesktopApi {
     deleteClick(input: z.infer<typeof activityItemInputSchema>): Promise<void>;
     updateClick(input: z.infer<typeof updateClickDescriptionInputSchema>): Promise<ClickEvent>;
     retryProcessing(input: RecordingIdInput): Promise<void>;
+    listTimelineImports(input: RecordingIdInput): Promise<RecordingTimelineImports>;
+    importTimelineFile(
+      input: z.infer<typeof timelineImportInputSchema>,
+    ): Promise<TimelineImportFileResult>;
+    updateTimelineImportOffset(
+      input: z.infer<typeof timelineImportOffsetInputSchema>,
+    ): Promise<TimelineImport>;
+    removeTimelineImport(input: z.infer<typeof timelineImportInputSchema>): Promise<void>;
   };
 
   recording: {
