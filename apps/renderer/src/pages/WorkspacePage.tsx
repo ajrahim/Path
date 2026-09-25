@@ -1,5 +1,5 @@
 import { RENDERER_ROUTES, isActiveRecordingStatus } from "@path/shared";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Check, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/router";
@@ -15,12 +15,15 @@ import { getDesktopApi } from "@/lib/Desktop";
 import { LocalModelSelect } from "@/components/LocalModelSelect";
 import { WorkspaceWelcome } from "@/components/WorkspaceWelcome";
 import type { TimelineTab } from "@/components/TimelineTabs";
+import { useRendererDispatch } from "@/hooks/useRendererDispatch";
+import { refreshProjects } from "@/state/ProjectSlice";
 
 export default function WorkspacePage() {
   const t = useTranslations();
   const router = useRouter();
   const { snapshot, refresh, rename } = useRecordingHistory();
   const { snapshot: recordingState } = useRecording();
+  const dispatch = useRendererDispatch();
 
   // Selection and panel sizes belong to this window; recording data is shared within its store.
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -31,11 +34,13 @@ export default function WorkspacePage() {
   const isTitleSavingRef = useRef(false);
   const [titleError, setTitleError] = useState(false);
   const [timelineTab, setTimelineTab] = useState<TimelineTab>("activity");
+  const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
   const [pendingSelectionId, setPendingSelectionId] = useState<string | null>(null);
   const [switchSaving, setSwitchSaving] = useState(false);
   const guideStateRef = useRef<GuidePaneState | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const discardDialogRef = useRef<HTMLDialogElement>(null);
+  const isMountedRef = useRef(false);
   const recordingActive = isActiveRecordingStatus(recordingState.status);
 
   const handleGuideStateChange = useCallback((state: GuidePaneState | null) => {
@@ -57,6 +62,7 @@ export default function WorkspacePage() {
   const timelineImports = useTimelineImports({
     recordingId: selected?.id ?? null,
     durationMs: selected?.durationMs ?? null,
+    refreshKey: timelineRefreshKey,
   });
 
   let titleStatus = t("navigation.saved");
@@ -102,6 +108,57 @@ export default function WorkspacePage() {
 
     setSelectedId(id);
   }
+
+  const openRequestedRecording = useEffectEvent((id: string) => {
+    void refresh();
+    void dispatch(refreshProjects());
+
+    // An in-flight manual import will publish its own result; do not cancel its UI session.
+    if (id === activeSelectedId && !timelineImports.busyKind) {
+      setTimelineRefreshKey((key) => key + 1);
+    }
+
+    requestSelect(id);
+  });
+
+  useEffect(() => {
+    const app = getDesktopApi()?.app;
+
+    // Next can hot-reload this page while Electron still has the previous preload version.
+    if (
+      !app ||
+      typeof app.onRecordingOpened !== "function" ||
+      typeof app.consumeRecordingOpened !== "function"
+    ) {
+      return;
+    }
+
+    const consumeRecordingOpened = app.consumeRecordingOpened;
+
+    isMountedRef.current = true;
+
+    async function consumeOpenRequest(): Promise<void> {
+      try {
+        const request = await consumeRecordingOpened();
+
+        // React development remounts the effect before this reply; use the current mount
+        // state so the first consume does not lose a cold-launch request during that replay.
+        if (isMountedRef.current && request) openRequestedRecording(request.recordingId);
+      } catch (error) {
+        console.error("Failed to open the recording requested by Path", error);
+      }
+    }
+
+    const unsubscribe = app.onRecordingOpened(() => void consumeOpenRequest());
+
+    // Subscribe first so a warm request cannot fall between hydration and this snapshot.
+    void consumeOpenRequest();
+
+    return () => {
+      isMountedRef.current = false;
+      unsubscribe();
+    };
+  }, []);
 
   async function saveAndSwitch(): Promise<void> {
     if (!pendingSelectionId || switchSaving) return;

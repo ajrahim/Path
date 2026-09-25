@@ -56,6 +56,8 @@ export const IPC_CHANNELS = {
   appOpenSettings: "app:open-settings",
   appFlushRequested: "app:flush-requested",
   appFlushComplete: "app:flush-complete",
+  appRecordingOpened: "app:recording-opened",
+  appConsumeRecordingOpened: "app:consume-recording-opened",
 
   cliGet: "cli:get",
   cliRefresh: "cli:refresh",
@@ -380,6 +382,10 @@ export interface DesktopApi {
     showMainWindow(): Promise<void>;
     setRecorderPopoverExpanded(input: { expanded: boolean }): Promise<void>;
     openSettings(input?: z.infer<typeof openSettingsInputSchema>): Promise<void>;
+    /** Receives a recording opened by an application link or notification. */
+    onRecordingOpened(listener: (input: { recordingId: string }) => void): () => void;
+    /** Takes the latest open request, including one received before the workspace mounted. */
+    consumeRecordingOpened(): Promise<{ recordingId: string } | null>;
     /**
      * Registers work that must finish before the app quits, such as a pending draft write.
      * Main waits, with a time limit, until every registered listener in the window settles.

@@ -42,6 +42,14 @@
   "build": {
     "appId": "app.path.desktop",
     "productName": "Path",
+    "protocols": [
+      {
+        "name": "Path",
+        "schemes": [
+          "pathai"
+        ]
+      }
+    ],
     "icon": "assets/icon.png",
     "npmRebuild": false,
     "asar": true,

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { appendFile, copyFile, stat } from "node:fs/promises";
+import { extname, isAbsolute, join } from "node:path";
 import {
   BrowserWindow,
   desktopCapturer,
@@ -7,7 +9,12 @@ import {
   screen,
   type DesktopCapturerSource,
 } from "electron";
-import { SessionClock, transitionRecordingState, type RecordingState } from "@path/recording-core";
+import {
+  SessionClock,
+  transitionRecordingState,
+  type RecordingEvent,
+  type RecordingState,
+} from "@path/recording-core";
 import type { RecordingAssetLocation } from "@path/database";
 import {
   IPC_CHANNELS,
@@ -47,6 +54,7 @@ const MAX_CLICK_ANALYSES_PER_RECORDING = 200;
 export class RecordingController {
   private state: RecordingState = "IDLE";
   private active: ActiveRecording | null = null;
+  private processingRecording: { id: string; durationMs: number } | null = null;
   private clock: SessionClock | null = null;
   // Wall-clock time of media zero, taken with the session clock's monotonic origin.
   private mediaStartedAt: string | null = null;
@@ -116,6 +124,11 @@ export class RecordingController {
     }
 
     const source = (await this.listSources()).find((candidate) => candidate.id === input.sourceId);
+
+    // An import may have claimed the controller while native source discovery was pending.
+    if (this.state !== "IDLE") {
+      throw new Error("A recording is already active");
+    }
 
     if (!source) {
       throw new Error("The selected capture source is no longer available");
@@ -188,6 +201,116 @@ export class RecordingController {
       this.error = message;
       this.state = transitionRecordingState(this.state, "FAIL");
       this.clearActiveSession();
+      this.emitState();
+
+      throw error;
+    }
+  }
+
+  /** Copies an existing video into managed storage and runs the normal processing pipeline. */
+  async importVideo(
+    input: { videoPath: string; title: string },
+    onProcessing?: (recordingId: string) => void,
+  ): Promise<string> {
+    if (this.state === "READY" || this.state === "FAILED") {
+      this.state = transitionRecordingState(this.state, "RESET");
+      this.clearActiveSession();
+    }
+
+    if (this.state !== "IDLE") {
+      throw new Error("Finish the active recording before importing a video");
+    }
+
+    if (!isAbsolute(input.videoPath)) {
+      throw new Error("The video path must be an absolute local file path");
+    }
+
+    const id = randomUUID();
+    const root = this.assets.currentRoot;
+    const location: RecordingAssetLocation = { recordingId: id, storageRootPath: root.path };
+    let directoryCreated = false;
+    let rowCreated = false;
+
+    // Claim the controller before the first asynchronous operation so captures cannot overlap.
+    this.state = transitionRecordingState(this.state, "RETRY_PROCESSING");
+    this.processingRecording = { id, durationMs: 0 };
+    this.error = null;
+    this.emitState();
+
+    try {
+      const source = await stat(input.videoPath);
+
+      if (!source.isFile() || source.size === 0) {
+        throw new Error("The video path must point to a non-empty file");
+      }
+
+      await this.assets.createRecordingDirectory(location);
+      directoryCreated = true;
+      const rawVideoPath = join(
+        this.assets.recordingDirectory(location),
+        `imported-video${extname(input.videoPath)}`,
+      );
+
+      // Never transcode in place or depend on the user's source surviving a later retry.
+      await copyFile(input.videoPath, rawVideoPath, constants.COPYFILE_EXCL);
+      const metadata = await this.mediaProcessor.probe(rawVideoPath);
+
+      if (!Number.isSafeInteger(metadata.durationMs) || metadata.durationMs <= 0) {
+        throw new Error("The video has no valid duration");
+      }
+
+      this.processingRecording.durationMs = metadata.durationMs;
+      // Imported videos have no capture clock; file modification time is an approximate fallback.
+      const startedAt =
+        metadata.createdAt ?? new Date(source.mtimeMs - metadata.durationMs).toISOString();
+
+      const finalVideoPath = this.assets.finalVideoPath(location);
+
+      await this.recordings.create({
+        id,
+        storageRootId: root.id,
+        title: input.title,
+        captureMode: "display",
+        startedAt,
+      });
+      rowCreated = true;
+      await this.recordings.recordMediaTiming(id, { startedAt, pauses: [] });
+      await this.recordings.markProcessing(id, metadata.durationMs, rawVideoPath);
+      this.emitState();
+      onProcessing?.(id);
+
+      const finalThumbnailPath = await this.finalizeVideoFiles(
+        location,
+        rawVideoPath,
+        finalVideoPath,
+      );
+
+      const completionEvent = await this.transcribeRecording(location, rawVideoPath, {
+        includeMicrophone: metadata.hasAudio,
+        durationMs: metadata.durationMs,
+      });
+
+      await this.analyzeClicks(id);
+      await this.recordings.markReady(
+        id,
+        new Date().toISOString(),
+        finalVideoPath,
+        finalThumbnailPath,
+      );
+      this.state = transitionRecordingState(this.state, completionEvent);
+      this.emitState();
+
+      return id;
+    } catch (error) {
+      if (rowCreated) {
+        // Retain the owned input for retryProcessing; the user's original is never modified.
+        await this.recordings.markFailed(id);
+      } else if (directoryCreated) {
+        await this.assets.remove(this.assets.recordingDirectory(location), true);
+      }
+
+      this.error = error instanceof Error ? error.message : "Video import failed";
+      this.state = transitionRecordingState(this.state, "FAIL");
       this.emitState();
 
       throw error;
@@ -345,10 +468,15 @@ export class RecordingController {
         this.active.finalVideoPath,
       );
 
-      await this.transcribeRecording(this.active.location, this.active.rawVideoPath, {
-        includeMicrophone: this.active.input.includeMicrophone,
-        durationMs: Math.round(this.clock?.elapsedMs() ?? 0),
-      });
+      const completionEvent = await this.transcribeRecording(
+        this.active.location,
+        this.active.rawVideoPath,
+        {
+          includeMicrophone: this.active.input.includeMicrophone,
+          durationMs: Math.round(this.clock?.elapsedMs() ?? 0),
+        },
+      );
+
       await this.analyzeClicks(this.active.id);
       await this.recordings.markReady(
         this.active.id,
@@ -356,7 +484,7 @@ export class RecordingController {
         this.active.finalVideoPath,
         finalThumbnailPath,
       );
-
+      this.state = transitionRecordingState(this.state, completionEvent);
       this.emitState();
 
       if (Notification.isSupported()) {
@@ -399,8 +527,9 @@ export class RecordingController {
 
     if (!location) throw new Error(`Recording not found: ${recordingId}`);
 
+    const finalVideoPath = this.assets.finalVideoPath(location);
     const rawVideoPath =
-      session.videoPath?.endsWith(".webm") === true
+      session.videoPath && session.videoPath !== finalVideoPath
         ? session.videoPath
         : this.assets.videoPath(location);
 
@@ -414,23 +543,31 @@ export class RecordingController {
       throw new Error("The original capture is no longer available");
     }
 
+    if (this.state !== "IDLE") {
+      throw new Error("Processing can only be retried when no recording is active");
+    }
+
     this.state = transitionRecordingState(this.state, "RETRY_PROCESSING");
+    this.processingRecording = { id: session.id, durationMs: session.durationMs ?? 0 };
     this.error = null;
     this.emitState();
 
     const durationMs = session.durationMs ?? 0;
-    const finalVideoPath = this.assets.finalVideoPath(location);
-
-    await this.recordings.markProcessing(session.id, durationMs, rawVideoPath);
 
     try {
+      await this.recordings.markProcessing(session.id, durationMs, rawVideoPath);
+      const metadata = await this.mediaProcessor.probe(rawVideoPath);
       const finalThumbnailPath = await this.finalizeVideoFiles(
         location,
         rawVideoPath,
         finalVideoPath,
       );
 
-      await this.transcribeRecording(location, rawVideoPath, { durationMs });
+      const completionEvent = await this.transcribeRecording(location, rawVideoPath, {
+        durationMs,
+        includeMicrophone: metadata.hasAudio,
+      });
+
       await this.analyzeClicks(session.id);
       await this.recordings.markReady(
         session.id,
@@ -438,6 +575,7 @@ export class RecordingController {
         finalVideoPath,
         finalThumbnailPath,
       );
+      this.state = transitionRecordingState(this.state, completionEvent);
       this.emitState();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Video processing failed";
@@ -474,31 +612,27 @@ export class RecordingController {
     location: RecordingAssetLocation,
     rawVideoPath: string,
     options: { includeMicrophone?: boolean; durationMs: number },
-  ): Promise<void> {
+  ): Promise<RecordingEvent> {
     const { recordingId } = location;
 
     if (options.includeMicrophone === false) {
       await this.recordings.replaceTranscript(recordingId, []);
       await this.recordings.markTranscriptReady(recordingId);
-      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
 
-      return;
+      return "SKIP_TRANSCRIPTION";
     }
 
     const session = await this.recordings.get(recordingId);
 
     // A completed transcript survives a later video failure; only missing work reruns.
     if (session?.transcriptStatus === "ready") {
-      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
-
-      return;
+      return "SKIP_TRANSCRIPTION";
     }
 
     if (!this.transcriptProvider) {
       await this.recordings.markTranscriptFailed(recordingId);
-      this.state = transitionRecordingState(this.state, "SKIP_TRANSCRIPTION");
 
-      return;
+      return "SKIP_TRANSCRIPTION";
     }
 
     this.state = transitionRecordingState(this.state, "VIDEO_PROCESSED");
@@ -520,12 +654,14 @@ export class RecordingController {
       await this.recordings.replaceTranscript(recordingId, transcript.segments);
       await this.recordings.markTranscriptReady(recordingId);
       this.state = transitionRecordingState(this.state, "TRANSCRIBED");
-      this.state = transitionRecordingState(this.state, "EVENTS_INDEXED");
+
+      return "EVENTS_INDEXED";
     } catch (error) {
       // A transcription failure is recorded separately so the captured video remains usable.
       this.diagnostics.error("Local transcription failed", error);
       await this.recordings.markTranscriptFailed(recordingId);
-      this.state = transitionRecordingState(this.state, "TRANSCRIPTION_FAILED");
+
+      return "TRANSCRIPTION_FAILED";
     }
   }
 
@@ -665,8 +801,8 @@ export class RecordingController {
 
     return {
       status: statusMap[this.state],
-      recordingId: this.active?.id ?? null,
-      elapsedMs: Math.round(this.clock?.elapsedMs() ?? 0),
+      recordingId: this.active?.id ?? this.processingRecording?.id ?? null,
+      elapsedMs: Math.round(this.clock?.elapsedMs() ?? this.processingRecording?.durationMs ?? 0),
       captureClicks: this.active?.input.captureClicks ?? false,
       error: this.error,
     };
@@ -692,6 +828,7 @@ export class RecordingController {
   private clearActiveSession(): void {
     this.clearPreparationTimer();
     this.active = null;
+    this.processingRecording = null;
     this.clock = null;
     this.mediaStartedAt = null;
     this.writeQueue = Promise.resolve();

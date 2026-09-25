@@ -91,7 +91,11 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 /** Owns the selected recording's imported logs and elements; one operation runs at a time. */
-export function useTimelineImports({ recordingId, durationMs }: ImportScope): TimelineImports {
+export function useTimelineImports({
+  recordingId,
+  durationMs,
+  refreshKey = 0,
+}: ImportScope & { refreshKey?: number }): TimelineImports {
   const t = useTranslations("recording");
   const scope = useMemo(() => ({ recordingId, durationMs }), [recordingId, durationMs]);
   const [snapshot, dispatch] = useReducer(timelineImportsReducer, scope, initialState);
@@ -136,7 +140,7 @@ export function useTimelineImports({ recordingId, durationMs }: ImportScope): Ti
       session.active = false;
       if (sessionRef.current === session) sessionRef.current = null;
     };
-  }, [scope, loadFailed]);
+  }, [scope, loadFailed, refreshKey]);
 
   async function runOperation(
     kind: TimelineImportKind,

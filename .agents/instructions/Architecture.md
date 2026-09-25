@@ -48,6 +48,10 @@ All SQL runs in one desktop worker thread (`apps/desktop/src/storage/DatabaseWor
 
 To add a repository method, add it to the repository class; the worker and `RemoteRepositories` pick it up by name. Keep each method one transaction, and do not await inside a transaction. A long-running job, such as `TimelineImportJob`, must commit in batches.
 
+## External application links
+
+`links/PathProtocol` receives and queues `pathai://` links in the desktop process. `PathAppLink` validates the URL contract; `GenerateLinkService` coordinates managed video import, Projects placement, timeline imports, and optional document generation through existing services. `PathLinkNotifications` owns native progress notices. Main retains the latest recording-open request until the workspace consumes it through typed preload IPC, preserving cold-launch delivery and the renderer's unsaved-draft guard. See [application links](../../specs/AppLinks.md).
+
 ## IPC and contract extension workflow
 
 To add or update an IPC capability:

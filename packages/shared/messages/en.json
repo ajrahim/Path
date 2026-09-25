@@ -3,6 +3,14 @@
     "name": "Path",
     "description": "Turn recorded walkthroughs into useful support documentation"
   },
+  "appLinks": {
+    "starting": "Starting import",
+    "processing": "Processing recording",
+    "complete": "Complete",
+    "failed": "Could not complete request",
+    "status": "Status",
+    "running": "Path is running."
+  },
   "navigation": {
     "settings": "Settings",
     "toggleSidebar": "Toggle sidebar",

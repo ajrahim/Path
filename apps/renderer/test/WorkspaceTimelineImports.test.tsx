@@ -85,6 +85,10 @@ it("imports a log while the recording processes and keeps it after processing fi
   };
 
   desktopRef.current = {
+    app: {
+      consumeRecordingOpened: async () => null,
+      onRecordingOpened: () => () => {},
+    },
     recordings,
     projects: { list: async () => [] },
   } as unknown as DesktopApi;

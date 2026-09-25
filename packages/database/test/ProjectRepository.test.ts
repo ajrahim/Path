@@ -75,4 +75,61 @@ describe("ProjectRepository", () => {
 
     database.connection.close();
   });
+
+  it("creates a named folder and reuses its current name case-insensitively", () => {
+    const database = openTestDatabase();
+    const firstRecordingId = createTestRecording(database);
+    const secondRecordingId = createTestRecording(database);
+
+    database.projects.moveToNamedProject(firstRecordingId, "  Tutorials  ");
+    const [project] = database.projects.list();
+
+    expect(project).toMatchObject({ name: "Tutorials", recordingIds: [firstRecordingId] });
+    database.projects.change({ action: "rename", id: project!.id, name: "Examples" });
+    database.projects.moveToNamedProject(secondRecordingId, "examples");
+    database.projects.moveToNamedProject(secondRecordingId, "EXAMPLES");
+
+    expect(database.projects.list()).toEqual([
+      {
+        id: project!.id,
+        name: "Examples",
+        recordingIds: expect.arrayContaining([firstRecordingId, secondRecordingId]),
+      },
+    ]);
+    expect(database.projects.list()[0]?.recordingIds).toHaveLength(2);
+    database.connection.close();
+  });
+
+  it("rejects ambiguous names without changing existing membership", () => {
+    const database = openTestDatabase();
+    const recordingId = createTestRecording(database);
+
+    database.projects.moveToNamedProject(recordingId, "Keep");
+    database.projects.change({ action: "create", name: "Same" });
+    database.projects.change({ action: "create", name: "same" });
+
+    expect(() => database.projects.moveToNamedProject(recordingId, "SAME")).toThrow(
+      "More than one folder",
+    );
+    expect(
+      database.projects.list().find((project) => project.name === "Keep")?.recordingIds,
+    ).toEqual([recordingId]);
+    database.connection.close();
+  });
+
+  it("does not create an empty folder when the recording is missing or input is invalid", () => {
+    const database = openTestDatabase();
+
+    expect(() => database.projects.moveToNamedProject(randomUUID(), "Missing")).toThrow(
+      "Recording not found",
+    );
+    expect(() => database.projects.moveToNamedProject("not-an-id", "Invalid")).toThrow();
+
+    const recordingId = createTestRecording(database);
+
+    expect(() => database.projects.moveToNamedProject(recordingId, "  ")).toThrow();
+    expect(() => database.projects.moveToNamedProject(recordingId, "x".repeat(81))).toThrow();
+    expect(database.projects.list()).toEqual([]);
+    database.connection.close();
+  });
 });

@@ -2,14 +2,95 @@ import { spawn } from "node:child_process";
 import { rename, rm, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 
+export interface VideoMetadata {
+  durationMs: number;
+  hasAudio: boolean;
+  createdAt: string | null;
+}
+
 export interface MediaProcessor {
+  probe(inputPath: string): Promise<VideoMetadata>;
   finalize(inputPath: string, outputPath: string): Promise<void>;
   extractAudio(inputPath: string, outputPath: string): Promise<void>;
   extractThumbnail(inputPath: string, outputPath: string): Promise<void>;
 }
 
+const MEDIA_PROBE_TIMEOUT_MS = 30_000;
+const MAX_PROBE_OUTPUT_CHARACTERS = 64_000;
+
 export class FfmpegMediaProcessor implements MediaProcessor {
   constructor(private readonly executablePath: string) {}
+
+  probe(inputPath: string): Promise<VideoMetadata> {
+    return new Promise((resolve, reject) => {
+      // Inspect the container and decode one frame using the FFmpeg already bundled with Path.
+      const process = spawn(
+        this.executablePath,
+        [
+          "-nostdin",
+          "-hide_banner",
+          "-protocol_whitelist",
+          "file,pipe",
+          "-i",
+          inputPath,
+          "-map",
+          "0:v:0",
+          "-frames:v",
+          "1",
+          "-an",
+          "-f",
+          "null",
+          "-",
+        ],
+        { windowsHide: true },
+      );
+
+      let output = "";
+      const timeout = setTimeout(() => {
+        process.kill();
+        reject(new Error("Video inspection timed out"));
+      }, MEDIA_PROBE_TIMEOUT_MS);
+
+      process.stderr.on("data", (chunk: Buffer) => {
+        output = `${output}${chunk.toString()}`.slice(0, MAX_PROBE_OUTPUT_CHARACTERS);
+      });
+      process.on("error", (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      process.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code !== 0) {
+          reject(new Error(output.trim() || `FFmpeg exited with code ${code}`));
+
+          return;
+        }
+
+        const duration = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(output);
+        const durationMs = duration
+          ? Math.round(
+              (Number(duration[1]) * 3_600 + Number(duration[2]) * 60 + Number(duration[3])) *
+                1_000,
+            )
+          : 0;
+
+        if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
+          reject(new Error("The video has no valid duration"));
+
+          return;
+        }
+
+        const creationTime = /creation_time\s*:\s*([^\r\n]+)/.exec(output)?.[1]?.trim();
+        const createdAtMs = creationTime ? Date.parse(creationTime) : Number.NaN;
+
+        resolve({
+          durationMs,
+          hasAudio: /Stream #0:[^\r\n]*:\s*Audio:/.test(output),
+          createdAt: Number.isFinite(createdAtMs) ? new Date(createdAtMs).toISOString() : null,
+        });
+      });
+    });
+  }
 
   async finalize(inputPath: string, outputPath: string): Promise<void> {
     await this.writeArtifact(inputPath, outputPath, [
@@ -99,7 +180,18 @@ export class FfmpegMediaProcessor implements MediaProcessor {
     return new Promise((resolve, reject) => {
       const process = spawn(
         this.executablePath,
-        ["-y", "-loglevel", "error", "-i", inputPath, ...outputArguments, outputPath],
+        [
+          "-nostdin",
+          "-y",
+          "-loglevel",
+          "error",
+          "-protocol_whitelist",
+          "file,pipe",
+          "-i",
+          inputPath,
+          ...outputArguments,
+          outputPath,
+        ],
         { windowsHide: true },
       );
 

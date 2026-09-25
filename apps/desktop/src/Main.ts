@@ -1,6 +1,6 @@
 import { stopCliProcesses } from "./ai/CliProcess";
 import { CliToolService } from "./ai/CliToolService";
-import { app, BrowserWindow, dialog, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
 import { IPC_CHANNELS } from "@path/shared";
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync } from "node:fs";
@@ -8,6 +8,9 @@ import { join, resolve } from "node:path";
 import { GuideDocumentService } from "./documents/GuideDocumentService";
 import { registerIpcHandlers } from "./ipc/RegisterIpc";
 import { RendererFlush } from "./ipc/RendererFlush";
+import { GenerateLinkService } from "./links/GenerateLinkService";
+import { PathLinkNotifications } from "./links/PathLinkNotifications";
+import { PathProtocol } from "./links/PathProtocol";
 import { recoverRecordings } from "./recording/StartupRecovery";
 import { AssetDeletionQueue } from "./storage/AssetDeletionQueue";
 import { DatabaseClient, type DatabaseUnavailableError } from "./storage/DatabaseClient";
@@ -67,6 +70,9 @@ registerRendererScheme();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
+  // macOS can deliver open-url before ready; Windows passes links in initial/second-instance argv.
+  const appLinks = new PathProtocol({ app, argv: process.argv, executablePath: process.execPath });
+
   void app.whenReady().then(async () => {
     if (process.platform === "win32") {
       app.setAppUserModelId(app.isPackaged ? "app.path.desktop" : process.execPath);
@@ -90,6 +96,7 @@ if (!hasSingleInstanceLock) {
     const diagnostics = new DiagnosticLog(layout.logsDirectory);
 
     await diagnostics.initialize();
+    if (!appLinks.register()) diagnostics.warn("Path could not register the pathai protocol");
 
     // All SQL runs in the database worker; nothing is exposed until migrations and recovery finish.
     let database: DatabaseClient;
@@ -283,6 +290,41 @@ if (!hasSingleInstanceLock) {
 
     const rendererFlush = new RendererFlush();
 
+    let pendingRecordingOpen: { recordingId: string } | null = null;
+    const openLinkedRecording = (recordingId: string) => {
+      pendingRecordingOpen = { recordingId };
+      recordingWindows.restoreMainWindow();
+      if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.appRecordingOpened, pendingRecordingOpen);
+      }
+    };
+
+    ipcMain.handle(IPC_CHANNELS.appConsumeRecordingOpened, (event) => {
+      if (event.sender !== mainWindow.webContents) return null;
+      const request = pendingRecordingOpen;
+
+      pendingRecordingOpen = null;
+
+      return request;
+    });
+
+    const linkNotifications = new PathLinkNotifications((recordingId) => {
+      if (recordingId) openLinkedRecording(recordingId);
+      else recordingWindows.restoreMainWindow();
+    }, diagnostics);
+
+    const linkedGeneration = new GenerateLinkService({
+      recording,
+      recordings,
+      projects: repositories.projects,
+      documents,
+      timelineImports,
+      instructionFlows,
+      settings,
+      notify: (phase, title, recordingId) => linkNotifications.show(phase, title, recordingId),
+      openRecording: openLinkedRecording,
+    });
+
     registerIpcHandlers({
       cliTools,
       recordings,
@@ -305,6 +347,22 @@ if (!hasSingleInstanceLock) {
       openSettingsWindow,
     });
 
+    appLinks.attach({
+      onLaunch: () => recordingWindows.restoreMainWindow(),
+      onStatus: () => linkNotifications.showStatus(),
+      dispatch: async (link) => {
+        recordingWindows.restoreMainWindow();
+        if (link.route === "generate") await linkedGeneration.generate(link);
+      },
+      onError: (error) => {
+        diagnostics.error("A Path app link could not be completed", error);
+        linkNotifications.show(
+          "failed",
+          error instanceof Error ? error.message : "The request could not be completed.",
+        );
+      },
+    });
+
     let isQuitting = false;
     let isShutdownStarted = false;
 
@@ -320,6 +378,8 @@ if (!hasSingleInstanceLock) {
     });
 
     async function flushBeforeQuit(): Promise<void> {
+      // Finish accepted imports/generation before closing their worker or stopping CLI processes.
+      await appLinks.shutdown();
       stopCliProcesses();
       tray.destroy();
       mediaServer.close();
@@ -357,9 +417,6 @@ if (!hasSingleInstanceLock) {
       }
     });
     app.on("activate", () => {
-      recordingWindows.restoreMainWindow();
-    });
-    app.on("second-instance", () => {
       recordingWindows.restoreMainWindow();
     });
   });

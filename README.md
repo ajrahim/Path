@@ -55,12 +55,67 @@ Do not modify the operating system's `PATH` variable to configure the app.
 
 History supports search, sorting, renaming, and deletion. Deletion requires confirmation and permanently removes that recording's metadata and managed assets. Cancel or Escape leaves it intact. Exported Markdown files are separate and are not deleted with recordings.
 
+## Application links
+
+Path registers the local `pathai://` protocol when the desktop app starts. Use an installed build containing this feature, or fully quit the old desktop process and run `npm run dev` after updating the source. A browser-only preview cannot register or handle these links. Windows is the verified protocol-delivery target; see [platform limitations](specs/AppLinks.md#registration-and-compatibility).
+
+| Route               | Behavior                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pathai://`         | Opens or brings Path forward. Accepts no query fields.                                                                          |
+| `pathai://status`   | Requests a system notification saying "Path is running." Accepts no query fields and does not wait for pending generation jobs. |
+| `pathai://generate` | Creates a new recording from an existing local video using the query fields below. It does not start screen capture.            |
+
+Opening a protocol link can launch Path if it is closed. **`status` confirms that Path is running after activation; it cannot tell you whether Path was already running.** These are OS application links, not HTTP endpoints; they return no JSON response. Status notifications wait for initialization on a cold launch. A trailing slash is also accepted for `status` and `generate`.
+
+The `generate` query uses case-sensitive camelCase keys:
+
+| Key            | Required | Value and default                                                                                                                                                                                                         |
+| -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `videoPath`    | Yes      | Absolute path to a readable, nonempty local video, not a `file://` URL. Path copies the source into managed storage and leaves the original unchanged.                                                                    |
+| `title`        | No       | Recording title, up to 120 characters. Defaults to the source filename without its extension.                                                                                                                             |
+| `type`         | No       | String up to 120 characters, reserved for future use. Currently neither stored nor used to change behavior.                                                                                                               |
+| `documentType` | No       | `spec`, `help`, or a prompt name from Settings, matched case-insensitively; up to 120 characters. Defaults to the selected prompt. Edited default instructions are honored; the link does not change the selected prompt. |
+| `folder`       | No       | Projects folder name, up to 80 characters, not a filesystem directory. Reuses a case-insensitive match or creates the folder. Ambiguous duplicate names are rejected. Omit to leave the recording ungrouped.              |
+| `auto`         | No       | Exactly `true` or `false`; defaults to `false`. Both process the video and supplied imports. `true` then generates a document using the selected Text model or CLI tool.                                                  |
+| `logPath`      | No       | Absolute path to a timestamped log file supported by the Logs importer. The configured import size limit applies.                                                                                                         |
+| `elementsPath` | No       | Absolute path to a timestamped elements file supported by the Elements importer. The same size limit applies.                                                                                                             |
+
+For optional fields other than `auto`, omission, an empty value, or the literal `null` means no supplied value. Do not pass `null` for `videoPath` or `auto`. Unknown or repeated keys are rejected; `video_path`, `document_type`, `log`, and `elemets` are not aliases. Remote URLs, network shares, device paths, credentials, ports, and fragments are unsupported. File paths are limited to 4,096 characters and the complete link to 16,384 characters.
+
+From Windows PowerShell, a minimal import looks like this (replace the example video path):
+
+```powershell
+Start-Process 'pathai://generate?videoPath=C%3A%2FVideos%2Fdemo.mp4'
+```
+
+Use `URLSearchParams` when building links in JavaScript so spaces, `&`, `+`, and Unicode are encoded correctly. Replace the example paths with existing files and omit `logPath` or `elementsPath` when unused:
+
+```js
+const query = new URLSearchParams({
+  videoPath: "C:/Videos/demo.mp4",
+  title: "Demo walkthrough",
+  documentType: "help", // Or "spec" or a custom prompt name.
+  folder: "Tutorials",
+  auto: "true",
+  logPath: "C:/Videos/demo.log",
+  elementsPath: "C:/Videos/demo-elements.jsonl",
+});
+
+const link = `pathai://generate?${query.toString()}`;
+```
+
+Generation requests run sequentially. Path processes the video and its speech, imports any supplied logs and elements, and then generates a document if `auto=true`. Successful generation is stored in document version history. Automatic generation stops if activity processing fails or supplied imports have no rows aligned with the video; the imported recording remains available for review after a later import or generation failure. Finish an active screen recording before importing a video.
+
+Imported video timing uses its creation timestamp when available, otherwise its modification time minus duration as an approximation. Review and adjust the Logs/Elements offset if timestamps do not line up. A plain video cannot reconstruct mouse clicks or click screenshots without capture telemetry.
+
+Path requests system notifications when import starts, processing begins, the requested workflow completes, or a request fails. Clicking a notification opens its recording when available. Display depends on OS support and notification settings. See [the application-link specification](specs/AppLinks.md) for validation details and [log/element formats](specs/RecordingLogsAndElements.md) for supported timestamped input.
+
 ## AI and privacy
 
 Screen recordings, screenshots, and transcripts may contain sensitive material. Local capture and processing do not require a cloud AI provider. The Visual selection controls click screenshot analysis; the Text selection controls document generation. Each role can use a different local or cloud provider, and failures never switch providers automatically. An Ollama endpoint override may send content to another machine.
 
 - Cloud click analysis sends a processed click screenshot with bounded nearby transcript and prior-click context.
-- Cloud document generation sends the recording title, selected instructions, and ordered transcript/click-description text. It does not send raw video or audio.
+- Cloud document generation sends the recording title, selected instructions, ordered transcript/click-description text, and sampled aligned log/element entries when present. It does not send raw video or audio.
 - Provider keys are encrypted through Electron `safeStorage`. Stored keys are decrypted in main and are not returned to the renderer; saving fails if secure storage is unavailable.
 - Provider discovery and model downloading require network access. First-run local transcription downloads its verified model.
 

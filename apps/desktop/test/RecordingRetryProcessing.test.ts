@@ -51,6 +51,7 @@ function createController() {
   const captureWorker = { webContents: { send: vi.fn() } };
 
   const mediaProcessor = {
+    probe: vi.fn().mockResolvedValue({ durationMs: 5_000, hasAudio: true, createdAt: null }),
     finalize: vi.fn().mockResolvedValue(undefined),
     extractAudio: vi.fn().mockResolvedValue(undefined),
     extractThumbnail: vi.fn().mockResolvedValue(undefined),

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import {
   projectChangeInputSchema,
+  recordingIdInputSchema,
   type ProjectChangeInput,
   type RecordingProject,
 } from "@path/shared";
@@ -86,5 +87,41 @@ export class ProjectRepository {
     });
 
     return this.list();
+  }
+
+  /** Resolve the latest folder name and move membership in one database operation. */
+  moveToNamedProject(recordingId: string, name: string): void {
+    const { id } = recordingIdInputSchema.parse({ id: recordingId });
+    const input = projectChangeInputSchema.options[0].parse({ action: "create", name });
+    const requestedName = input.name.toLocaleLowerCase();
+
+    this.db.transaction((tx) => {
+      if (!tx.select({ id: recordings.id }).from(recordings).where(eq(recordings.id, id)).get()) {
+        throw new Error("Recording not found");
+      }
+
+      const matches = tx
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .all()
+        .filter((project) => project.name.toLocaleLowerCase() === requestedName);
+
+      if (matches.length > 1) {
+        throw new Error(`More than one folder is named "${input.name}". Rename one and try again.`);
+      }
+
+      const projectId = matches[0]?.id ?? randomUUID();
+
+      if (matches.length === 0) {
+        tx.insert(projects)
+          .values({ id: projectId, name: input.name, createdAt: new Date().toISOString() })
+          .run();
+      }
+
+      tx.insert(projectRecordings)
+        .values({ recordingId: id, projectId })
+        .onConflictDoUpdate({ target: projectRecordings.recordingId, set: { projectId } })
+        .run();
+    });
   }
 }

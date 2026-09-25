@@ -20,6 +20,15 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.appSetRecorderPopoverExpanded, input),
     setTitleBarTheme: (input) => ipcRenderer.invoke(IPC_CHANNELS.appSetTitleBarTheme, input),
     openSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.appOpenSettings, input),
+    consumeRecordingOpened: () => ipcRenderer.invoke(IPC_CHANNELS.appConsumeRecordingOpened),
+    onRecordingOpened: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, input: Parameters<typeof listener>[0]) =>
+        listener(input);
+
+      ipcRenderer.on(IPC_CHANNELS.appRecordingOpened, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.appRecordingOpened, handler);
+    },
     onFlushRequested: (listener) => {
       flushListeners.add(listener);
 
