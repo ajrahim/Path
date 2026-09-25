@@ -9,7 +9,7 @@ async function rendererStatus() {
     const response = await fetch("http://127.0.0.1:3000", { signal: AbortSignal.timeout(1_500) });
     const body = await response.text();
 
-    return response.ok && body.includes("<title>Path</title>") ? "path" : "occupied";
+    return response.ok && /<title\b[^>]*>\s*Path\s*<\/title>/i.test(body) ? "path" : "occupied";
   } catch {
     return "available";
   }

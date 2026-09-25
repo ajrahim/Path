@@ -6,7 +6,7 @@ Projects can be renamed and removed. Removing a Project deletes membership only,
 
 ## Ownership
 
-- `packages/database/src/ProjectRepository.ts` owns transactional membership updates. The additive `0002_brave_shockwave.sql` migration creates projects and their membership table; each recording has at most one Project.
+- `packages/database/src/ProjectRepository.ts` owns transactional membership updates. The `0000_baseline` migration creates projects and their membership table; each recording has at most one Project.
 - `packages/shared/src/Ipc.ts` validates project mutations and exposes the typed projects bridge. Main-process handlers and preload use the same contract.
 - `ProjectSlice.ts` owns renderer snapshots and protects successful writes from stale reads. `useRecordingProjects.ts` refreshes on mount and window focus.
 - `HistorySidebar.tsx`, `HistoryMenu.tsx`, and `ProjectDialog.tsx` own presentation, drag and drop, keyboard menus, and naming/move dialogs. Folder expansion is local to the current window.

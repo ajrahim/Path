@@ -121,11 +121,22 @@ export default function WorkspacePage() {
     }
   }
 
-  function discardAndSwitch(): void {
-    if (!pendingSelectionId) return;
+  async function discardAndSwitch(): Promise<void> {
+    if (!pendingSelectionId || switchSaving) return;
 
-    setSelectedId(pendingSelectionId);
-    setPendingSelectionId(null);
+    setSwitchSaving(true);
+
+    try {
+      // Discarding also removes the recovery draft, so the text does not return on reopen.
+      const discarded = await guideStateRef.current?.discard();
+
+      if (discarded === false) return;
+
+      setSelectedId(pendingSelectionId);
+      setPendingSelectionId(null);
+    } finally {
+      setSwitchSaving(false);
+    }
   }
 
   function openSettings(): void {
@@ -337,7 +348,7 @@ export default function WorkspacePage() {
           >
             {t("actions.cancel")}
           </Button>
-          <Button variant="ghost" disabled={switchSaving} onClick={discardAndSwitch}>
+          <Button variant="ghost" disabled={switchSaving} onClick={() => void discardAndSwitch()}>
             {t("guide.discard")}
           </Button>
           <Button disabled={switchSaving} onClick={() => void saveAndSwitch()}>

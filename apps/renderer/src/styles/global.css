@@ -314,7 +314,8 @@ html[data-theme="dark"] :is(.recording-toolbar, .recorder-popover) {
   background: var(--surface-raised);
 }
 
-html[data-theme="dark"] :is(.history-empty svg, .transcript-empty svg, .guide-empty-state > span) {
+html[data-theme="dark"]
+  :is(.history-empty > svg, .transcript-empty svg, .guide-empty-state > span) {
   background: var(--accent-soft);
   color: var(--accent);
   box-shadow: none;

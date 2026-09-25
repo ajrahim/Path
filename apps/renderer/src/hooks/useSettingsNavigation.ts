@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
 
-type SettingsSection = "general" | "storage" | "keys" | "prompts";
+type SettingsSection = "general" | "storage" | "keys" | "prompts" | "cli";
 
 interface SettingsNavigation {
   contentRef: RefObject<HTMLDivElement | null>;
@@ -12,7 +12,9 @@ interface SettingsNavigation {
 function readSection(): SettingsSection {
   const section = window.location.hash.slice(1);
 
-  return section === "storage" || section === "keys" || section === "prompts" ? section : "general";
+  return section === "storage" || section === "keys" || section === "prompts" || section === "cli"
+    ? section
+    : "general";
 }
 
 function subscribe(listener: () => void): () => void {

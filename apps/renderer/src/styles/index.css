@@ -5,6 +5,8 @@
 @import "./components/Button.css";
 @import "./pages/WorkspacePage.css";
 @import "./components/LocalModelSelect.css";
+@import "./components/CliToolPicker.css";
+@import "./components/CliSettings.css";
 @import "./components/HistorySidebar.css";
 @import "./components/RecordingPane.css";
 @import "./components/TimelineTabs.css";
@@ -15,6 +17,8 @@
 @import "./components/GuidePane.css";
 @import "./components/GuideChatInput.css";
 @import "./components/GuideChatContext.css";
+@import "./components/GuideRevisionCompare.css";
+@import "./components/GuideVersionSelect.css";
 @import "./components/InstructionFlowSelect.css";
 @import "./components/InstructionFlowEditor.css";
 @import "./components/InstructionFlowIconSelect.css";

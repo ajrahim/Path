@@ -51,7 +51,7 @@ Do not modify the operating system's `PATH` variable to configure the app.
 4. Select a recording in History. Review video and activity, seek from a timestamp, edit transcript text, or remove an activity entry.
 5. Select a document flow and Text model, generate a document, then edit, copy, or export its Markdown.
 
-**Generated Markdown is not autosaved.** Switching recordings, reloading, closing, or generating again can discard editor content. Copy or export anything you want to retain. Custom instruction flows are saved separately in the renderer profile; editing a built-in preset creates a custom copy.
+**Saving is explicit; unsaved text is recoverable.** While you edit, Path keeps a recovery draft that reopens after a restart or crash, marked as unsaved until you choose Save. Every generation, AI update, save, and restore is kept in the document's version history, where you can preview, compare, and restore earlier versions. Prompts, including edited defaults, are stored by the desktop app.
 
 History supports search, sorting, renaming, and deletion. Deletion requires confirmation and permanently removes that recording's metadata and managed assets. Cancel or Escape leaves it intact. Exported Markdown files are separate and are not deleted with recordings.
 
@@ -76,14 +76,16 @@ npm run build
 
 `check` verifies formatting, lint, TypeScript, architecture, and unused code. `npm test` runs the default Vitest suite. `build` creates the static renderer export and desktop bundles without launching the app.
 
-Use `npm run format` to apply Prettier or `npx prettier --write <files>` for a focused change. Native recording, capture-overlay, title-bar, and transcription checks have separate runtime requirements; see [verification](.agents/instructions/Verification.md). Native SQLite is rebuilt for Node tests and rebuilt for Electron before desktop startup or packaging.
+Use `npm run format` to apply Prettier or `npx prettier --write <files>` for a focused change. Native recording, capture-overlay, title-bar, and transcription checks have separate runtime requirements; see [verification](.agents/instructions/Verification.md). Native SQLite is rebuilt for Node tests and rebuilt for Electron before desktop startup or packaging. `npm run measure:persistence` measures large imports, timeline queries, and document history with the real storage code.
+
+A development profile created by a pre-release schema is refused at startup, and nothing in it is changed. Close Path and run `npm run db:reset -- --confirm` to move that database into the profile's `backups/` folder; recording media is left in place.
 
 For routing or static-export changes, `npm run test:renderer` builds the renderer and checks all six direct pages and the home entry, hydration, and Settings navigation in headless Chrome. It requires Chrome or a Chromium-compatible executable selected through `PATH_APP_BROWSER_EXECUTABLE`; it does not exercise native capture.
 
 ```text
 apps/desktop/         Electron, recording orchestration, native adapters, AI, storage
 apps/renderer/        Static Next.js Pages Router, browser workflows, and presentation
-packages/database/   SQLite schema, migrations, and repositories
+packages/database/   SQLite schema, migrations, and repositories (run in a desktop worker thread)
 packages/shared/     Browser-safe contracts, IPC schemas, and messages
 packages/recording-core/  Recording states, clock, and coordinate mapping
 packages/timeline/   Click/transcript correlation
@@ -102,7 +104,8 @@ Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, 
 
 ```text
 <Electron userData>/
-  database.sqlite
+  database.sqlite               recordings, activity, imports, documents, settings, prompts
+  logs/main.log                 rotated diagnostics (1 MB x 5 files, 14 days)
   credentials/ai-providers.json
   models/whisper/ggml-tiny.en.bin
   recordings/<recordingId>/
@@ -113,9 +116,9 @@ Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, 
     screenshots/click-<clickId>.png
 ```
 
-SQLite stores metadata and editable transcript/click records. Media files remain outside the database. Microphone transcription produces `audio.wav` and a raw `transcript.json`; later transcript edits update SQLite rather than rewriting that raw file.
+SQLite stores recording metadata, editable transcript and click records, imported log and element rows, documents with their recovery drafts and version history, and settings and prompts. All SQL runs in a desktop worker thread, so large imports and history reads do not block the app. Media files remain outside the database. Microphone transcription produces `audio.wav` and a raw `transcript.json`; later transcript edits update SQLite rather than rewriting that raw file.
 
-Settings can change the media location for future recordings. Existing files remain in their original roots, which stay registered for managed access. The database, credentials, and model cache remain in the user-data directory. Appearance and custom instruction flows live in the renderer profile.
+Settings can change the media location for future recordings. Existing files remain in their original roots, which stay registered for managed access. The database, credentials, logs, and model cache remain in the user-data directory. Only the Light/Dark appearance choice lives in the renderer profile.
 
 ## Packaging
 
@@ -130,7 +133,7 @@ Generated bundles, models, installers, credentials, local media, and environment
 
 ## Current limitations
 
-- No completed system audio, user-facing pause/resume, thumbnails, per-recording document draft persistence, or partial-recording recovery.
+- No completed system audio, user-facing pause/resume, thumbnails, or partial-recording recovery.
 - Startup marks unfinished recordings failed and removes their incomplete managed assets.
 - Playback loads the full processed MP4 into renderer memory; long-session memory use needs further validation.
 - Click analysis considers at most 200 clicks. Document context includes at most 300 ordered activity entries; cloud generation requests 2,048 output tokens.

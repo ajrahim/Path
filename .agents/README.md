@@ -17,7 +17,9 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Welcome screen and document shortcuts | [Workspace welcome](specs/WorkspaceWelcome.md)                      |
 | Imported logs and element paths       | [Recording logs and elements](../specs/RecordingLogsAndElements.md) |
 | Chat image and text context           | [Guide chat context](../specs/GuideChatContext.md)                  |
+| CLI text generation and code context  | [CLI tools](../specs/CliTools.md)                                   |
 | Settings sections and prompt library  | [Settings and prompts](../specs/SettingsAndPrompts.md)              |
+| Storage ownership, drafts, history    | [Local persistence](../specs/LocalPersistence.md)                   |
 | Feature specification creation        | [Create spec skill](../.github/skills/spec-create/SKILL.md)         |
 | Spec implementation workflow          | [Implement spec skill](../.github/skills/spec-implement/SKILL.md)   |
 | Spec review & verification            | [Review spec skill](../.github/skills/spec-review/SKILL.md)         |

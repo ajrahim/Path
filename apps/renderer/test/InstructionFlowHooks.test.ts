@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUILT_IN_FLOWS, FLOW_STORAGE_KEY, loadInstructionFlows } from "@path/shared";
+import { BUILT_IN_FLOWS, parseInstructionFlowState } from "@path/shared";
 import { useInstructionFlows } from "../src/hooks/useInstructionFlows";
 import { createInstructionFlowFixture } from "./InstructionFlowFixture";
 
@@ -29,50 +29,15 @@ async function setup(options?: Parameters<typeof useInstructionFlows>[0]) {
 }
 
 describe("instruction flow workflow", () => {
-  it("migrates legacy prompts and retains their recovery source", async () => {
-    const legacy = JSON.stringify({
-      selectedId: "custom-1",
-      customFlows: [{ id: "custom-1", name: "My prompt", instructions: "Keep my format" }],
-    });
-
-    window.localStorage.setItem(FLOW_STORAGE_KEY, legacy);
+  it("uses the desktop library and ignores prompts left in browser storage", async () => {
+    window.localStorage.setItem(
+      "path.instructionFlows.v1",
+      JSON.stringify({ selectedId: "custom-1", customFlows: [] }),
+    );
     const view = await setup();
 
-    await waitFor(() => expect(view.result.current.selectedFlow.id).toBe("custom-1"));
-    expect(view.result.current.selectedFlow.icon).toBe("file-text");
-    expect(window.localStorage.getItem(FLOW_STORAGE_KEY)).toBe(legacy);
-  });
-
-  it("waits for legacy migration before enabling prompt actions", async () => {
-    const legacy = loadInstructionFlows(
-      JSON.stringify({
-        selectedId: "custom-legacy",
-        customFlows: [{ id: "custom-legacy", name: "Legacy", instructions: "Use this prompt" }],
-      }),
-    );
-
-    let finishMigration!: (state: typeof legacy) => void;
-
-    window.localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(legacy));
-    vi.mocked(fixture.api.migrate).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishMigration = resolve;
-        }),
-    );
-    const { result } = renderHook(() => useInstructionFlows());
-
-    await waitFor(() => expect(fixture.api.migrate).toHaveBeenCalledOnce());
-    // Even an unrelated snapshot during migration must not enable fallback instructions.
-    act(() => fixture.publish(loadInstructionFlows(null)));
-    expect(result.current.loaded).toBe(false);
-    await act(async () => {
-      await result.current.selectFlow("spec-document");
-    });
-    expect(fixture.api.select).not.toHaveBeenCalled();
-    await act(async () => finishMigration({ ...legacy, revision: 1 }));
-    expect(result.current.loaded).toBe(true);
-    expect(result.current.selectedFlow.instructions).toBe("Use this prompt");
+    expect(view.result.current.selectedFlow.id).toBe("help-guide");
+    expect(fixture.api.save).not.toHaveBeenCalled();
   });
 
   it("edits default instructions and icon in place, but cannot delete or rename a default", async () => {
@@ -199,7 +164,7 @@ describe("instruction flow workflow", () => {
     });
     expect(second.result.current.selectedFlow.instructions).toBe("Saved in first window");
     expect(second.result.current.editor?.instructions).toBe("Uncommitted second window draft");
-    act(() => fixture.publish(loadInstructionFlows(null)));
+    act(() => fixture.publish(parseInstructionFlowState(null)));
     expect(second.result.current.selectedFlow.instructions).toBe("Saved in first window");
   });
 
@@ -211,7 +176,7 @@ describe("instruction flow workflow", () => {
     act(() => result.current.reviseInstructions("My unsaved draft"));
     act(() =>
       fixture.publish({
-        ...loadInstructionFlows(null),
+        ...parseInstructionFlowState(null),
         revision: 1,
         builtInOverrides: [{ id: original.id, instructions: "Newer saved prompt", icon: "bug" }],
       }),
@@ -237,24 +202,6 @@ describe("instruction flow workflow", () => {
       instructions: "My unsaved draft",
       error: "This prompt changed in another window.",
     });
-  });
-
-  it("keeps authoritative prompts usable when legacy migration fails", async () => {
-    fixture = createInstructionFlowFixture({
-      ...loadInstructionFlows(null),
-      revision: 4,
-      builtInOverrides: [{ id: "help-guide", instructions: "Saved override", icon: "code" }],
-    });
-    mocks.desktop = { instructionFlows: fixture.api };
-    window.localStorage.setItem(
-      FLOW_STORAGE_KEY,
-      JSON.stringify({ selectedId: "help-guide", customFlows: [] }),
-    );
-    vi.mocked(fixture.api.migrate).mockRejectedValueOnce(new Error("Migration failed"));
-    const { result } = await setup();
-
-    await waitFor(() => expect(result.current.error).toBe("Migration failed"));
-    expect(result.current.selectedFlow.instructions).toBe("Saved override");
   });
 
   it("does not enable actions when the initial desktop read fails", async () => {

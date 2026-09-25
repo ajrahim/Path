@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_FLOWS, loadInstructionFlows } from "@path/shared";
+import { BUILT_IN_FLOWS, parseInstructionFlowState } from "@path/shared";
 
 describe("instruction flows", () => {
   it("provides help and spec presets with distinct output requirements", () => {
@@ -25,10 +25,9 @@ describe("instruction flows", () => {
   });
 
   it("defaults to Help Guide and restores built-in selection", () => {
-    expect(loadInstructionFlows(null).selectedId).toBe("help-guide");
+    expect(parseInstructionFlowState(null).selectedId).toBe("help-guide");
     expect(
-      loadInstructionFlows(JSON.stringify({ selectedId: "spec-document", customFlows: [] }))
-        .selectedId,
+      parseInstructionFlowState({ selectedId: "spec-document", customFlows: [] }).selectedId,
     ).toBe("spec-document");
   });
 
@@ -38,32 +37,29 @@ describe("instruction flows", () => {
     expect(feedback.name).toBe("Provide Feedback");
     expect(feedback.instructions).toContain("reproduction steps that were actually shown");
     expect(feedback.instructions).toContain("Separate observed facts");
-    expect(
-      loadInstructionFlows(JSON.stringify({ selectedId: feedback.id, customFlows: [] })).selectedId,
-    ).toBe(feedback.id);
+    expect(parseInstructionFlowState({ selectedId: feedback.id, customFlows: [] }).selectedId).toBe(
+      feedback.id,
+    );
   });
 
   it("restores named custom flows and the selection", () => {
     const state = {
       selectedId: "custom-qa",
-      customFlows: [{ id: "custom-qa", name: "QA Checklist", instructions: "Write test cases." }],
+      customFlows: [
+        { id: "custom-qa", name: "QA Checklist", instructions: "Write test cases.", icon: "bug" },
+      ],
     };
 
-    expect(loadInstructionFlows(JSON.stringify(state))).toMatchObject({
-      ...state,
-      customFlows: [{ ...state.customFlows[0], icon: "file-text" }],
-    });
+    expect(parseInstructionFlowState(state)).toMatchObject(state);
   });
 
   it("recovers from malformed storage and invalid selections", () => {
-    expect(loadInstructionFlows("{bad").selectedId).toBe("help-guide");
+    expect(parseInstructionFlowState("bad").selectedId).toBe("help-guide");
     expect(
-      loadInstructionFlows(
-        JSON.stringify({
-          selectedId: "gone",
-          customFlows: [null, {}, { id: "help-guide", name: "Override", instructions: "No" }],
-        }),
-      ),
+      parseInstructionFlowState({
+        selectedId: "gone",
+        customFlows: [null, {}, { id: "help-guide", name: "Override", instructions: "No" }],
+      }),
     ).toMatchObject({ selectedId: "help-guide", customFlows: [] });
   });
 });

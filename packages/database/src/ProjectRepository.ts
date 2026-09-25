@@ -12,25 +12,30 @@ import { projects, projectRecordings, recordings } from "./Schema";
 export class ProjectRepository {
   constructor(private readonly db: PathDatabase) {}
 
-  async list(): Promise<RecordingProject[]> {
+  list(): RecordingProject[] {
     const rows = this.db
       .select()
       .from(projects)
       .orderBy(asc(projects.createdAt), asc(projects.id))
       .all();
 
-    const members = this.db.select().from(projectRecordings).all();
+    const recordingIdsByProject = new Map<string, string[]>();
+
+    for (const member of this.db.select().from(projectRecordings).all()) {
+      const recordingIds = recordingIdsByProject.get(member.projectId) ?? [];
+
+      recordingIds.push(member.recordingId);
+      recordingIdsByProject.set(member.projectId, recordingIds);
+    }
 
     return rows.map((row) => ({
       id: row.id,
       name: row.name,
-      recordingIds: members
-        .filter((member) => member.projectId === row.id)
-        .map((member) => member.recordingId),
+      recordingIds: recordingIdsByProject.get(row.id) ?? [],
     }));
   }
 
-  async change(rawInput: ProjectChangeInput): Promise<RecordingProject[]> {
+  change(rawInput: ProjectChangeInput): RecordingProject[] {
     const input = projectChangeInputSchema.parse(rawInput);
 
     this.db.transaction((tx) => {

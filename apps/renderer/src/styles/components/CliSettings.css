@@ -1,0 +1,32 @@
+.cli-connections {
+  overflow: hidden;
+}
+
+.cli-connection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+}
+
+.cli-connection-row + .cli-connection-row {
+  border-top: 1px solid var(--border);
+}
+
+.cli-connection-row strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cli-connection-row p,
+.cli-sign-in-help {
+  margin: 5px 0 0;
+  color: var(--muted-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cli-sign-in-help {
+  margin-top: 14px;
+}

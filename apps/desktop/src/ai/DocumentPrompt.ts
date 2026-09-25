@@ -2,7 +2,9 @@ import type { ClickEvent, TranscriptSegment } from "@path/shared";
 import type { DocumentTimelineEntry } from "../recording/TimelineImportService";
 
 const MAX_DOCUMENT_ACTIVITY_ITEMS = 300;
-const MAX_DOCUMENT_IMPORTED_ITEMS = 200;
+
+/** Imported log and element rows sampled into one generation prompt. */
+export const MAX_DOCUMENT_IMPORTED_ITEMS = 200;
 const MAX_DOCUMENT_IMPORTED_TEXT_LENGTH = 300;
 
 interface DocumentActivityItem {

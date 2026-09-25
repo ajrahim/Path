@@ -1,13 +1,13 @@
 import { vi } from "vitest";
 import {
   BUILT_IN_FLOWS,
-  loadInstructionFlows,
+  parseInstructionFlowState,
   type DesktopApi,
   type InstructionFlowState,
 } from "@path/shared";
 
 /** In-memory bridge for renderer tests; service invariants are covered by desktop tests. */
-export function createInstructionFlowFixture(initial = loadInstructionFlows(null)) {
+export function createInstructionFlowFixture(initial = parseInstructionFlowState(null)) {
   let state = structuredClone(initial);
   const listeners = new Set<(snapshot: InstructionFlowState) => void>();
 
@@ -20,21 +20,6 @@ export function createInstructionFlowFixture(initial = loadInstructionFlows(null
 
   const api: DesktopApi["instructionFlows"] = {
     get: vi.fn(async () => structuredClone(state)),
-    migrate: vi.fn(async (legacy) => {
-      const existing = new Set(state.customFlows.map(({ id }) => id));
-      const incoming = loadInstructionFlows(JSON.stringify(legacy)).customFlows.filter(
-        ({ id }) => !existing.has(id),
-      );
-
-      if (!incoming.length && state.revision) return structuredClone(state);
-
-      return publish({
-        ...state,
-        customFlows: [...state.customFlows, ...incoming],
-        selectedId: state.revision ? state.selectedId : legacy.selectedId,
-        revision: state.revision + 1,
-      });
-    }),
     select: vi.fn(async ({ id }) =>
       publish({ ...state, selectedId: id, revision: state.revision + 1 }),
     ),

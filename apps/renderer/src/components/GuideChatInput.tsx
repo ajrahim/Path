@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { FileText, LoaderCircle, Mic, Send, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { FileText, Folder, LoaderCircle, Mic, Send, X } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useCliTools } from "../hooks/useCliTools";
+import { getDesktopApi } from "../lib/Desktop";
 import { Button } from "./Button";
 import { GuideChatContext } from "./GuideChatContext";
 import { MAX_GUIDE_CONTEXT_ITEMS, type GuideContextItem } from "@path/shared";
@@ -57,9 +59,26 @@ export function GuideChatInput({
 }: {
   updating: boolean;
   disabled: boolean;
-  onSend(prompt: string, context: GuideContextItem[]): void | boolean | Promise<boolean | void>;
+  onSend(
+    prompt: string,
+    context: GuideContextItem[],
+    contextFolder?: string,
+  ): void | boolean | Promise<boolean | void>;
 }) {
   const t = useTranslations("guide");
+  const contextFolderHintId = useId();
+  const cli = useCliTools();
+  const [contextFolder, setContextFolder] = useState<string | null>(null);
+  const [folderError, setFolderError] = useState(false);
+  const [choosingFolder, setChoosingFolder] = useState(false);
+  const canUseFolder =
+    cli.state?.mode === "cli" &&
+    Boolean(cli.state.selection && cli.state.connected.includes(cli.state.selection.tool));
+
+  const folderHint = canUseFolder
+    ? (contextFolder ?? t("chatContextFolder"))
+    : t("chatContextFolderHint");
+
   const [context, setContext] = useState<GuideContextItem[]>([]);
   const [processing, setProcessing] = useState(false);
   const [sending, setSending] = useState(false);
@@ -68,7 +87,7 @@ export function GuideChatInput({
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const dictationBaseRef = useRef("");
-  const busy = disabled || updating || processing || sending;
+  const busy = disabled || updating || processing || sending || choosingFolder;
   const supported = getSpeechRecognition() !== null;
 
   useEffect(() => {
@@ -89,7 +108,9 @@ export function GuideChatInput({
     setSending(true);
     setSendError(false);
     try {
-      const sent = await onSend(request, context);
+      const sent = await (canUseFolder && contextFolder
+        ? onSend(request, context, contextFolder)
+        : onSend(request, context));
 
       if (sent !== false) {
         setPrompt("");
@@ -156,6 +177,11 @@ export function GuideChatInput({
 
   return (
     <div className="guide-chat">
+      {folderError && (
+        <p className="guide-chat-error" role="alert">
+          {t("chatChooseFolderFailed")}
+        </p>
+      )}
       {sendError && (
         <p className="guide-chat-error" role="alert">
           {t("chatContextSendFailed")}
@@ -214,6 +240,52 @@ export function GuideChatInput({
             onAdd={(item) => setContext((current) => [...current, item])}
             onProcessingChange={setProcessing}
           />
+          <span className="guide-chat-context-folder-wrap" title={folderHint}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="guide-chat-context-folder"
+              disabled={busy || !canUseFolder}
+              onClick={async () => {
+                setChoosingFolder(true);
+                setFolderError(false);
+                try {
+                  const folder = await getDesktopApi()?.cli.chooseFolder();
+
+                  if (folder) setContextFolder(folder);
+                } catch {
+                  setFolderError(true);
+                } finally {
+                  setChoosingFolder(false);
+                }
+              }}
+              aria-describedby={contextFolderHintId}
+            >
+              <Folder aria-hidden="true" size={14} />
+              <span>
+                {contextFolder && canUseFolder
+                  ? contextFolder.split(/[\\/]/).filter(Boolean).at(-1)
+                  : t("chatContextFolder")}
+              </span>
+            </Button>
+            <span className="sr-only" id={contextFolderHintId}>
+              {folderHint}
+            </span>
+          </span>
+          {contextFolder && canUseFolder && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              disabled={busy}
+              aria-label={t("chatRemoveFolder")}
+              title={t("chatRemoveFolder")}
+              onClick={() => setContextFolder(null)}
+            >
+              <X size={12} />
+            </Button>
+          )}
           <span className="guide-chat-spacer" aria-hidden="true" />
           <Button
             type="button"

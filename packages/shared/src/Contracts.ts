@@ -4,12 +4,7 @@ export type RecordingStatus = "recording" | "processing" | "ready" | "failed";
 
 export type TranscriptStatus = "pending" | "processing" | "ready" | "failed";
 
-export type GuideStatus = "none" | "generating" | "ready" | "failed";
-
 export type MouseButton = "left" | "right" | "middle";
-
-export type GuideFormat =
-  "help-guide" | "knowledge-base" | "tutorial" | "internal-sop" | "blog-post";
 
 export const aiProviders = ["anthropic", "openai", "google", "openrouter"] as const;
 
@@ -115,9 +110,6 @@ export interface DesktopSettings {
   general: GeneralSettings;
   timelineImports: TimelineImportSettings;
   recordingsDirectory: string;
-  /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
-  guideInstructions: string;
-  localVisionModel: string;
   aiModelSelections: AiModelSelections;
 }
 
@@ -225,8 +217,7 @@ export interface RecordingSession extends RecordingSummary {
   captureRegion: CaptureRegion | null;
   videoPath: string | null;
   audioPath: string | null;
-  guideStatus: GuideStatus;
-  /** Null for recordings captured before media timing was persisted. */
+  /** Null until capture stops; imported evidence cannot be aligned before then. */
   mediaTiming: RecordingMediaTiming | null;
 }
 
@@ -238,11 +229,10 @@ export const MAX_TIMELINE_IMPORT_OFFSET_MS = 86_400_000;
 /** Evidence captured outside Path: application log rows or tracked UI element paths. */
 export type TimelineImportKind = (typeof timelineImportKinds)[number];
 
-/** Real-world interval covered by the video; estimated for recordings without media timing. */
+/** Real-world interval covered by the video. */
 export interface RecordingTimeWindow {
   startedAt: string;
   endedAt: string;
-  isApproximate: boolean;
 }
 
 /** An imported row with its original wall-clock time and its aligned media offset. */
@@ -253,15 +243,29 @@ export interface TimelineImportEntry {
   text: string;
 }
 
-/** One imported file per kind; entries include only rows inside the video after the offset. */
+/**
+ * One imported file per kind. Rows are read in pages; `entryCount` rows fall inside the video
+ * after the offset and `outsideCount` are stored but currently outside it.
+ */
 export interface TimelineImport {
   kind: TimelineImportKind;
   fileName: string;
   offsetMs: number;
   importedAt: string;
-  entries: TimelineImportEntry[];
+  rowCount: number;
+  entryCount: number;
   outsideCount: number;
   unreadableLineCount: number;
+}
+
+/** Upper bound for one page of imported rows sent to a renderer. */
+export const MAX_TIMELINE_IMPORT_PAGE_ROWS = 500;
+
+/** Rows `start` onward of the rows inside the video that match an optional search query. */
+export interface TimelineImportRowsPage {
+  start: number;
+  total: number;
+  entries: TimelineImportEntry[];
 }
 
 /** A null window means the recording has no media duration to align against yet. */
@@ -324,17 +328,70 @@ export interface ClickAnalysisResult {
   failedCount: number;
 }
 
-export interface GeneratedGuide {
-  title: string;
+/**
+ * Why a revision exists: an AI generation or update, unsaved text checkpointed before it was
+ * replaced, an explicit save, or a restored earlier revision.
+ */
+export type DocumentRevisionKind = "generated" | "ai-update" | "checkpoint" | "saved" | "restored";
+
+/** Metadata for one durable, append-only document revision; its Markdown is read separately. */
+export interface DocumentRevisionSummary {
+  number: number;
+  kind: DocumentRevisionKind;
+  createdAt: string;
+  characterCount: number;
+  restoredFromNumber: number | null;
+}
+
+export interface DocumentRevision extends DocumentRevisionSummary {
   markdown: string;
 }
 
-/** One durable Markdown document per recording; the editor draft syncs to this row on save. */
-export interface PersistedGuide {
+/** Newest-first revisions; `hasMore` means older revisions remain. */
+export interface DocumentRevisionPage {
+  revisions: DocumentRevisionSummary[];
+  hasMore: boolean;
+}
+
+/**
+ * The durable state an editor opens with. The saved revision is the last explicit save; a draft
+ * holds unsaved text that survives restarts and exists only while it differs from the save.
+ */
+export interface GuideDocumentSnapshot {
   recordingId: string;
-  title: string;
+  saved: { revisionNumber: number; markdown: string; savedAt: string } | null;
+  draft: { markdown: string; updatedAt: string } | null;
+  draftVersion: number;
+  latestRevisionNumber: number | null;
+}
+
+/** A draft write is rejected when another editor changed the draft after this one last saw it. */
+export type SaveGuideDraftResult =
+  | { status: "stored"; draftVersion: number; hasDraft: boolean }
+  | { status: "conflict"; draftVersion: number };
+
+/** A save is acknowledged only after its transaction commits; stale saves are rejected. */
+export type SaveGuideDocumentResult =
+  | {
+      status: "saved";
+      revision: DocumentRevisionSummary;
+      savedAt: string;
+      draftVersion: number;
+    }
+  | { status: "conflict"; savedRevisionNumber: number | null };
+
+/** Generated, updated, and restored Markdown is committed to history before it is returned. */
+export interface CommittedGuideRevision {
   markdown: string;
-  updatedAt: string;
+  revision: DocumentRevisionSummary;
+}
+
+/** Broadcast after a committed document change so every window can refresh its view. */
+export interface GuideDocumentChange {
+  recordingId: string;
+  draftVersion: number;
+  savedRevisionNumber: number | null;
+  latestRevisionNumber: number | null;
 }
 
 export interface AppInfo {

@@ -1,17 +1,17 @@
-import { app, BrowserWindow, session } from "electron";
+import { stopCliProcesses } from "./ai/CliProcess";
+import { CliToolService } from "./ai/CliToolService";
+import { app, BrowserWindow, dialog, session } from "electron";
 import { IPC_CHANNELS } from "@path/shared";
 import { createRequire } from "node:module";
-import { stat } from "node:fs/promises";
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-  AppSettingsRepository,
-  openDatabase,
-  RecordingRepository,
-  ProjectRepository,
-  TimelineImportRepository,
-} from "@path/database";
+import { GuideDocumentService } from "./documents/GuideDocumentService";
 import { registerIpcHandlers } from "./ipc/RegisterIpc";
+import { RendererFlush } from "./ipc/RendererFlush";
+import { recoverRecordings } from "./recording/StartupRecovery";
+import { AssetDeletionQueue } from "./storage/AssetDeletionQueue";
+import { DatabaseClient, type DatabaseUnavailableError } from "./storage/DatabaseClient";
+import { DiagnosticLog } from "./storage/DiagnosticLog";
 import { ManagedRecordingAssets } from "./storage/ManagedRecordingAssets";
 import { AiCredentialStore } from "./storage/AiCredentialStore";
 import { TrayController } from "./tray/TrayController";
@@ -40,10 +40,15 @@ import { DesktopSettingsService } from "./settings/DesktopSettingsService";
 import { InstructionFlowService } from "./settings/InstructionFlowService";
 import { OllamaClickActionAnalyzer } from "./ai/OllamaClickActionAnalyzer";
 import { SelectedAiService } from "./ai/SelectedAiService";
-import { resolveUserDataDirectory } from "./storage/UserDataDirectory";
+import {
+  createUserDataDirectories,
+  resolveUserDataDirectory,
+  userDataLayout,
+} from "./storage/UserDataDirectory";
 
-// A ready recording smaller than this never held decodable media; re-mark it failed on startup.
-const MINIMUM_READY_MEDIA_BYTES = 1_024;
+// Orderly quit: windows first save pending drafts, then queued database work drains.
+const RENDERER_FLUSH_TIMEOUT_MS = 2_000;
+const DATABASE_CLOSE_TIMEOUT_MS = 10_000;
 
 app.setName("Path");
 const userDataDirectory = resolveUserDataDirectory(
@@ -68,6 +73,7 @@ if (!hasSingleInstanceLock) {
     }
 
     const dataDirectory = app.getPath("userData");
+    const layout = userDataLayout(dataDirectory);
     const migrationsDirectory = app.isPackaged
       ? join(process.resourcesPath, "migrations")
       : resolve(app.getAppPath(), "../../packages/database/drizzle");
@@ -78,13 +84,48 @@ if (!hasSingleInstanceLock) {
 
     handleRendererScheme(rendererDirectory);
     const rendererUrl = process.env.PATH_APP_RENDERER_URL ?? RENDERER_ORIGIN;
-    const connection = openDatabase(join(dataDirectory, "database.sqlite"), migrationsDirectory);
-    const recordings = new RecordingRepository(connection.db);
-    const appSettings = new AppSettingsRepository(connection.db);
-    const defaultRecordingsDirectory = join(dataDirectory, "recordings");
-    const assets = new ManagedRecordingAssets(defaultRecordingsDirectory);
-    const settings = new DesktopSettingsService(appSettings, assets, defaultRecordingsDirectory);
-    const instructionFlows = new InstructionFlowService(appSettings, (state) => {
+
+    await createUserDataDirectories(layout);
+
+    const diagnostics = new DiagnosticLog(layout.logsDirectory);
+
+    await diagnostics.initialize();
+
+    // All SQL runs in the database worker; nothing is exposed until migrations and recovery finish.
+    let database: DatabaseClient;
+
+    try {
+      database = await DatabaseClient.open({
+        workerPath: join(__dirname, "database-worker.cjs"),
+        databasePath: layout.databasePath,
+        migrationsFolder: migrationsDirectory,
+        onUnexpectedExit: (error) => void reportDatabaseFailure(error, diagnostics),
+      });
+    } catch (error) {
+      // Never reset or delete the file here: the user's data may still be recoverable.
+      diagnostics.error("The local database could not be opened", error);
+      await diagnostics.flush();
+      dialog.showErrorBox(
+        "Path could not open its local data",
+        `${error instanceof Error ? error.message : String(error)}\n\nDatabase: ${layout.databasePath}`,
+      );
+      app.exit(1);
+
+      return;
+    }
+
+    const repositories = database.repositories;
+    const recordings = repositories.recordings;
+    const assets = new ManagedRecordingAssets();
+    const assetDeletions = new AssetDeletionQueue(repositories.assetDeletions, assets, diagnostics);
+    const settings = new DesktopSettingsService(
+      repositories,
+      assets,
+      layout.defaultRecordingsDirectory,
+      diagnostics,
+    );
+
+    const instructionFlows = new InstructionFlowService(repositories.appSettings, (state) => {
       for (const window of BrowserWindow.getAllWindows()) {
         if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
 
@@ -92,40 +133,14 @@ if (!hasSingleInstanceLock) {
       }
     });
 
-    const aiCredentials = new AiCredentialStore(
-      join(dataDirectory, "credentials", "ai-providers.json"),
-    );
+    const aiCredentials = new AiCredentialStore(layout.credentialsPath);
 
     await settings.initialize();
     await instructionFlows.initialize();
 
     // Interrupted captures cannot be resumed; recover their status before history is exposed.
-    const unfinishedRecordings = await recordings.listUnfinished();
-
-    await recordings.markUnfinishedFailed();
-
-    for (const recording of unfinishedRecordings) {
-      await assets.delete(recording.id);
-    }
-
-    for (const recording of await recordings.list()) {
-      if (recording.status !== "ready") continue;
-
-      const session = await recordings.get(recording.id);
-
-      if (!session?.videoPath || !assets.isManagedFile(session.videoPath)) {
-        await recordings.markFailed(recording.id);
-        continue;
-      }
-
-      try {
-        const media = await stat(session.videoPath);
-
-        if (media.size < MINIMUM_READY_MEDIA_BYTES) await recordings.markFailed(recording.id);
-      } catch {
-        await recordings.markFailed(recording.id);
-      }
-    }
+    await recoverRecordings(recordings, assets, diagnostics);
+    void assetDeletions.process();
 
     const mediaServer = new RecordingMediaServer(recordings, assets);
 
@@ -184,7 +199,12 @@ if (!hasSingleInstanceLock) {
       ? join(process.resourcesPath, process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
       : (require("ffmpeg-static") as string);
 
-    const clickCapture = new ClickCaptureCoordinator(recordings, assets, new UiohookInputCapture());
+    const clickCapture = new ClickCaptureCoordinator(
+      recordings,
+      assets,
+      new UiohookInputCapture(),
+      diagnostics,
+    );
 
     // The bundled transcription executable is currently available only on Windows.
     const transcriptProvider =
@@ -193,16 +213,27 @@ if (!hasSingleInstanceLock) {
             executablePath: app.isPackaged
               ? join(process.resourcesPath, "whisper", "whisper-cli.exe")
               : resolve(app.getAppPath(), "vendor/whisper/win32-x64/Release/whisper-cli.exe"),
-            modelDirectory: join(dataDirectory, "models", "whisper"),
+            modelDirectory: layout.whisperModelsDirectory,
           })
         : null;
 
     const ollama = new OllamaClickActionAnalyzer(
-      process.env.PATH_APP_LOCAL_VISION_MODEL ?? settings.get().localVisionModel,
+      process.env.PATH_APP_LOCAL_VISION_MODEL,
       process.env.PATH_APP_OLLAMA_URL,
     );
 
-    const aiService = new SelectedAiService(settings, aiCredentials, ollama);
+    const cliTools = new CliToolService(
+      repositories.appSettings,
+      layout.cliWorkDirectory,
+      (state) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send(IPC_CHANNELS.cliChanged, state);
+        }
+      },
+    );
+
+    await cliTools.initialize();
+    const aiService = new SelectedAiService(settings, aiCredentials, ollama, cliTools);
     const recording = new RecordingController(
       recordings,
       assets,
@@ -211,6 +242,7 @@ if (!hasSingleInstanceLock) {
       clickCapture,
       transcriptProvider,
       aiService,
+      diagnostics,
     );
 
     const regionSelector = new RegionSelector(rendererTarget);
@@ -234,10 +266,31 @@ if (!hasSingleInstanceLock) {
       recordingWindows.update(state);
     });
 
+    const timelineImports = new TimelineImportService(repositories, database, settings);
+    const documents = new GuideDocumentService(
+      repositories,
+      timelineImports,
+      aiService,
+      diagnostics,
+      (change) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+
+          window.webContents.send(IPC_CHANNELS.guidesChanged, change);
+        }
+      },
+    );
+
+    const rendererFlush = new RendererFlush();
+
     registerIpcHandlers({
+      cliTools,
       recordings,
-      projects: new ProjectRepository(connection.db),
+      projects: repositories.projects,
+      documents,
       assets,
+      assetDeletions,
+      rendererFlush,
       tray,
       recording,
       captureWorker,
@@ -248,22 +301,48 @@ if (!hasSingleInstanceLock) {
       settings,
       instructionFlows,
       aiService,
-      timelineImports: new TimelineImportService(
-        recordings,
-        new TimelineImportRepository(connection.db),
-        settings,
-      ),
+      timelineImports,
       openSettingsWindow,
     });
 
     let isQuitting = false;
+    let isShutdownStarted = false;
 
-    app.on("before-quit", () => {
+    // The first quit request is deferred until durable work is flushed; the second proceeds.
+    app.on("before-quit", (event) => {
       isQuitting = true;
+
+      if (isShutdownStarted) return;
+
+      isShutdownStarted = true;
+      event.preventDefault();
+      void flushBeforeQuit().finally(() => app.quit());
+    });
+
+    async function flushBeforeQuit(): Promise<void> {
+      stopCliProcesses();
       tray.destroy();
       mediaServer.close();
-      connection.close();
-    });
+
+      try {
+        const unacknowledged = await rendererFlush.flushAll(
+          BrowserWindow.getAllWindows().map((window) => window.webContents),
+          RENDERER_FLUSH_TIMEOUT_MS,
+        );
+
+        if (unacknowledged > 0) {
+          diagnostics.warn(`${unacknowledged} windows did not confirm their pending writes`);
+        }
+
+        await clickCapture.flush();
+        await assetDeletions.process();
+        await database.close(DATABASE_CLOSE_TIMEOUT_MS);
+      } catch (error) {
+        diagnostics.error("Shutdown did not complete cleanly", error);
+      } finally {
+        await diagnostics.flush();
+      }
+    }
 
     // Closing a window may hide it; process shutdown must bypass that behavior.
     mainWindow.on("close", (event) => {
@@ -284,4 +363,25 @@ if (!hasSingleInstanceLock) {
       recordingWindows.restoreMainWindow();
     });
   });
+}
+
+/** The worker stopped unexpectedly; data already committed is safe, so offer a restart. */
+async function reportDatabaseFailure(
+  error: DatabaseUnavailableError,
+  diagnostics: DiagnosticLog,
+): Promise<void> {
+  diagnostics.error("The database worker stopped unexpectedly", error);
+  await diagnostics.flush();
+
+  const { response } = await dialog.showMessageBox({
+    type: "error",
+    title: "Path",
+    message: "Path's local database stopped unexpectedly.",
+    detail: "Saved work is safe. Restart Path to continue.",
+    buttons: ["Restart Path", "Quit"],
+    defaultId: 0,
+  });
+
+  if (response === 0) app.relaunch();
+  app.exit(1);
 }

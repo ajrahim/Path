@@ -7,12 +7,6 @@ import {
 } from "@path/shared";
 import { InstructionFlowService } from "../src/settings/InstructionFlowService";
 
-const legacyFlow = {
-  id: "custom-legacy",
-  name: "Release notes",
-  instructions: "Describe changes.",
-};
-
 const draft = {
   name: "My prompt",
   instructions: "Document what happened.",
@@ -44,82 +38,30 @@ function expectedPrompt({ name, instructions, icon }: InstructionFlow) {
 }
 
 describe("InstructionFlowService", () => {
-  it("migrates legacy prompts with icons once and preserves them after restart", async () => {
-    const { library, repository, changed } = await createLibrary();
-    const state = await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
+  it("persists custom prompts, default edits, and selection across a restart", async () => {
+    const { library, repository } = await createLibrary();
+    const created = await library.save({ ...draft, select: true });
+    const custom = created.customFlows[0]!;
+    const helpGuide = BUILT_IN_FLOWS[0]!;
 
-    expect(state).toMatchObject({
-      selectedId: legacyFlow.id,
-      revision: 1,
-      customFlows: [{ ...legacyFlow, icon: "file-text" }],
+    await library.save({
+      id: helpGuide.id,
+      name: helpGuide.name,
+      instructions: "Edited default.",
+      icon: "bug",
+      expected: expectedPrompt(helpGuide),
     });
-    await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-    expect(changed).toHaveBeenCalledTimes(1);
+
     const restored = new InstructionFlowService(repository);
 
     await restored.initialize();
-    expect(restored.get()).toEqual(state);
-  });
 
-  it("allows a later window to migrate after an empty first window", async () => {
-    const { library, repository } = await createLibrary();
-
-    await library.migrate({ selectedId: "help-guide", customFlows: [] });
-    expect(repository.set).not.toHaveBeenCalled();
-    const state = await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-
-    expect(state.selectedId).toBe(legacyFlow.id);
-  });
-
-  it("keeps edited defaults and the current selection when legacy data arrives later", async () => {
-    const { library } = await createLibrary();
-
-    await library.save({
-      ...BUILT_IN_FLOWS[0],
-      instructions: "Custom default text.",
-      icon: "bug",
-      expected: expectedPrompt(BUILT_IN_FLOWS[0]),
+    expect(restored.get()).toMatchObject({
+      selectedId: custom.id,
+      customFlows: [expect.objectContaining(expectedPrompt(custom))],
+      builtInOverrides: [{ id: helpGuide.id, instructions: "Edited default.", icon: "bug" }],
+      revision: 2,
     });
-    await library.select({ id: "spec-document" });
-    const state = await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-
-    expect(state.selectedId).toBe("spec-document");
-    expect(resolveInstructionFlows(state)[0]).toMatchObject({
-      instructions: "Custom default text.",
-      icon: "bug",
-    });
-  });
-
-  it("never overwrites an imported prompt or resurrects one after deletion and restart", async () => {
-    const { library, repository } = await createLibrary();
-
-    await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-    await library.save({
-      ...legacyFlow,
-      instructions: "Edited content.",
-      icon: "bug",
-      expected: expectedPrompt({ ...legacyFlow, icon: "file-text" }),
-    });
-    await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-    expect(library.get().customFlows[0].instructions).toBe("Edited content.");
-    await library.remove({ id: legacyFlow.id });
-    const restored = new InstructionFlowService(repository);
-
-    await restored.initialize();
-    await restored.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-    expect(restored.get().customFlows).toEqual([]);
-  });
-
-  it("preserves conflicting imported names under a unique name", async () => {
-    const { library } = await createLibrary();
-
-    await library.save({ ...draft, name: legacyFlow.name });
-    const state = await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-
-    expect(state.customFlows.map((flow) => flow.name)).toEqual([
-      legacyFlow.name,
-      "Release notes (2)",
-    ]);
   });
 
   it("allows editing default text and icons but rejects renaming and deletion", async () => {
@@ -192,18 +134,6 @@ describe("InstructionFlowService", () => {
 
     expect(state.revision).toBe(1);
     expect(changed).toHaveBeenCalledOnce();
-  });
-
-  it("leaves failed migration retryable and imports the legacy data on retry", async () => {
-    const { library, repository } = await createLibrary();
-
-    repository.set.mockRejectedValueOnce(new Error("Disk unavailable"));
-    await expect(
-      library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] }),
-    ).rejects.toThrow("Disk unavailable");
-    const state = await library.migrate({ selectedId: legacyFlow.id, customFlows: [legacyFlow] });
-
-    expect(state.customFlows).toHaveLength(1);
   });
 
   it("serializes edits and selection against the latest committed state", async () => {

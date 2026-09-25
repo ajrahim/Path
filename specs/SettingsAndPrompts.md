@@ -12,7 +12,7 @@ Give each Settings section its own sidebar-controlled view, expose Light and Dar
 - General includes Light and Dark choices using the existing `next-themes` provider and `path.theme` preference. Theme changes apply to other open renderer windows through their shared origin. The Settings caption overlay follows its theme; the workspace caption keeps its existing brand color.
 - Prompts lists default and custom prompts as compact icon, name, and Edit rows. The editor's icon dropdown sits inside the right edge of the prompt-name field. Default identities and names remain fixed; their instructions and icons can be edited, and defaults cannot be deleted.
 - Custom prompts can be created, renamed, edited, and deleted. The chosen icon appears in the workspace dropdown. Creating a prompt in Settings preserves the workspace selection; creating one from the workspace selects it.
-- The desktop owns durable prompt storage and broadcasts committed snapshots. Legacy `path.instructionFlows.v1` custom prompts migrate without overwriting desktop edits or resurrecting deleted migrated prompts. Legacy storage remains available as a recovery source.
+- The desktop owns durable prompt storage and broadcasts committed snapshots. Prompts left in renderer storage by pre-release builds are not read ([Local persistence](LocalPersistence.md)).
 - Writes are serialized against the latest committed library. A stale draft for a prompt changed in another window must be rejected without discarding the user's draft. Unrelated prompt or selection changes must not prevent a valid save.
 
 ## Acceptance criteria
@@ -22,16 +22,15 @@ Give each Settings section its own sidebar-controlled view, expose Light and Dar
 - [x] Light and Dark choices persist and synchronize between Settings and workspace; keyboard navigation, focus indicators, and both themes remain usable.
 - [x] Default prompts remain available after editing text or icons and cannot be renamed or deleted through either the UI or desktop boundary.
 - [x] Custom prompt creation, editing, renaming, deletion, selected-prompt fallback, and dropdown icons persist after restart.
-- [x] Migration retains valid legacy prompts and selection when applicable, resolves name conflicts without discarding prompts, and does not overwrite edits or restore deleted migrated prompts on subsequent loads.
 - [x] Concurrent changes to different prompts preserve both results. A stale edit of the same prompt is rejected with its draft intact.
 - [x] Failed persistence does not replace the committed library or publish a successful update; retries remain possible. Failed loading does not silently enable a default prompt in place of an unavailable saved selection.
 - [x] Repository checks, focused tests, route verification, and the production build have recorded results; remaining native or environment limitations are stated explicitly.
 
 ## Compatibility and boundaries
 
-Keep existing built-in IDs, names, and default instruction text. Preserve existing custom prompt content and user selection during migration. Prompt input is validated at the desktop boundary, with names limited to 80 characters, instructions to 10,000 characters, and icons selected from the shared allowlist. Provider credentials remain under the existing encrypted desktop owner.
+Keep existing built-in IDs, names, and default instruction text. Prompt input is validated at the desktop boundary, with names limited to 80 characters, instructions to 10,000 characters, and icons selected from the shared allowlist. Provider credentials remain under the existing encrypted desktop owner.
 
-The desktop uses its existing settings repository; this feature introduces no database schema migration. Renderer-only preview can show the interface without a desktop bridge but cannot write the durable library. Built-in edits change future prompt use and do not rewrite existing generated documents.
+The desktop stores the library as a validated `app_settings` row. Renderer-only preview can show the interface without a desktop bridge but cannot write the durable library. Built-in edits change future prompt use and do not rewrite existing generated documents.
 
 ## Out of scope
 
@@ -44,7 +43,7 @@ The desktop uses its existing settings repository; this feature introduces no da
 
 - [`SettingsPage`](../apps/renderer/src/pages/SettingsPage.tsx) and [`useSettingsNavigation`](../apps/renderer/src/hooks/useSettingsNavigation.ts) own section views and hash navigation. [`useSettingsEditor`](../apps/renderer/src/hooks/useSettingsEditor.ts) retains existing settings drafts and operations.
 - [`_app`](../apps/renderer/src/pages/_app.tsx), [`SettingsPage`](../apps/renderer/src/pages/SettingsPage.tsx), [`RendererProtocol`](../apps/desktop/src/windows/RendererProtocol.ts), and [`SettingsWindow`](../apps/desktop/src/windows/SettingsWindow.ts) own existing theme persistence, shared renderer origin, and native Settings captions.
-- [`InstructionFlows`](../packages/shared/src/InstructionFlows.ts) owns default prompts, icon IDs, validation, and snapshot contracts. [`InstructionFlowService`](../apps/desktop/src/settings/InstructionFlowService.ts) owns migration and durable, serialized mutations through [`RegisterIpc`](../apps/desktop/src/ipc/RegisterIpc.ts) and [`Preload`](../apps/desktop/src/Preload.ts).
+- [`InstructionFlows`](../packages/shared/src/InstructionFlows.ts) owns default prompts, icon IDs, validation, and snapshot contracts. [`InstructionFlowService`](../apps/desktop/src/settings/InstructionFlowService.ts) owns durable, serialized mutations through [`RegisterIpc`](../apps/desktop/src/ipc/RegisterIpc.ts) and [`Preload`](../apps/desktop/src/Preload.ts).
 - [`useInstructionFlows`](../apps/renderer/src/hooks/useInstructionFlows.ts) owns snapshots and local editor drafts. [`InstructionFlowEditor`](../apps/renderer/src/components/InstructionFlowEditor.tsx), [`InstructionFlowGlyph`](../apps/renderer/src/components/InstructionFlowGlyph.tsx), and [`InstructionFlowSelect`](../apps/renderer/src/components/InstructionFlowSelect.tsx) render editing controls and icons.
 
 ## Verification results — 2026-09-23

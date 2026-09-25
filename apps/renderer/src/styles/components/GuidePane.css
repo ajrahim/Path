@@ -549,7 +549,7 @@ html[data-theme="dark"] .guide-panel {
 
 .markdown-footer-info {
   display: grid;
-  gap: 3px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -560,7 +560,12 @@ html[data-theme="dark"] .guide-panel {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted-ink);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.guide-version-picker + .markdown-save-status {
+  padding-left: 6px;
 }
 
 .markdown-editor-surface textarea {
@@ -613,70 +618,6 @@ html[data-theme="dark"] .guide-panel {
   background: var(--surface-raised);
 }
 
-.guide-version-select {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  align-items: center;
-  gap: 2px;
-}
-
-.guide-version-step {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted-ink);
-}
-
-.guide-version-step:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-
-.guide-version-step:disabled {
-  opacity: 0.4;
-}
-
-.guide-version-step:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-
-.guide-version-menu {
-  min-width: 0;
-  max-width: 170px;
-  height: 24px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted-ink);
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-}
-
-.guide-version-menu:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-
-.guide-version-menu:disabled {
-  opacity: 0.6;
-}
-
-.guide-version-menu:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-}
-
 .guide-version-empty {
   color: var(--muted-ink);
   font-size: 12px;
@@ -706,4 +647,40 @@ html[data-theme="dark"] .guide-panel {
   height: auto;
   /* Float above the footer and the chat card instead of covering them. */
   bottom: 204px;
+}
+
+/* Previewing a stored revision: the editor is read-only beneath an overlaid action bar. */
+.guide-preview-bar {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.guide-preview-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.markdown-editor-surface textarea.guide-previewing {
+  padding-top: 64px;
+  background: var(--panel-muted);
+}
+
+.markdown-image-error.guide-notice {
+  background: var(--accent-soft);
+  color: var(--ink);
 }

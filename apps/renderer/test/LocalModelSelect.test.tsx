@@ -95,6 +95,7 @@ vi.mock("../src/hooks/useAiModels", () => ({
 }));
 afterEach(() => {
   cleanup();
+  delete window.desktop;
   vi.clearAllMocks();
   vi.mocked(useAiModels).mockReturnValue(configuredModels);
 });
@@ -199,6 +200,7 @@ it("distinguishes a down Ollama daemon from an empty vision model list", () => {
   expect(down.getByText("Ollama is unavailable")).toBeTruthy();
   expect(down.queryByText("No local vision models found")).toBeNull();
   cleanup();
+  delete window.desktop;
 
   vi.mocked(useAiModels).mockReturnValue({
     ...configuredModels,
@@ -406,4 +408,49 @@ it("shows an empty role catalog when OpenRouter is configured without compatible
   expect(view.queryByRole("button", { name: "Configure API keys in Settings" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Text" }));
   expect(view.getByText("No text models are available.")).toBeTruthy();
+});
+
+it("keeps CLI controls in the text picker and saves without changing the visual selection", async () => {
+  const state = {
+    mode: "model",
+    revision: 1,
+    connected: ["codex"],
+    selection: null,
+    tools: [
+      {
+        id: "codex",
+        installed: true,
+        connected: true,
+        status: "ready",
+        models: [{ id: "a", name: "A", description: "", efforts: ["high"] }],
+      },
+    ],
+  };
+
+  const select = vi.fn(async () => state);
+
+  window.desktop = {
+    cli: { get: async () => state, onChanged: () => () => {}, refresh: async () => state, select },
+  } as never;
+  const view = setup();
+
+  expect(view.queryByRole("tab", { name: "CLI Tool" })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Text" }));
+  await waitFor(() =>
+    expect(view.getByRole("tab", { name: "CLI Tool" }).hasAttribute("disabled")).toBe(false),
+  );
+  fireEvent.click(view.getByRole("tab", { name: "CLI Tool" }));
+  await waitFor(() =>
+    expect(view.getByRole("button", { name: "Codex CLI Connected" })).toBeTruthy(),
+  );
+  fireEvent.click(view.getByRole("button", { name: "Codex CLI Connected" }));
+  const model = view.getByRole("menuitemradio", { name: "A" });
+
+  await waitFor(() => expect((model as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(model);
+  await waitFor(() =>
+    expect(select).toHaveBeenCalledWith({ tool: "codex", model: "a", effort: null }),
+  );
+  expect(view.getByRole("dialog")).toBeTruthy();
+  expect(selectModel).not.toHaveBeenCalled();
 });

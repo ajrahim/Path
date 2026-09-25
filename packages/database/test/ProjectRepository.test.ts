@@ -1,110 +1,78 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { openDatabase, ProjectRepository, RecordingRepository } from "../src";
-
-const migrations = fileURLToPath(new URL("../drizzle", import.meta.url));
+import { createTestRecording, openTestDatabase } from "./TestDatabase";
 
 describe("ProjectRepository", () => {
-  it("upgrades an existing library and persists membership without changing recording content", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "path-projects-"));
-    const legacy = join(directory, "legacy");
+  it("persists membership across restarts without changing recording content", () => {
+    let database = openTestDatabase();
+    const recordingId = createTestRecording(database);
 
-    mkdirSync(join(legacy, "meta"), { recursive: true });
-    const journal = JSON.parse(readFileSync(join(migrations, "meta/_journal.json"), "utf8"));
+    database.documents.save(recordingId, "# Keep this document", null, 0);
 
-    journal.entries = journal.entries.slice(0, 2);
-    writeFileSync(join(legacy, "meta/_journal.json"), JSON.stringify(journal));
-    for (const entry of journal.entries) {
-      copyFileSync(join(migrations, `${entry.tag}.sql`), join(legacy, `${entry.tag}.sql`));
-    }
+    const [first] = database.projects.change({ action: "create", name: "  Onboarding  " });
+    const all = database.projects.change({ action: "create", name: "Reference" });
+    const second = all.find((project) => project.id !== first!.id)!;
 
-    const path = join(directory, "library.sqlite");
-    let connection = openDatabase(path, legacy);
-    const recordingId = randomUUID();
+    database.projects.change({ action: "move", recordingId, projectId: first!.id });
+    database.projects.change({ action: "move", recordingId, projectId: second.id });
 
-    try {
-      const now = new Date().toISOString();
+    expect(database.projects.list().find((project) => project.id === first!.id)).toMatchObject({
+      name: "Onboarding",
+      recordingIds: [],
+    });
 
-      // Seed with SQL matching the legacy schema; current repositories expect later columns.
-      connection.db.run(sql`
-        INSERT INTO recordings (id, title, status, capture_mode, started_at, created_at, updated_at)
-        VALUES (${recordingId}, 'Original', 'ready', 'display', ${now}, ${now}, ${now})
-      `);
-      connection.db.run(sql`
-        INSERT INTO documents (id, recording_id, title, format, language, markdown, created_at, updated_at)
-        VALUES (${randomUUID()}, ${recordingId}, 'Original', 'help-guide', 'en', '# Keep this document', ${now}, ${now})
-      `);
-      connection.close();
-      connection = openDatabase(path, migrations);
-      const repository = new ProjectRepository(connection.db);
-      const [first] = await repository.change({ action: "create", name: "  Onboarding  " });
-      const all = await repository.change({ action: "create", name: "Reference" });
-      const second = all.find((project) => project.id !== first!.id)!;
+    database.projects.change({ action: "rename", id: second.id, name: "Examples" });
+    database.connection.close();
+    database = openTestDatabase(database.databasePath);
 
-      await repository.change({ action: "move", recordingId, projectId: first!.id });
-      await repository.change({ action: "move", recordingId, projectId: second.id });
-      expect((await repository.list()).find((project) => project.id === first!.id)).toMatchObject({
-        name: "Onboarding",
-        recordingIds: [],
-      });
-      await repository.change({ action: "rename", id: second.id, name: "Examples" });
-      connection.close();
-      connection = openDatabase(path, migrations);
-      const reopened = new ProjectRepository(connection.db);
+    expect(database.projects.list()).toContainEqual({
+      id: second.id,
+      name: "Examples",
+      recordingIds: [recordingId],
+    });
 
-      expect(await reopened.list()).toContainEqual({
-        id: second.id,
-        name: "Examples",
-        recordingIds: [recordingId],
-      });
-      await reopened.change({ action: "remove", id: second.id });
-      const remaining = new RecordingRepository(connection.db);
+    database.projects.change({ action: "remove", id: second.id });
 
-      expect((await remaining.get(recordingId))?.title).toBe("Original");
-      expect((await remaining.getDocument(recordingId))?.markdown).toBe("# Keep this document");
-      await reopened.change({ action: "move", recordingId, projectId: first!.id });
-      await reopened.change({ action: "move", recordingId, projectId: null });
-      expect((await reopened.list())[0]?.recordingIds).toEqual([]);
-      await reopened.change({ action: "move", recordingId, projectId: first!.id });
-      await remaining.delete(recordingId);
-      expect((await reopened.list())[0]?.recordingIds).toEqual([]);
-    } finally {
-      connection.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
+    expect(database.recordings.get(recordingId)?.title).toBe("Recorded walkthrough");
+    expect(database.documents.getSnapshot(recordingId).saved?.markdown).toBe(
+      "# Keep this document",
+    );
+
+    database.projects.change({ action: "move", recordingId, projectId: first!.id });
+    database.projects.change({ action: "move", recordingId, projectId: null });
+
+    expect(database.projects.list()[0]?.recordingIds).toEqual([]);
+
+    database.projects.change({ action: "move", recordingId, projectId: first!.id });
+    database.recordings.delete(recordingId);
+
+    expect(database.projects.list()[0]?.recordingIds).toEqual([]);
+
+    database.connection.close();
   });
 
-  it("rejects invalid names and missing destinations without losing existing membership", async () => {
-    const connection = openDatabase(":memory:", migrations);
+  it("rejects invalid names and missing destinations without losing existing membership", () => {
+    const database = openTestDatabase();
+    const recordingId = createTestRecording(database);
 
-    try {
-      const repository = new ProjectRepository(connection.db);
-      const recordingId = randomUUID();
+    expect(() => database.projects.change({ action: "create", name: "   " })).toThrow();
 
-      await new RecordingRepository(connection.db).create({
-        id: recordingId,
-        title: "Example",
-        captureMode: "display",
-        startedAt: new Date().toISOString(),
-      });
-      await expect(repository.change({ action: "create", name: "   " })).rejects.toThrow();
-      const [project] = await repository.change({ action: "create", name: "Keep" });
+    const [project] = database.projects.change({ action: "create", name: "Keep" });
 
-      await repository.change({ action: "move", recordingId, projectId: project!.id });
-      await expect(
-        repository.change({ action: "move", recordingId, projectId: randomUUID() }),
-      ).rejects.toThrow("Project not found");
-      await expect(
-        repository.change({ action: "move", recordingId: randomUUID(), projectId: project!.id }),
-      ).rejects.toThrow("Recording not found");
-      expect((await repository.list())[0]?.recordingIds).toEqual([recordingId]);
-    } finally {
-      connection.close();
-    }
+    database.projects.change({ action: "move", recordingId, projectId: project!.id });
+
+    expect(() =>
+      database.projects.change({ action: "move", recordingId, projectId: randomUUID() }),
+    ).toThrow("Project not found");
+    expect(() =>
+      database.projects.change({
+        action: "move",
+        recordingId: randomUUID(),
+        projectId: project!.id,
+      }),
+    ).toThrow("Recording not found");
+    expect(database.projects.list()[0]?.recordingIds).toEqual([recordingId]);
+
+    database.connection.close();
   });
 });

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RecordingMediaTiming } from "@path/shared";
 import {
-  alignTimelineRows,
+  alignedWallClockRange,
+  alignTimelineRow,
+  latestWallClockAtMediaMs,
   recordingTimeWindow,
-  resolveMediaTiming,
   wallClockToMediaMs,
 } from "../src/MediaTiming";
 
@@ -32,81 +33,92 @@ describe("wall-clock to media time", () => {
     expect(wallClockToMediaMs(pausedTiming, 30_000, startMs + 35_000)).toBe(30_000);
     expect(wallClockToMediaMs(pausedTiming, 30_000, startMs + 35_001)).toBeNull();
   });
+
+  it("keeps a pause taken at the end of the video inside it", () => {
+    const endPause: RecordingMediaTiming = {
+      startedAt,
+      pauses: [{ atMs: 30_000, durationMs: 4_000 }],
+    };
+
+    expect(wallClockToMediaMs(endPause, 30_000, startMs + 32_000)).toBe(30_000);
+    expect(wallClockToMediaMs(endPause, 30_000, startMs + 34_000)).toBe(30_000);
+    expect(wallClockToMediaMs(endPause, 30_000, startMs + 34_001)).toBeNull();
+  });
 });
 
 describe("recording time window", () => {
   it("ends after the media duration plus pauses taken before the end", () => {
-    const window = recordingTimeWindow({ timing: pausedTiming, isApproximate: false }, 30_000);
-
-    expect(window).toEqual({
+    expect(recordingTimeWindow(pausedTiming, 30_000)).toEqual({
       startedAt,
       endedAt: "2026-09-14T10:00:35.000Z",
-      isApproximate: false,
     });
   });
 });
 
-describe("media timing resolution", () => {
-  it("uses stored timing exactly", () => {
-    const resolved = resolveMediaTiming(
-      { startedAt: "2026-09-14T09:59:58.000Z", mediaTiming: pausedTiming },
-      [],
-    );
-
-    expect(resolved).toEqual({ timing: pausedTiming, isApproximate: false });
-  });
-
-  it("estimates older recordings from the earliest click anchor", () => {
-    const resolved = resolveMediaTiming(
-      { startedAt: "2026-09-14T09:59:58.000Z", mediaTiming: null },
-      [
-        { createdAt: "2026-09-14T10:00:12.000Z", timestampMs: 2_000 },
-        { createdAt: "2026-09-14T10:00:03.500Z", timestampMs: 3_000 },
+describe("indexed alignment ranges", () => {
+  const timings: RecordingMediaTiming[] = [
+    { startedAt, pauses: [] },
+    pausedTiming,
+    {
+      startedAt,
+      pauses: [
+        { atMs: 0, durationMs: 1_500 },
+        { atMs: 7_000, durationMs: 2_000 },
+        { atMs: 12_000, durationMs: 250 },
+        { atMs: 20_000, durationMs: 3_000 },
       ],
-    );
+    },
+  ];
 
-    expect(resolved).toEqual({
-      timing: { startedAt: "2026-09-14T10:00:00.500Z", pauses: [] },
-      isApproximate: true,
-    });
+  it("selects exactly the wall-clock times that align inside the video", () => {
+    for (const timing of timings) {
+      const range = alignedWallClockRange(timing, 20_000);
+
+      for (let wallMs = startMs - 2_000; wallMs <= startMs + 32_000; wallMs += 125) {
+        const isInside = wallClockToMediaMs(timing, 20_000, wallMs) !== null;
+
+        expect(isInside).toBe(wallMs >= range.startMs && wallMs <= range.endMs);
+      }
+    }
   });
 
-  it("falls back to the recording start without clicks", () => {
-    const resolved = resolveMediaTiming({ startedAt, mediaTiming: null }, []);
+  it("finds the latest wall-clock time shown at or before each media position", () => {
+    for (const timing of timings) {
+      for (let mediaMs = 0; mediaMs <= 20_000; mediaMs += 250) {
+        const latest = latestWallClockAtMediaMs(timing, mediaMs);
 
-    expect(resolved).toEqual({ timing: { startedAt, pauses: [] }, isApproximate: true });
+        expect(wallClockToMediaMs(timing, 20_000, latest)).toBeLessThanOrEqual(mediaMs);
+        expect(wallClockToMediaMs(timing, 20_000, latest + 1) ?? Infinity).toBeGreaterThan(mediaMs);
+      }
+    }
   });
 });
 
 describe("row alignment", () => {
-  const rows = [
-    { id: 1, occurredAtMs: startMs - 2_000, text: "before" },
-    { id: 2, occurredAtMs: startMs + 1_000, text: "inside" },
-    { id: 3, occurredAtMs: startMs + 40_000, text: "after" },
-  ];
+  it("maps a row inside the video and rejects rows outside it", () => {
+    const inside = { id: 2, occurredAtMs: startMs + 1_000, text: "inside" };
 
-  it("keeps rows inside the video and counts the rest", () => {
-    const result = alignTimelineRows(rows, pausedTiming, 30_000, 0);
-
-    expect(result.outsideCount).toBe(2);
-    expect(result.entries).toEqual([
-      {
-        id: 2,
-        occurredAt: new Date(startMs + 1_000).toISOString(),
-        timestampMs: 1_000,
-        text: "inside",
-      },
-    ]);
+    expect(alignTimelineRow(inside, pausedTiming, 30_000, 0)).toEqual({
+      id: 2,
+      occurredAt: new Date(startMs + 1_000).toISOString(),
+      timestampMs: 1_000,
+      text: "inside",
+    });
+    expect(
+      alignTimelineRow(
+        { id: 3, occurredAtMs: startMs + 40_000, text: "after" },
+        pausedTiming,
+        30_000,
+        0,
+      ),
+    ).toBeNull();
   });
 
   it("applies the offset before alignment while preserving the original time", () => {
-    const result = alignTimelineRows(rows, pausedTiming, 30_000, 3_000);
+    const before = { id: 1, occurredAtMs: startMs - 2_000, text: "before" };
+    const entry = alignTimelineRow(before, pausedTiming, 30_000, 3_000);
 
-    expect(result.entries.map((entry) => [entry.id, entry.timestampMs])).toEqual([
-      [1, 1_000],
-      [2, 4_000],
-    ]);
-    expect(result.entries[0]?.occurredAt).toBe(new Date(startMs - 2_000).toISOString());
-    expect(result.outsideCount).toBe(1);
+    expect(entry?.timestampMs).toBe(1_000);
+    expect(entry?.occurredAt).toBe(new Date(startMs - 2_000).toISOString());
   });
 });

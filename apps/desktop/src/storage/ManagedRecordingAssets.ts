@@ -1,73 +1,79 @@
 import { mkdir, rm, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import type { RecordingAssetLocation, StorageRoot } from "@path/database";
 
-// Owns recording paths and the registered roots retained across storage-location changes.
+// Recording directories are named by their UUID; nothing else under a root is ever removed.
+const RECORDING_DIRECTORY_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A queued deletion that points outside the managed roots; it is refused, never retried. */
+export class UnmanagedAssetPathError extends Error {
+  constructor(kind: "file" | "directory") {
+    super(`Refusing to delete a ${kind} outside the managed recording roots`);
+    this.name = "UnmanagedAssetPathError";
+  }
+}
+
+/**
+ * Owns recording asset paths inside registered storage roots. Each recording keeps its files in
+ * `<its storage root>/<recording id>/`, so recordings made before a location change stay usable.
+ */
 export class ManagedRecordingAssets {
-  private root: string;
+  private current: StorageRoot | null = null;
   private readonly allowedRoots = new Set<string>();
 
-  constructor(root: string, previousRoots: string[] = []) {
-    this.root = resolve(root);
-    this.allowedRoots.add(this.root);
+  /** The root new recordings are created in; set once settings are loaded. */
+  get currentRoot(): StorageRoot {
+    if (!this.current) throw new Error("The recording location has not been initialized");
 
-    // Earlier storage locations remain registered so changing the default does not orphan recordings.
-    for (const previousRoot of previousRoots) {
-      this.allowedRoots.add(resolve(previousRoot));
-    }
+    return this.current;
   }
 
-  async ensureRoot(): Promise<void> {
-    await mkdir(this.root, { recursive: true });
+  /** Registers every known root and makes one of them current, creating it if needed. */
+  async useRoots(current: StorageRoot, registered: StorageRoot[]): Promise<void> {
+    for (const root of registered) this.allowedRoots.add(resolve(root.path));
+
+    await mkdir(current.path, { recursive: true });
+    this.allowedRoots.add(resolve(current.path));
+    this.current = { id: current.id, path: resolve(current.path) };
   }
 
-  async setRoot(root: string): Promise<void> {
-    const nextRoot = resolve(root);
+  recordingDirectory(location: RecordingAssetLocation): string {
+    const root = resolve(location.storageRootPath);
+    const directory = resolve(root, location.recordingId);
 
-    await mkdir(nextRoot, { recursive: true });
-    this.root = nextRoot;
-    this.allowedRoots.add(nextRoot);
-  }
-
-  addAllowedRoot(root: string): void {
-    this.allowedRoots.add(resolve(root));
-  }
-
-  recordingDirectory(recordingId: string): string {
-    const directory = resolve(this.root, recordingId);
-
-    if (dirname(directory) !== this.root) {
+    if (!this.allowedRoots.has(root) || dirname(directory) !== root) {
       throw new Error("Recording asset path escaped the managed directory");
     }
 
     return directory;
   }
 
-  async createRecordingDirectory(recordingId: string): Promise<string> {
-    const directory = this.recordingDirectory(recordingId);
+  async createRecordingDirectory(location: RecordingAssetLocation): Promise<string> {
+    const directory = this.recordingDirectory(location);
 
     await mkdir(directory, { recursive: false });
 
     return directory;
   }
 
-  videoPath(recordingId: string): string {
-    return join(this.recordingDirectory(recordingId), "recording.webm");
+  videoPath(location: RecordingAssetLocation): string {
+    return join(this.recordingDirectory(location), "recording.webm");
   }
 
-  finalVideoPath(recordingId: string): string {
-    return join(this.recordingDirectory(recordingId), "recording.mp4");
+  finalVideoPath(location: RecordingAssetLocation): string {
+    return join(this.recordingDirectory(location), "recording.mp4");
   }
 
-  audioPath(recordingId: string): string {
-    return join(this.recordingDirectory(recordingId), "audio.wav");
+  audioPath(location: RecordingAssetLocation): string {
+    return join(this.recordingDirectory(location), "audio.wav");
   }
 
-  thumbnailPath(recordingId: string): string {
-    return join(this.recordingDirectory(recordingId), "thumbnail.png");
+  thumbnailPath(location: RecordingAssetLocation): string {
+    return join(this.recordingDirectory(location), "thumbnail.png");
   }
 
-  async clickScreenshotPath(recordingId: string, clickId: string): Promise<string> {
-    const directory = join(this.recordingDirectory(recordingId), "screenshots");
+  async clickScreenshotPath(location: RecordingAssetLocation, clickId: string): Promise<string> {
+    const directory = join(this.recordingDirectory(location), "screenshots");
 
     await mkdir(directory, { recursive: true });
 
@@ -84,30 +90,28 @@ export class ManagedRecordingAssets {
     });
   }
 
-  async delete(recordingId: string, existingFilePath?: string | null): Promise<void> {
-    let directory = this.recordingDirectory(recordingId);
+  /**
+   * Removes a queued asset. A directory must be exactly `<registered root>/<recording id>`; a file
+   * must sit inside a registered root. Anything else is refused and never touched.
+   */
+  async remove(path: string, isDirectory: boolean): Promise<void> {
+    const target = resolve(path);
 
-    if (existingFilePath && this.isManagedFile(existingFilePath)) {
-      const existingDirectory = dirname(resolve(existingFilePath));
+    if (isDirectory) {
+      const isRecordingDirectory =
+        this.allowedRoots.has(dirname(target)) && RECORDING_DIRECTORY_NAME.test(basename(target));
 
-      // Containment alone is insufficient for recursive deletion: the directory must own this recording.
-      if (basename(existingDirectory) !== recordingId) {
-        throw new Error("Recording asset path did not match the recording");
-      }
+      if (!isRecordingDirectory) throw new UnmanagedAssetPathError("directory");
 
-      directory = existingDirectory;
+      await rm(target, { recursive: true, force: true });
+
+      return;
     }
 
-    await rm(directory, { recursive: true, force: true });
-  }
-
-  async deleteFile(filePath: string): Promise<void> {
-    if (!this.isManagedFile(filePath)) {
-      throw new Error("File is outside the managed recording directories");
-    }
+    if (!this.isManagedFile(target)) throw new UnmanagedAssetPathError("file");
 
     try {
-      await unlink(resolve(filePath));
+      await unlink(target);
     } catch (error) {
       // A previously removed file already satisfies deletion; other failures require attention.
       if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {

@@ -17,7 +17,6 @@ vi.mock("electron", () => ({
 
 const instructionFlows = {
   get: vi.fn(),
-  migrate: vi.fn(),
   select: vi.fn(),
   save: vi.fn(),
   remove: vi.fn(),
@@ -27,6 +26,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   registerIpcHandlers({
+    cliTools: {} as never,
     instructionFlows: instructionFlows as never,
     settings: {} as never,
     aiService: {} as never,
@@ -93,18 +93,6 @@ it("rejects invalid icons, excessive text, and unknown fields before touching th
   expect(instructionFlows.select).not.toHaveBeenCalled();
 });
 
-it("accepts legacy migration without icons and rejects attempts to migrate builtin identities", async () => {
-  const flow = { id: "custom-legacy", name: "Legacy", instructions: "Instructions" };
-  const migration = { selectedId: flow.id, customFlows: [flow] };
-
-  await invoke(IPC_CHANNELS.instructionFlowsMigrate, migration);
-  expect(instructionFlows.migrate).toHaveBeenCalledWith(migration);
-  instructionFlows.migrate.mockClear();
-  await expect(
-    invoke(IPC_CHANNELS.instructionFlowsMigrate, {
-      ...migration,
-      customFlows: [{ ...flow, id: "help-guide" }],
-    }),
-  ).rejects.toThrow();
-  expect(instructionFlows.migrate).not.toHaveBeenCalled();
+it("exposes no legacy prompt migration channel", () => {
+  expect([...handlers.keys()].some((channel) => channel.includes("migrate"))).toBe(false);
 });

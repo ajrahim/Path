@@ -1,3 +1,4 @@
+import type { CliToolService } from "./CliToolService";
 import {
   aiProviders,
   apiModelSupportsEffort,
@@ -51,6 +52,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
     private readonly settings: DesktopSettingsService,
     private readonly credentials: AiCredentialStore,
     private readonly ollama: OllamaClickActionAnalyzer,
+    private readonly cliTools?: CliToolService,
   ) {}
 
   async listModels(): Promise<AvailableAiModels> {
@@ -113,7 +115,9 @@ export class SelectedAiService implements ClickActionAnalyzer {
     return normalizeClickDescription(result.text, input.button);
   }
 
-  async generateText(prompt: string): Promise<string> {
+  async generateText(prompt: string, contextFolder?: string): Promise<string> {
+    if (this.cliTools?.get().mode === "cli") return this.cliTools.generate(prompt, contextFolder);
+    if (contextFolder) throw new Error("Select CLI Tool to use a context folder");
     const selection = this.settings.get().aiModelSelections.text;
 
     if (selection.source === "local") {

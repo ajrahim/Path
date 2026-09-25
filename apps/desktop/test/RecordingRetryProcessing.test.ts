@@ -32,9 +32,14 @@ function createController() {
     markReady: vi.fn().mockResolvedValue(undefined),
     listClicks: vi.fn().mockResolvedValue([]),
     listTranscript: vi.fn().mockResolvedValue([]),
+    getAssetLocation: vi.fn(async (recordingId: string) => ({
+      recordingId,
+      storageRootPath: "/managed",
+    })),
   };
 
   const assets = {
+    currentRoot: { id: "root", path: "/managed" },
     createRecordingDirectory: vi.fn().mockResolvedValue("/managed/recording-1"),
     videoPath: vi.fn().mockReturnValue(fileURLToPath(import.meta.url)),
     finalVideoPath: vi.fn().mockReturnValue("/managed/recording-1/recording.mp4"),
@@ -54,7 +59,7 @@ function createController() {
   const clickCapture = {
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
-    flush: vi.fn().mockResolvedValue(undefined),
+    flush: vi.fn().mockResolvedValue({ unsavedClickCount: 0 }),
   };
 
   const controller = new RecordingController(
@@ -64,6 +69,8 @@ function createController() {
     mediaProcessor as never,
     clickCapture as never,
     null,
+    null,
+    { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   );
 
   return { controller, recordings };

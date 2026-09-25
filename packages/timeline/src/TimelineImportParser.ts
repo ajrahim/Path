@@ -12,7 +12,7 @@ const DATE_TIME_PATTERN =
 const TIME_ONLY_PATTERN = /^\[?(\d{2}):(\d{2}):(\d{2})(?:[.,](\d{1,9}))?\]?(?![\d:])/;
 const EPOCH_PATTERN = /^\[?(\d{13}|\d{10})(?:\.(\d{1,6}))?\]?(?![\d.])/;
 
-interface ParsedTimelineRow {
+export interface ParsedTimelineRow {
   occurredAtMs: number;
   text: string;
 }
@@ -27,70 +27,114 @@ type LeadingTimestamp =
   | { type: "time-of-day"; msOfDay: number; length: number };
 
 /**
- * Split imported text into timestamped rows. Lines without a leading timestamp continue the
- * previous row; lines before the first row are unreadable. Timestamps without a zone use local
- * time, and time-only rows use the local date of `referenceMs`, advancing a day at midnight.
+ * Splits imported lines into timestamped rows one line at a time, so a large file is never held
+ * in memory. Lines without a leading timestamp continue the previous row; lines before the first
+ * row are unreadable. Timestamps without a zone use local time, and time-only rows use the local
+ * date of `referenceMs`, advancing a day at midnight.
  */
-export function parseTimelineImport(
-  content: string,
-  kind: TimelineImportKind,
-  referenceMs: number,
-): ParsedTimelineImport {
-  const rows: ParsedTimelineRow[] = [];
-  const reference = new Date(referenceMs);
-  let unreadableLineCount = 0;
-  let dayOffset = 0;
-  let previousTimeOnlyMs: number | null = null;
+export class TimelineImportParser {
+  private readonly reference: Date;
+  private pendingRow: ParsedTimelineRow | null = null;
+  private unreadableLines = 0;
+  private dayOffset = 0;
+  private previousTimeOnlyMs: number | null = null;
+  private isFirstLine = true;
 
-  for (const rawLine of content.replace(/^﻿/, "").split(/\r?\n/)) {
-    const line = rawLine.trimEnd();
+  constructor(
+    private readonly kind: TimelineImportKind,
+    referenceMs: number,
+  ) {
+    this.reference = new Date(referenceMs);
+  }
 
-    if (!line.trim()) continue;
+  get unreadableLineCount(): number {
+    return this.unreadableLines;
+  }
 
-    const jsonRow = parseJsonRow(line, kind, reference);
+  /** Returns the previous row once a new row proves that no continuation lines remain for it. */
+  addLine(rawLine: string): ParsedTimelineRow | null {
+    const line = (this.isFirstLine ? rawLine.replace(/^﻿/, "") : rawLine).trimEnd();
 
-    if (jsonRow) {
-      rows.push(jsonRow);
-      continue;
-    }
+    this.isFirstLine = false;
 
-    const timestamp = parseLeadingTimestamp(line);
+    if (!line.trim()) return null;
 
-    if (!timestamp) {
-      const previous = rows.at(-1);
+    const row = parseJsonRow(line, this.kind, this.reference) ?? this.parseTextRow(line);
 
-      if (previous) {
-        previous.text = appendContinuation(previous.text, line);
+    if (!row) {
+      if (this.pendingRow) {
+        this.pendingRow.text = appendContinuation(this.pendingRow.text, line);
       } else {
-        unreadableLineCount += 1;
+        this.unreadableLines += 1;
       }
 
-      continue;
+      return null;
     }
+
+    const completed = this.pendingRow;
+
+    this.pendingRow = row;
+
+    return completed ? completeRow(completed) : null;
+  }
+
+  /** Returns the final row; call once after the last line. */
+  finish(): ParsedTimelineRow | null {
+    const completed = this.pendingRow;
+
+    this.pendingRow = null;
+
+    return completed ? completeRow(completed) : null;
+  }
+
+  private parseTextRow(line: string): ParsedTimelineRow | null {
+    const timestamp = parseLeadingTimestamp(line);
+
+    if (!timestamp) return null;
 
     let occurredAtMs: number;
 
     if (timestamp.type === "absolute") {
       occurredAtMs = timestamp.occurredAtMs;
     } else {
-      occurredAtMs = localTimeOfDay(reference, dayOffset, timestamp.msOfDay);
+      occurredAtMs = localTimeOfDay(this.reference, this.dayOffset, timestamp.msOfDay);
 
       // A time that jumps back by more than half a day crossed midnight.
-      if (previousTimeOnlyMs !== null && occurredAtMs < previousTimeOnlyMs - HALF_DAY_MS) {
-        dayOffset += 1;
-        occurredAtMs = localTimeOfDay(reference, dayOffset, timestamp.msOfDay);
+      if (
+        this.previousTimeOnlyMs !== null &&
+        occurredAtMs < this.previousTimeOnlyMs - HALF_DAY_MS
+      ) {
+        this.dayOffset += 1;
+        occurredAtMs = localTimeOfDay(this.reference, this.dayOffset, timestamp.msOfDay);
       }
 
-      previousTimeOnlyMs = occurredAtMs;
+      this.previousTimeOnlyMs = occurredAtMs;
     }
 
-    rows.push({ occurredAtMs, text: rowText(line.slice(timestamp.length)) });
+    return { occurredAtMs, text: rowText(line.slice(timestamp.length)) };
+  }
+}
+
+/** Parse in-memory content; streaming callers feed `TimelineImportParser` line by line. */
+export function parseTimelineImport(
+  content: string,
+  kind: TimelineImportKind,
+  referenceMs: number,
+): ParsedTimelineImport {
+  const parser = new TimelineImportParser(kind, referenceMs);
+  const rows: ParsedTimelineRow[] = [];
+
+  for (const line of content.split(/\r?\n/)) {
+    const row = parser.addLine(line);
+
+    if (row) rows.push(row);
   }
 
-  return {
-    rows: rows.map((row) => ({ ...row, text: truncateRowText(row.text) })),
-    unreadableLineCount,
-  };
+  const last = parser.finish();
+
+  if (last) rows.push(last);
+
+  return { rows, unreadableLineCount: parser.unreadableLineCount };
 }
 
 function parseLeadingTimestamp(text: string): LeadingTimestamp | null {
@@ -239,8 +283,11 @@ function appendContinuation(text: string, line: string): string {
   return text ? `${text}\n${line}` : line;
 }
 
-function truncateRowText(text: string): string {
-  return text.length > MAX_TIMELINE_IMPORT_ROW_LENGTH
-    ? `${text.slice(0, MAX_TIMELINE_IMPORT_ROW_LENGTH - 1)}…`
-    : text;
+function completeRow(row: ParsedTimelineRow): ParsedTimelineRow {
+  const text =
+    row.text.length > MAX_TIMELINE_IMPORT_ROW_LENGTH
+      ? `${row.text.slice(0, MAX_TIMELINE_IMPORT_ROW_LENGTH - 1)}…`
+      : row.text;
+
+  return { occurredAtMs: row.occurredAtMs, text };
 }

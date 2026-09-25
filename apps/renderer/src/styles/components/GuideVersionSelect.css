@@ -1,0 +1,159 @@
+/* Borderless trigger and floating list, matching the prompt picker in the guide header. */
+.guide-version-picker {
+  position: relative;
+  display: flex;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.guide-version-trigger {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: min(180px, 100%);
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  text-align: left;
+  transition: background 120ms;
+}
+
+.guide-version-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-version-chevron {
+  display: block;
+  flex-shrink: 0;
+  color: var(--muted-ink);
+  transition: transform 120ms;
+}
+
+.guide-version-trigger[aria-expanded="true"] .guide-version-chevron {
+  transform: rotate(180deg);
+}
+
+.guide-version-trigger:hover:not(:disabled),
+.guide-version-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+}
+
+.guide-version-trigger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.guide-version-trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* The footer sits at the bottom of the pane, so the list opens upward. */
+.guide-version-list {
+  position: absolute;
+  z-index: 50;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  max-height: min(360px, 50dvh);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow:
+    0 12px 28px rgb(0 0 0 / 14%),
+    0 2px 6px rgb(0 0 0 / 6%);
+}
+
+.guide-version-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.guide-version-option svg {
+  flex-shrink: 0;
+}
+
+.guide-version-option-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-version-option-text > span {
+  font-weight: 500;
+}
+
+.guide-version-option-text > small {
+  overflow: hidden;
+  color: var(--muted-ink);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-version-option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
+}
+
+.guide-version-option[aria-checked="true"] .guide-version-option-text > span {
+  font-weight: 600;
+}
+
+.guide-version-option:hover,
+.guide-version-option:focus-visible {
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
+}
+
+.guide-version-option:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.guide-version-check,
+.guide-version-older,
+.guide-version-older svg {
+  color: var(--primary);
+}
+
+.guide-version-older {
+  font-weight: 500;
+}
+
+.guide-version-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
+html[data-theme="dark"] .guide-version-option[aria-checked="true"] {
+  background: var(--accent-soft);
+}

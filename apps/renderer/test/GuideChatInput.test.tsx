@@ -13,6 +13,7 @@ vi.mock("../src/lib/GuideContextImage", () => ({ readGuideContextImage: readImag
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  delete window.desktop;
 });
 
 function renderChatInput(updating = false, disabled = false, onSend = vi.fn()) {
@@ -156,4 +157,42 @@ it("returns focus on Escape and limits context to four items", () => {
   }
 
   expect((trigger as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("only enables a folder for CLI mode and sends the chosen folder with the update", async () => {
+  const state = {
+    revision: 1,
+    mode: "cli",
+    connected: ["codex"],
+    selection: { tool: "codex", model: "a", effort: null },
+    tools: [],
+  };
+
+  const chooseFolder = vi.fn(async () => "C:/Example/Project");
+
+  window.desktop = {
+    cli: { get: async () => state, onChanged: () => () => {}, chooseFolder },
+  } as never;
+  const { view, input, send, onSend } = renderChatInput();
+  const folder = view.getByRole("button", { name: "Context Folder" }) as HTMLButtonElement;
+
+  await waitFor(() => expect(folder.disabled).toBe(false));
+  fireEvent.click(folder);
+  await view.findByRole("button", { name: "Project" });
+  fireEvent.change(input, { target: { value: "Use the codebase" } });
+  fireEvent.click(send);
+  await waitFor(() =>
+    expect(onSend).toHaveBeenCalledWith("Use the codebase", [], "C:/Example/Project"),
+  );
+  expect(chooseFolder).toHaveBeenCalledOnce();
+  fireEvent.click(view.getByRole("button", { name: "Remove context folder" }));
+  expect(view.getByRole("button", { name: "Context Folder" })).toBeTruthy();
+});
+
+it("keeps the folder control disabled without a selected CLI", () => {
+  const { view } = renderChatInput();
+  const button = view.getByRole("button", { name: "Context Folder" }) as HTMLButtonElement;
+
+  expect(button.disabled).toBe(true);
+  expect(button.parentElement?.title).toBe("Connect a CLI in Settings");
 });

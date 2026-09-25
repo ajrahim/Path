@@ -198,6 +198,11 @@ export function HistorySidebar({
     sortMode,
   );
 
+  // Before the first read starts, or after it fails, there is nothing to describe yet.
+  const hasHistory = snapshot.status === "loading" || snapshot.status === "ready";
+  const isLibraryEmpty = hasHistory && snapshot.recordings.length === 0 && !deferredQuery;
+  const hasNoMatches = hasHistory && Boolean(deferredQuery) && visibleRecordings.length === 0;
+
   function beginRename(recording: RecordingSummary, location: string): void {
     if (isSavingRename || snapshot.mutationRequestIds[recording.id]) return;
 
@@ -648,16 +653,36 @@ export function HistorySidebar({
             })}
           </div>
         </section>
-        <section className="history-all" aria-label={t("projects.all")}>
-          <div className="history-section-label">{t("projects.all")}</div>
-          {snapshot.status !== "error" && visibleRecordings.length === 0 && (
-            <div className="history-empty">
-              {deferredQuery ? (
-                <Search aria-hidden="true" size={20} />
-              ) : (
-                <MonitorUp aria-hidden="true" size={20} />
-              )}
-              <span>{t(deferredQuery ? "history.noMatches" : "history.empty")}</span>
+        <section
+          className={cn("history-all", isLibraryEmpty && "history-all-empty")}
+          aria-label={t("projects.all")}
+        >
+          {!isLibraryEmpty && <div className="history-section-label">{t("projects.all")}</div>}
+          {isLibraryEmpty && (
+            <div className="history-empty history-empty-start">
+              <MonitorUp aria-hidden="true" size={20} />
+              <strong>{t("history.empty")}</strong>
+              <p>{t("history.emptyDescription")}</p>
+              <Button size="sm" onClick={onNewRecording}>
+                <Video aria-hidden="true" size={14} />
+                {t("history.newRecording")}
+              </Button>
+            </div>
+          )}
+          {hasNoMatches && (
+            <div className="history-empty history-empty-search">
+              <Search aria-hidden="true" size={20} />
+              <strong>{t("history.noMatches")}</strong>
+              <button
+                type="button"
+                className="history-empty-clear"
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {t("history.clearSearch")}
+              </button>
             </div>
           )}
           {visibleRecordings.map((recording) => renderRecording(recording, "all"))}

@@ -1,218 +1,150 @@
 import { app } from "electron";
 import { resolve } from "node:path";
-import type { AppSettingsRepository } from "@path/database";
 import {
-  aiModelSelectionSchema,
   DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
-  updateTimelineImportSettingsInputSchema,
+  storedDesktopSettingsSchema,
+  type AiModelPurpose,
+  type AiModelSelection,
+  type DesktopSettings,
+  type GeneralSettings,
+  type TimelineImportSettings,
 } from "@path/shared";
-import type {
-  AiModelPurpose,
-  AiModelSelection,
-  DesktopSettings,
-  GeneralSettings,
-  TimelineImportSettings,
-} from "@path/shared";
+import type { RemoteRepositories } from "../storage/DatabaseClient";
+import type { Diagnostics } from "../storage/DiagnosticLog";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 
 const SETTINGS_KEY = "desktop-settings";
-const RECORDING_ROOT_HISTORY_KEY = "recording-root-history";
+const DEFAULT_MODEL_ID = "llama3.2-vision:latest";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
+/**
+ * Owns desktop settings in SQLite. Changes are serialized and written before they take effect,
+ * so a failed write never leaves memory ahead of storage.
+ */
 export class DesktopSettingsService {
   private current: DesktopSettings;
-  private aiModelSelectionUpdate: Promise<void> = Promise.resolve();
+  private mutation: Promise<unknown> = Promise.resolve();
 
   constructor(
-    private readonly repository: AppSettingsRepository,
-    private readonly assets: ManagedRecordingAssets,
+    private readonly repositories: Pick<RemoteRepositories, "appSettings" | "storageRoots">,
+    private readonly assets: Pick<ManagedRecordingAssets, "useRoots">,
     defaultRecordingsDirectory: string,
+    private readonly diagnostics: Diagnostics,
   ) {
     const defaultSelection: AiModelSelection = {
       source: "local",
-      modelId: "llama3.2-vision:latest",
-      modelName: "llama3.2-vision:latest",
+      modelId: DEFAULT_MODEL_ID,
+      modelName: DEFAULT_MODEL_ID,
     };
 
     this.current = {
       general: { minimizeToTray: true },
       timelineImports: { maxFileSizeMb: DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB },
       recordingsDirectory: resolve(defaultRecordingsDirectory),
-      guideInstructions: "",
-      localVisionModel: "llama3.2-vision:latest",
       aiModelSelections: { visual: { ...defaultSelection }, text: { ...defaultSelection } },
     };
   }
 
   async initialize(): Promise<void> {
-    const stored = await this.repository.get<unknown>(SETTINGS_KEY);
+    const stored = await this.repositories.appSettings.get(SETTINGS_KEY);
 
-    // Fill fields absent from older profiles without replacing their valid persisted preferences.
-    if (isRecord(stored)) {
-      const general = isRecord(stored.general) ? stored.general : {};
-      const storedSelections = isRecord(stored.aiModelSelections) ? stored.aiModelSelections : {};
-      const localSelection =
-        parseAiModelSelection({
-          source: "local",
-          modelId: stored.localVisionModel,
-          modelName: stored.localVisionModel,
-        }) ?? this.current.aiModelSelections.visual;
+    if (stored !== null) {
+      const parsed = storedDesktopSettingsSchema.safeParse(stored);
 
-      const legacySelection = parseAiModelSelection(stored.aiModelSelection) ?? localSelection;
-      const visualSelection = parseAiModelSelection(storedSelections.visual) ?? legacySelection;
-      const textSelection = parseAiModelSelection(storedSelections.text) ?? legacySelection;
-
-      this.current = {
-        general: {
-          minimizeToTray:
-            typeof general.minimizeToTray === "boolean" ? general.minimizeToTray : true,
-        },
-        timelineImports:
-          parseTimelineImportSettings(stored.timelineImports) ?? this.current.timelineImports,
-        recordingsDirectory:
-          typeof stored.recordingsDirectory === "string" && stored.recordingsDirectory
-            ? resolve(stored.recordingsDirectory)
-            : this.current.recordingsDirectory,
-        guideInstructions:
-          typeof stored.guideInstructions === "string" ? stored.guideInstructions : "",
-        localVisionModel:
-          visualSelection.source === "local" ? visualSelection.modelId : localSelection.modelId,
-        aiModelSelections: {
-          visual: { ...visualSelection },
-          text: { ...textSelection },
-        },
-      };
-    }
-
-    const history = (await this.repository.get<unknown>(RECORDING_ROOT_HISTORY_KEY)) ?? [];
-
-    if (Array.isArray(history)) {
-      for (const directory of history) {
-        if (typeof directory === "string" && directory) {
-          this.assets.addAllowedRoot(directory);
-        }
+      // Invalid stored settings are left untouched on disk until the user changes a setting.
+      if (parsed.success) {
+        this.current = {
+          ...parsed.data,
+          recordingsDirectory: resolve(parsed.data.recordingsDirectory),
+        };
+      } else {
+        this.diagnostics.warn("Stored desktop settings were invalid; defaults are in use");
       }
     }
 
-    await this.assets.setRoot(this.current.recordingsDirectory);
+    await this.applyRecordingsDirectory(this.current.recordingsDirectory);
     this.disableLaunchAtLogin();
   }
 
   get(): DesktopSettings {
     // Callers receive snapshots so they cannot mutate the service's current settings by reference.
-    return {
-      general: { ...this.current.general },
-      timelineImports: { ...this.current.timelineImports },
-      recordingsDirectory: this.current.recordingsDirectory,
-      guideInstructions: this.current.guideInstructions,
-      localVisionModel: this.current.localVisionModel,
-      aiModelSelections: {
-        visual: { ...this.current.aiModelSelections.visual },
-        text: { ...this.current.aiModelSelections.text },
-      },
-    };
+    return structuredClone(this.current);
   }
 
-  async updateGeneral(general: GeneralSettings): Promise<DesktopSettings> {
-    this.current.general = { ...general };
-    await this.persist();
-
-    return this.get();
-  }
-
-  async updateTimelineImports(timelineImports: TimelineImportSettings): Promise<DesktopSettings> {
-    this.current.timelineImports = { ...timelineImports };
-    await this.persist();
-
-    return this.get();
-  }
-
-  /** @deprecated Generation uses the workspace instruction flows; retained for stored settings. */
-  async updateGuideInstructions(guideInstructions: string): Promise<DesktopSettings> {
-    this.current.guideInstructions = guideInstructions;
-    await this.persist();
-
-    return this.get();
-  }
-
-  async updateLocalVisionModel(model: string): Promise<DesktopSettings> {
-    return this.updateAiModelSelection("visual", {
-      source: "local",
-      modelId: model,
-      modelName: model,
+  updateGeneral(general: GeneralSettings): Promise<DesktopSettings> {
+    return this.commit((next) => {
+      next.general = { ...general };
     });
   }
 
-  async updateAiModelSelection(
+  updateTimelineImports(timelineImports: TimelineImportSettings): Promise<DesktopSettings> {
+    return this.commit((next) => {
+      next.timelineImports = { ...timelineImports };
+    });
+  }
+
+  updateAiModelSelection(
     purpose: AiModelPurpose,
     selection: AiModelSelection,
   ): Promise<DesktopSettings> {
-    const nextSelection = { ...selection };
-    const update = this.aiModelSelectionUpdate.then(async () => {
-      const nextSettings = this.get();
-
-      nextSettings.aiModelSelections[purpose] = nextSelection;
-      if (purpose === "visual" && nextSelection.source === "local") {
-        nextSettings.localVisionModel = nextSelection.modelId;
-      }
-
-      await this.repository.set(SETTINGS_KEY, nextSettings);
-      this.current.aiModelSelections = nextSettings.aiModelSelections;
-      this.current.localVisionModel = nextSettings.localVisionModel;
-
-      return this.get();
+    return this.commit((next) => {
+      next.aiModelSelections[purpose] = { ...selection };
     });
-
-    // Keep later role changes available if an earlier save fails.
-    this.aiModelSelectionUpdate = update.then(
-      () => {},
-      () => {},
-    );
-
-    return update;
   }
 
-  async updateRecordingsDirectory(directory: string): Promise<DesktopSettings> {
+  /** New recordings use the new directory; recordings in earlier roots stay registered. */
+  updateRecordingsDirectory(directory: string): Promise<DesktopSettings> {
     const nextDirectory = resolve(directory);
-    const history = (await this.repository.get<unknown>(RECORDING_ROOT_HISTORY_KEY)) ?? [];
-    const roots = Array.isArray(history)
-      ? history.filter((root): root is string => typeof root === "string")
-      : [];
 
-    roots.push(this.current.recordingsDirectory, nextDirectory);
-    const uniqueRoots = [...new Set(roots.map((root) => resolve(root)))];
+    return this.serialize(async () => {
+      const previousDirectory = this.current.recordingsDirectory;
 
-    // Update the default for new recordings while retaining access to files in previous roots.
-    await this.assets.setRoot(nextDirectory);
-    this.current.recordingsDirectory = nextDirectory;
-    await this.repository.set(RECORDING_ROOT_HISTORY_KEY, uniqueRoots);
-    await this.persist();
+      await this.applyRecordingsDirectory(nextDirectory);
+
+      try {
+        return await this.write({ ...this.get(), recordingsDirectory: nextDirectory });
+      } catch (error) {
+        await this.applyRecordingsDirectory(previousDirectory);
+
+        throw error;
+      }
+    });
+  }
+
+  private commit(change: (next: DesktopSettings) => void): Promise<DesktopSettings> {
+    return this.serialize(() => {
+      const next = this.get();
+
+      change(next);
+
+      return this.write(next);
+    });
+  }
+
+  private async write(next: DesktopSettings): Promise<DesktopSettings> {
+    await this.repositories.appSettings.set(SETTINGS_KEY, next);
+    this.current = next;
 
     return this.get();
   }
 
-  private async persist(): Promise<void> {
-    await this.aiModelSelectionUpdate;
-    await this.repository.set(SETTINGS_KEY, this.current);
+  private serialize<T>(action: () => Promise<T>): Promise<T> {
+    const result = this.mutation.then(action);
+
+    // A failed change must not block later ones.
+    this.mutation = result.catch(() => undefined);
+
+    return result;
+  }
+
+  private async applyRecordingsDirectory(directory: string): Promise<void> {
+    const current = await this.repositories.storageRoots.register(directory);
+    const registered = await this.repositories.storageRoots.list();
+
+    await this.assets.useRoots(current, registered);
   }
 
   private disableLaunchAtLogin(): void {
     if (!["darwin", "win32"].includes(process.platform)) return;
     app.setLoginItemSettings({ openAtLogin: false });
   }
-}
-
-function parseTimelineImportSettings(value: unknown): TimelineImportSettings | null {
-  const result = updateTimelineImportSettingsInputSchema.safeParse(value);
-
-  return result.success ? result.data : null;
-}
-
-function parseAiModelSelection(value: unknown): AiModelSelection | null {
-  const result = aiModelSelectionSchema.safeParse(value);
-
-  return result.success ? result.data : null;
 }

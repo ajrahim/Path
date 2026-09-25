@@ -9,6 +9,7 @@ import {
   Search,
   Settings,
   TriangleAlert,
+  Terminal,
   X,
 } from "lucide-react";
 import type {
@@ -19,6 +20,8 @@ import type {
   LocalAiModel,
 } from "@path/shared";
 import { useFormatter, useTranslations } from "next-intl";
+import { useCliTools } from "../hooks/useCliTools";
+import { CliToolPicker } from "./CliToolPicker";
 import { useAiModels } from "../hooks/useAiModels";
 import type { ModelCatalogProvider } from "../lib/ModelCatalog";
 
@@ -39,6 +42,9 @@ export function LocalModelSelect({
 }) {
   const t = useTranslations("navigation");
   const format = useFormatter();
+  const cli = useCliTools();
+  const cliText = useTranslations("cli");
+  const [textView, setTextView] = useState<"model" | "cli">("model");
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -99,6 +105,7 @@ export function LocalModelSelect({
 
   async function chooseModel(selection: AiModelSelection): Promise<void> {
     if (await selectModel(purpose, selection)) {
+      if (purpose === "text" && cli.state?.mode === "cli" && !(await cli.setMode("model"))) return;
       setOpen(false);
       triggerRefs.current[purpose]?.focus();
     }
@@ -200,9 +207,18 @@ export function LocalModelSelect({
     <div className="local-model-select" ref={rootRef}>
       {MODEL_PURPOSES.map((modelPurpose) => {
         const label = t(modelPurpose === "visual" ? "visualModel" : "textModel");
-        const modelName = selections[modelPurpose]?.modelName ?? t("chooseModel");
+        const usingCli = modelPurpose === "text" && cli.state?.mode === "cli";
+        const cliSelection = cli.state?.selection;
+        const cliName =
+          cli.state?.tools
+            .find((tool) => tool.id === cliSelection?.tool)
+            ?.models.find((model) => model.id === cliSelection?.model)?.name ?? cliSelection?.model;
+
+        const modelName =
+          (usingCli ? cliName : selections[modelPurpose]?.modelName) ?? t("chooseModel");
+
         const expanded = open && purpose === modelPurpose;
-        const Icon = modelPurpose === "visual" ? Eye : FileText;
+        const Icon = modelPurpose === "visual" ? Eye : usingCli ? Terminal : FileText;
 
         return (
           <button
@@ -227,6 +243,11 @@ export function LocalModelSelect({
               }
 
               setPurpose(modelPurpose);
+              if (modelPurpose === "text") {
+                setTextView(cli.state?.mode ?? "model");
+                void cli.refresh();
+              }
+
               setQuery("");
               setExpandedProvider(null);
               setOpen(true);
@@ -237,7 +258,7 @@ export function LocalModelSelect({
             <span className="local-model-trigger-choice">
               <Icon aria-hidden="true" size={13} />
               <span className="local-model-trigger-name">
-                {selections[modelPurpose]?.modelName ?? label}
+                {modelName === t("chooseModel") ? label : modelName}
               </span>
             </span>
             <ChevronDown aria-hidden="true" size={12} />
@@ -246,7 +267,7 @@ export function LocalModelSelect({
       })}
       {open && (
         <div
-          className="local-model-menu"
+          className={`local-model-menu${purpose === "text" ? " local-model-menu-text" : ""}`}
           id={menuId}
           role="dialog"
           aria-label={t(purpose === "visual" ? "visualModels" : "textModels")}
@@ -257,249 +278,308 @@ export function LocalModelSelect({
               type="button"
               title={t("refreshAiModels")}
               aria-label={t("refreshAiModels")}
-              disabled={isLoading || isSaving}
-              onClick={() => void refreshCatalog()}
+              disabled={isLoading || isSaving || cli.busy}
+              onClick={() => {
+                void refreshCatalog();
+                if (purpose === "text") void cli.refresh();
+              }}
             >
               <RefreshCw aria-hidden="true" size={14} />
             </button>
           </header>
-          <div className="local-model-panel">
-            <div className="local-model-search">
-              <Search size={14} aria-hidden="true" />
-              <input
-                ref={searchRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                aria-label={t("searchModels")}
-                placeholder={t("searchModels")}
-              />
-              {query && (
+          {purpose === "text" && (
+            <div className="local-model-source-tabs" role="tablist" aria-label={cliText("source")}>
+              {(["model", "cli"] as const).map((source) => (
                 <button
                   type="button"
-                  aria-label={t("clearModelSearch")}
+                  role="tab"
+                  key={source}
+                  id={`${menuId}-${source}-tab`}
+                  aria-selected={textView === source}
+                  aria-controls={`${menuId}-source-panel`}
+                  tabIndex={textView === source ? 0 : -1}
+                  disabled={cli.busy}
                   onClick={() => {
-                    setQuery("");
-                    searchRef.current?.focus();
+                    setTextView(source);
+                    if (source === "cli") void cli.refresh();
+                    else if (cli.state?.mode === "cli") void cli.setMode("model");
+                  }}
+                  onKeyDown={(event) => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                    event.preventDefault();
+                    const next =
+                      event.key === "Home"
+                        ? "model"
+                        : event.key === "End"
+                          ? "cli"
+                          : source === "model"
+                            ? "cli"
+                            : "model";
+
+                    const button = document.getElementById(
+                      `${menuId}-${next}-tab`,
+                    ) as HTMLButtonElement | null;
+
+                    button?.click();
+                    button?.focus();
                   }}
                 >
-                  <X size={13} aria-hidden="true" />
+                  {cliText(source === "model" ? "textModel" : "cliTool")}
                 </button>
-              )}
+              ))}
             </div>
+          )}
+          {purpose === "text" && textView === "cli" ? (
             <div
-              className="local-model-results"
-              role="menu"
-              aria-label={t(purpose === "visual" ? "visualModels" : "textModels")}
+              role="tabpanel"
+              id={`${menuId}-source-panel`}
+              aria-labelledby={`${menuId}-cli-tab`}
+              className="local-model-cli-panel"
             >
-              {isLoading ? (
-                <p>{t("checkingAiModels")}</p>
-              ) : error ? (
-                <p role="alert">{t("aiModelsUnavailable")}</p>
-              ) : noMatches ? (
-                <p role="status">{t("noMatchingModels")}</p>
-              ) : (
-                <>
-                  {(!search || visibleProviders.length > 0 || openRouterModels.length > 0) && (
-                    <section className="local-model-group" aria-label={t("apiModels")}>
-                      <strong>{t("apiModels")}</strong>
-                      {staleApiSelection && (
-                        <p className="local-model-warning" role="alert">
-                          <TriangleAlert size={14} aria-hidden="true" />
-                          <span>
-                            {t(
-                              purpose === "visual"
-                                ? "staleVisualApiModelSelected"
-                                : "staleTextApiModelSelected",
-                            )}
-                          </span>
-                        </p>
-                      )}
-                      {openRouterModels.length > 0 && (
-                        <OpenRouterBlock
-                          menuId={menuId}
-                          models={openRouterModels}
-                          hasKey={keyStatus.openrouter}
-                          expanded={Boolean(search) || expandedProvider === "openrouter"}
-                          selection={selection}
-                          isSaving={isSaving}
-                          onToggle={() =>
-                            setExpandedProvider(
-                              expandedProvider === "openrouter" ? null : "openrouter",
-                            )
-                          }
-                          describeModel={formatApiMeta}
-                          onChoose={(model) => {
-                            if (!keyStatus.openrouter) {
-                              openSettingsKeys();
-
-                              return;
-                            }
-
-                            void chooseModel({
-                              source: "api",
-                              provider: "openrouter",
-                              modelId: model.id,
-                              modelName: model.name,
-                            });
-                          }}
-                        />
-                      )}
-                      {configuredProviders.length === 0 && openRouterModels.length === 0 ? (
-                        keyStatus.openrouter ? (
-                          <p>{t(purpose === "visual" ? "noApiVisualModels" : "noApiTextModels")}</p>
-                        ) : (
-                          <button
-                            type="button"
-                            className="local-model-configure-keys"
-                            onClick={openSettingsKeys}
-                          >
-                            <Settings aria-hidden="true" size={14} />
-                            <span>{t("noApiModels")}</span>
-                          </button>
-                        )
-                      ) : (
-                        visibleProviders.map((provider) => {
-                          const providerModels = compatibleApiModels.filter(
-                            (model) =>
-                              model.provider === provider.id &&
-                              matchesSearch(model.name, model.id, provider.label),
-                          );
-
-                          const expanded = Boolean(search) || expandedProvider === provider.id;
-                          const providerModelsId = `${menuId}-${provider.id}-models`;
-
-                          return (
-                            <div className="local-api-provider" key={provider.id}>
-                              <button
-                                type="button"
-                                className="local-api-provider-toggle"
-                                aria-expanded={expanded}
-                                aria-controls={providerModelsId}
-                                onClick={() => setExpandedProvider(expanded ? null : provider.id)}
-                              >
-                                <ChevronRight aria-hidden="true" size={15} />
-                                <span>{provider.label}</span>
-                                <small>{providerModels.length}</small>
-                              </button>
-                              {expanded && (
-                                <div className="local-api-provider-models" id={providerModelsId}>
-                                  {providerModels.length === 0 ? (
-                                    <p>
-                                      {t(
-                                        purpose === "visual"
-                                          ? "noApiVisualModels"
-                                          : "noApiTextModels",
-                                      )}
-                                    </p>
-                                  ) : (
-                                    providerModels.map((model) => (
-                                      <ApiModelOption
-                                        key={model.id}
-                                        model={model}
-                                        meta={formatApiMeta(model)}
-                                        checked={
-                                          selection?.source === "api" &&
-                                          selection.provider === provider.id &&
-                                          selection.modelId === model.id
-                                        }
-                                        disabled={isSaving}
-                                        onChoose={() =>
-                                          void chooseModel({
-                                            source: "api",
-                                            provider: provider.id,
-                                            modelId: model.id,
-                                            modelName: model.name,
-                                          })
-                                        }
-                                      />
-                                    ))
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      )}
-                    </section>
-                  )}
-                  {(!search || localModels.length > 0) && (
-                    <section className="local-model-group" aria-label={t("localModels")}>
-                      <div className="local-model-group-heading">
-                        <strong>{t("localModels")}</strong>
-                        <span
-                          className={`local-model-status${ollamaDown ? " is-down" : ""}`}
-                          title={models.ollama.endpoint ?? undefined}
-                          aria-label={
-                            models.ollama.endpoint
-                              ? `${ollamaDown ? t("ollamaUnavailable") : t("ollamaRunning")}, ${models.ollama.endpoint}`
-                              : undefined
-                          }
-                        >
-                          <span className="status-dot" aria-hidden="true" />
-                          <span>{ollamaDown ? t("ollamaUnavailable") : t("ollamaRunning")}</span>
-                        </span>
-                      </div>
-                      {staleLocalSelection && (
-                        <p className="local-model-warning" role="alert">
-                          <TriangleAlert size={14} aria-hidden="true" />
-                          <span>
-                            {t(
-                              purpose === "visual"
-                                ? "staleVisualModelSelected"
-                                : "staleTextModelSelected",
-                            )}
-                          </span>
-                        </p>
-                      )}
-                      {localModels.length === 0
-                        ? !ollamaDown && (
-                            <p>
+              <CliToolPicker cli={cli} />
+            </div>
+          ) : (
+            <div
+              className="local-model-panel"
+              role={purpose === "text" ? "tabpanel" : undefined}
+              id={purpose === "text" ? `${menuId}-source-panel` : undefined}
+              aria-labelledby={purpose === "text" ? `${menuId}-model-tab` : undefined}
+            >
+              <div className="local-model-search">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  aria-label={t("searchModels")}
+                  placeholder={t("searchModels")}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    aria-label={t("clearModelSearch")}
+                    onClick={() => {
+                      setQuery("");
+                      searchRef.current?.focus();
+                    }}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              <div
+                className="local-model-results"
+                role="menu"
+                aria-label={t(purpose === "visual" ? "visualModels" : "textModels")}
+              >
+                {isLoading ? (
+                  <p>{t("checkingAiModels")}</p>
+                ) : error ? (
+                  <p role="alert">{t("aiModelsUnavailable")}</p>
+                ) : noMatches ? (
+                  <p role="status">{t("noMatchingModels")}</p>
+                ) : (
+                  <>
+                    {(!search || visibleProviders.length > 0 || openRouterModels.length > 0) && (
+                      <section className="local-model-group" aria-label={t("apiModels")}>
+                        <strong>{t("apiModels")}</strong>
+                        {staleApiSelection && (
+                          <p className="local-model-warning" role="alert">
+                            <TriangleAlert size={14} aria-hidden="true" />
+                            <span>
                               {t(
-                                purpose === "visual" ? "noLocalVisionModels" : "noLocalTextModels",
+                                purpose === "visual"
+                                  ? "staleVisualApiModelSelected"
+                                  : "staleTextApiModelSelected",
                               )}
-                            </p>
-                          )
-                        : localModels.map((model) => {
-                            const checked =
-                              selection?.source === "local" && selection.modelId === model.id;
+                            </span>
+                          </p>
+                        )}
+                        {openRouterModels.length > 0 && (
+                          <OpenRouterBlock
+                            menuId={menuId}
+                            models={openRouterModels}
+                            hasKey={keyStatus.openrouter}
+                            expanded={Boolean(search) || expandedProvider === "openrouter"}
+                            selection={selection}
+                            isSaving={isSaving}
+                            onToggle={() =>
+                              setExpandedProvider(
+                                expandedProvider === "openrouter" ? null : "openrouter",
+                              )
+                            }
+                            describeModel={formatApiMeta}
+                            onChoose={(model) => {
+                              if (!keyStatus.openrouter) {
+                                openSettingsKeys();
 
-                            const meta = formatLocalMeta(model);
+                                return;
+                              }
+
+                              void chooseModel({
+                                source: "api",
+                                provider: "openrouter",
+                                modelId: model.id,
+                                modelName: model.name,
+                              });
+                            }}
+                          />
+                        )}
+                        {configuredProviders.length === 0 && openRouterModels.length === 0 ? (
+                          keyStatus.openrouter ? (
+                            <p>
+                              {t(purpose === "visual" ? "noApiVisualModels" : "noApiTextModels")}
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="local-model-configure-keys"
+                              onClick={openSettingsKeys}
+                            >
+                              <Settings aria-hidden="true" size={14} />
+                              <span>{t("noApiModels")}</span>
+                            </button>
+                          )
+                        ) : (
+                          visibleProviders.map((provider) => {
+                            const providerModels = compatibleApiModels.filter(
+                              (model) =>
+                                model.provider === provider.id &&
+                                matchesSearch(model.name, model.id, provider.label),
+                            );
+
+                            const expanded = Boolean(search) || expandedProvider === provider.id;
+                            const providerModelsId = `${menuId}-${provider.id}-models`;
 
                             return (
-                              <button
-                                type="button"
-                                className="local-model-option"
-                                role="menuitemradio"
-                                aria-checked={checked}
-                                aria-label={meta ? `${model.name}, ${meta}` : undefined}
-                                title={meta ?? undefined}
-                                disabled={isSaving}
-                                key={model.id}
-                                onClick={() =>
-                                  void chooseModel({
-                                    source: "local",
-                                    modelId: model.id,
-                                    modelName: model.name,
-                                  })
-                                }
-                              >
-                                <span>{model.name}</span>
-                                {checked && <Check aria-hidden="true" size={14} />}
-                              </button>
+                              <div className="local-api-provider" key={provider.id}>
+                                <button
+                                  type="button"
+                                  className="local-api-provider-toggle"
+                                  aria-expanded={expanded}
+                                  aria-controls={providerModelsId}
+                                  onClick={() => setExpandedProvider(expanded ? null : provider.id)}
+                                >
+                                  <ChevronRight aria-hidden="true" size={15} />
+                                  <span>{provider.label}</span>
+                                  <small>{providerModels.length}</small>
+                                </button>
+                                {expanded && (
+                                  <div className="local-api-provider-models" id={providerModelsId}>
+                                    {providerModels.length === 0 ? (
+                                      <p>
+                                        {t(
+                                          purpose === "visual"
+                                            ? "noApiVisualModels"
+                                            : "noApiTextModels",
+                                        )}
+                                      </p>
+                                    ) : (
+                                      providerModels.map((model) => (
+                                        <ApiModelOption
+                                          key={model.id}
+                                          model={model}
+                                          meta={formatApiMeta(model)}
+                                          checked={
+                                            selection?.source === "api" &&
+                                            selection.provider === provider.id &&
+                                            selection.modelId === model.id
+                                          }
+                                          disabled={isSaving}
+                                          onChoose={() =>
+                                            void chooseModel({
+                                              source: "api",
+                                              provider: provider.id,
+                                              modelId: model.id,
+                                              modelName: model.name,
+                                            })
+                                          }
+                                        />
+                                      ))
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             );
-                          })}
-                    </section>
-                  )}
-                </>
-              )}
+                          })
+                        )}
+                      </section>
+                    )}
+                    {(!search || localModels.length > 0) && (
+                      <section className="local-model-group" aria-label={t("localModels")}>
+                        <div className="local-model-group-heading">
+                          <strong>{t("localModels")}</strong>
+                          <span
+                            className={`local-model-status${ollamaDown ? " is-down" : ""}`}
+                            title={models.ollama.endpoint ?? undefined}
+                            aria-label={
+                              models.ollama.endpoint
+                                ? `${ollamaDown ? t("ollamaUnavailable") : t("ollamaRunning")}, ${models.ollama.endpoint}`
+                                : undefined
+                            }
+                          >
+                            <span className="status-dot" aria-hidden="true" />
+                            <span>{ollamaDown ? t("ollamaUnavailable") : t("ollamaRunning")}</span>
+                          </span>
+                        </div>
+                        {staleLocalSelection && (
+                          <p className="local-model-warning" role="alert">
+                            <TriangleAlert size={14} aria-hidden="true" />
+                            <span>
+                              {t(
+                                purpose === "visual"
+                                  ? "staleVisualModelSelected"
+                                  : "staleTextModelSelected",
+                              )}
+                            </span>
+                          </p>
+                        )}
+                        {localModels.length === 0
+                          ? !ollamaDown && (
+                              <p>
+                                {t(
+                                  purpose === "visual"
+                                    ? "noLocalVisionModels"
+                                    : "noLocalTextModels",
+                                )}
+                              </p>
+                            )
+                          : localModels.map((model) => {
+                              const checked =
+                                selection?.source === "local" && selection.modelId === model.id;
+
+                              const meta = formatLocalMeta(model);
+
+                              return (
+                                <button
+                                  type="button"
+                                  className="local-model-option"
+                                  role="menuitemradio"
+                                  aria-checked={checked}
+                                  aria-label={meta ? `${model.name}, ${meta}` : undefined}
+                                  title={meta ?? undefined}
+                                  disabled={isSaving}
+                                  key={model.id}
+                                  onClick={() =>
+                                    void chooseModel({
+                                      source: "local",
+                                      modelId: model.id,
+                                      modelName: model.name,
+                                    })
+                                  }
+                                >
+                                  <span>{model.name}</span>
+                                  {checked && <Check aria-hidden="true" size={14} />}
+                                </button>
+                              );
+                            })}
+                      </section>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-          <div
-            role="tabpanel"
-            id={`${menuId}-${purpose === "visual" ? "text" : "visual"}-panel`}
-            aria-labelledby={`${menuId}-${purpose === "visual" ? "text" : "visual"}-tab`}
-            hidden
-          />
+          )}
         </div>
       )}
     </div>

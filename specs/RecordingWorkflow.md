@@ -53,5 +53,5 @@ Record software walkthroughs with synchronized video, microphone audio, and mous
 
 - Live video streaming or cloud video hosting.
 - Multi-track video timeline editing.
-- Automatic document autosave across recording switches.
+- Automatic explicit saves. Saving stays a user action; unsaved text is kept as a recovery draft and revision history is durable ([Local persistence](LocalPersistence.md)).
 - System audio loopback capture.

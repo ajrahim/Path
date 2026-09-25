@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
-import { resolveUserDataDirectory } from "../src/storage/UserDataDirectory";
+import {
+  createUserDataDirectories,
+  resolveUserDataDirectory,
+  userDataLayout,
+} from "../src/storage/UserDataDirectory";
 
 const directories: string[] = [];
 
@@ -42,5 +46,31 @@ describe("user data directory", () => {
         "absolute, non-root directory",
       );
     }
+  });
+
+  it("creates every data directory on first launch and leaves existing data on reopen", async () => {
+    const layout = userDataLayout(join(appDataDirectory(), "Path"));
+
+    await createUserDataDirectories(layout);
+
+    for (const directory of [
+      layout.userDataDirectory,
+      layout.logsDirectory,
+      layout.whisperModelsDirectory,
+      layout.cliWorkDirectory,
+    ]) {
+      expect(existsSync(directory)).toBe(true);
+    }
+
+    // The database and credentials are created by their owners, inside this layout.
+    expect(layout.databasePath).toBe(join(layout.userDataDirectory, "database.sqlite"));
+    expect(layout.credentialsPath).toBe(
+      join(layout.userDataDirectory, "credentials", "ai-providers.json"),
+    );
+
+    writeFileSync(layout.databasePath, "existing data");
+    await createUserDataDirectories(layout);
+
+    expect(readFileSync(layout.databasePath, "utf8")).toBe("existing data");
   });
 });

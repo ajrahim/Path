@@ -1,15 +1,4 @@
-import type {
-  ClickEvent,
-  RecordingMediaTiming,
-  RecordingTimeWindow,
-  TimelineImportEntry,
-} from "@path/shared";
-
-/** A recording's wall-clock anchor; approximate anchors come from recordings without timing. */
-export interface ResolvedMediaTiming {
-  timing: RecordingMediaTiming;
-  isApproximate: boolean;
-}
+import type { RecordingMediaTiming, RecordingTimeWindow, TimelineImportEntry } from "@path/shared";
 
 /** A stored imported row before alignment; `occurredAtMs` is its original wall-clock time. */
 export interface WallClockRow {
@@ -18,46 +7,51 @@ export interface WallClockRow {
   text: string;
 }
 
+/** Inclusive wall-clock bounds of the rows that align inside a video, before any offset. */
+export interface WallClockRange {
+  startMs: number;
+  endMs: number;
+}
+
 /**
- * Older recordings stored only their preparation time, which precedes media zero by the capture
- * setup latency. A click's wall-clock time minus its media offset reproduces media zero until the
- * first pause, so the earliest difference is the closest estimate. Pauses cannot be recovered.
+ * Pauses at or before the video's end extend its real-world interval; rows taken during such a
+ * pause map to the pause point, where playback resumes.
  */
-export function resolveMediaTiming(
-  recording: { startedAt: string; mediaTiming: RecordingMediaTiming | null },
-  clicks: Pick<ClickEvent, "createdAt" | "timestampMs">[],
-): ResolvedMediaTiming {
-  if (recording.mediaTiming) {
-    return { timing: recording.mediaTiming, isApproximate: false };
-  }
-
-  const clickAnchors = clicks
-    .map((click) => Date.parse(click.createdAt) - click.timestampMs)
-    .filter(Number.isFinite);
-
-  const startedAtMs =
-    clickAnchors.length > 0 ? Math.min(...clickAnchors) : Date.parse(recording.startedAt);
-
-  return {
-    timing: { startedAt: new Date(startedAtMs).toISOString(), pauses: [] },
-    isApproximate: true,
-  };
+function pausedMsThrough(timing: RecordingMediaTiming, mediaMs: number): number {
+  return timing.pauses
+    .filter((pause) => pause.atMs <= mediaMs)
+    .reduce((total, pause) => total + pause.durationMs, 0);
 }
 
 /** The video ends after its media duration plus the wall-clock time spent paused before then. */
 export function recordingTimeWindow(
-  { timing, isApproximate }: ResolvedMediaTiming,
+  timing: RecordingMediaTiming,
   durationMs: number,
 ): RecordingTimeWindow {
-  const pausedMs = timing.pauses
-    .filter((pause) => pause.atMs < durationMs)
-    .reduce((total, pause) => total + pause.durationMs, 0);
+  const range = alignedWallClockRange(timing, durationMs);
 
   return {
     startedAt: timing.startedAt,
-    endedAt: new Date(Date.parse(timing.startedAt) + durationMs + pausedMs).toISOString(),
-    isApproximate,
+    endedAt: new Date(range.endMs).toISOString(),
   };
+}
+
+/**
+ * Wall-clock times that map inside the video form one contiguous interval, so storage can select
+ * a video's rows with an indexed range. `wallClockToMediaMs` is non-null exactly inside it.
+ */
+export function alignedWallClockRange(
+  timing: RecordingMediaTiming,
+  durationMs: number,
+): WallClockRange {
+  const startMs = Date.parse(timing.startedAt);
+
+  return { startMs, endMs: startMs + durationMs + pausedMsThrough(timing, durationMs) };
+}
+
+/** The latest wall-clock time whose row appears at or before a media position. */
+export function latestWallClockAtMediaMs(timing: RecordingMediaTiming, mediaMs: number): number {
+  return Date.parse(timing.startedAt) + mediaMs + pausedMsThrough(timing, mediaMs);
 }
 
 /**
@@ -75,7 +69,11 @@ export function wallClockToMediaMs(
 
   for (const pause of timing.pauses) {
     if (mediaMs <= pause.atMs) break;
-    if (mediaMs < pause.atMs + pause.durationMs) return pause.atMs;
+
+    if (mediaMs < pause.atMs + pause.durationMs) {
+      mediaMs = pause.atMs;
+      break;
+    }
 
     mediaMs -= pause.durationMs;
   }
@@ -83,31 +81,21 @@ export function wallClockToMediaMs(
   return mediaMs <= durationMs ? Math.round(mediaMs) : null;
 }
 
-/** Apply the import's clock offset, then keep only rows that fall inside the video. */
-export function alignTimelineRows(
-  rows: WallClockRow[],
+/** Apply the import's clock offset to one row; rows outside the video have no media time. */
+export function alignTimelineRow(
+  row: WallClockRow,
   timing: RecordingMediaTiming,
   durationMs: number,
   offsetMs: number,
-): { entries: TimelineImportEntry[]; outsideCount: number } {
-  const entries: TimelineImportEntry[] = [];
-  let outsideCount = 0;
+): TimelineImportEntry | null {
+  const timestampMs = wallClockToMediaMs(timing, durationMs, row.occurredAtMs + offsetMs);
 
-  for (const row of rows) {
-    const timestampMs = wallClockToMediaMs(timing, durationMs, row.occurredAtMs + offsetMs);
+  if (timestampMs === null) return null;
 
-    if (timestampMs === null) {
-      outsideCount += 1;
-      continue;
-    }
-
-    entries.push({
-      id: row.id,
-      occurredAt: new Date(row.occurredAtMs).toISOString(),
-      timestampMs,
-      text: row.text,
-    });
-  }
-
-  return { entries, outsideCount };
+  return {
+    id: row.id,
+    occurredAt: new Date(row.occurredAtMs).toISOString(),
+    timestampMs,
+    text: row.text,
+  };
 }

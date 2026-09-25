@@ -12,6 +12,8 @@ The desktop validates context through the shared IPC schema. The selected visual
 
 ## Ownership and scope
 
+Context Folder sits immediately after the plus. It is disabled with the tooltip "Connect a CLI in Settings" until a connected CLI is selected. The native picker grants a codebase folder for document updates; see [CLI text generation](CliTools.md) for connection, model, and reasoning selection.
+
 `GuideChatInput` owns the request and attachment draft. `GuideChatContext` owns the plus menu and file selection; `GuideContextImage` performs browser image normalization. `useGuideDocument` forwards context through the existing guide update bridge. `SelectedAiService` handles visual analysis and text-model routing. `GuideContext` holds shared types and bounds.
 
 File documents, remote URLs, image generation, provider changes, and persistent attachment libraries are outside this change.

@@ -20,7 +20,6 @@ Choose the Visual model for screenshot analysis independently from the Text mode
 
 - [x] Changing Text preserves Visual and vice versa, including after a restart.
 - [x] Text-only models appear under Text and cannot be saved for Visual through IPC.
-- [x] Older settings migrate without replacing valid stored choices.
 - [x] Failed saves and stale catalog responses retain the current choices.
 - [x] Overlapping visual and text requests use their intended models.
 - [x] Tabs support keyboard navigation; search, Escape, and focus return remain usable.
@@ -33,7 +32,7 @@ Image creation, audio/transcription model selection, model downloads, automatic 
 
 ## Source Ownership
 
-`LocalModelSelect`, `useAiModels`, and `ModelCatalog` own the UI and workflow. Shared contracts and IPC validate role-specific updates. `DesktopSettingsService` owns migration and persistence. `SelectedAiService`, `OllamaClickActionAnalyzer`, and `ProviderModels` own routing and compatible model discovery.
+`LocalModelSelect`, `useAiModels`, and `ModelCatalog` own the UI and workflow. Shared contracts and IPC validate role-specific updates. `DesktopSettingsService` owns validation and persistence. `SelectedAiService`, `OllamaClickActionAnalyzer`, and `ProviderModels` own routing and compatible model discovery.
 
 ## Verification
 
@@ -43,6 +42,6 @@ Verified on 2026-09-23:
 - `npm run check`, `npm run build`, `node tests/RendererPages.mjs`, and `git diff --check` passed.
 - Built renderer checked in light and dark themes with a mocked desktop bridge: independent selections, text-only filtering, save/reload, tab arrow navigation, Escape focus return, and menu geometry at 1480, 1280, and 1180 pixels wide. The last width and 720-pixel test height match the native window minimum.
 - Compact header refinement verified at those same dimensions: computed 11px text, 230px maximum trigger width, divider, actual long-name overflow with ellipsis and full-name tooltip, inline key status, and aligned Local/Ollama heading. Existing component tests and the full 280-test suite pass after the refinement.
-- Settings reload/migration and concurrent requests are covered by `DesktopSettingsService.test.ts`, `AiModelSelectionIpc.test.ts`, `SelectedAiService.test.ts`, and `OllamaClickActionAnalyzer.test.ts`. Catalog and UI checks are covered by `ProviderModels.test.ts`, `AiModels.test.ts`, `LocalModelSelect.test.tsx`, and `AiContracts.test.ts`.
+- Settings reload and concurrent requests are covered by `DesktopSettingsService.test.ts`, `AiModelSelectionIpc.test.ts`, `SelectedAiService.test.ts`, and `OllamaClickActionAnalyzer.test.ts`. Catalog and UI checks are covered by `ProviderModels.test.ts`, `AiModels.test.ts`, `LocalModelSelect.test.tsx`, and `AiContracts.test.ts`.
 
 Provider requests were mocked; live model inference remains unverified. Direct-provider capabilities use conservative family filters where catalogs omit modality metadata. OpenRouter and Ollama discovery use published capability fields.

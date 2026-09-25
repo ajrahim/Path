@@ -31,6 +31,8 @@
     "test:transcription": "npm run test:integration -w @path/transcription",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "npm run db:generate -w @path/database",
+    "db:reset": "node scripts/ResetDevelopmentData.mjs",
+    "measure:persistence": "node apps/desktop/scripts/MeasurePersistence.mjs",
     "version:bump": "node scripts/BumpVersion.mjs",
     "push": "node scripts/PushRelease.mjs",
     "release": "node scripts/PushRelease.mjs",

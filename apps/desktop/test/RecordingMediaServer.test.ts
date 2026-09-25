@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RecordingRepository } from "@path/database";
 import { RecordingMediaServer } from "../src/media/RecordingMediaServer";
 import { ManagedRecordingAssets } from "../src/storage/ManagedRecordingAssets";
 
@@ -19,18 +18,21 @@ beforeEach(async () => {
   const recordingId = randomUUID();
 
   currentRecordingId = recordingId;
-  const assets = new ManagedRecordingAssets(directory);
+  const assets = new ManagedRecordingAssets();
+  const location = { recordingId, storageRootPath: directory };
 
-  await assets.createRecordingDirectory(recordingId);
-  videoPath = assets.finalVideoPath(recordingId);
-  thumbnailPath = assets.thumbnailPath(recordingId);
+  await assets.useRoots({ id: "root", path: directory }, []);
+  await assets.createRecordingDirectory(location);
+  videoPath = assets.finalVideoPath(location);
+  thumbnailPath = assets.thumbnailPath(location);
 
   // Distinct bytes verify range handling without depending on video decoding.
   await writeFile(videoPath, "0123456789");
   await writeFile(thumbnailPath, "fake-png-thumbnail");
   const recordings = {
     get: async (id: string) => (id === recordingId ? { videoPath, thumbnailPath } : null),
-  } as unknown as RecordingRepository;
+    getClick: async () => null,
+  };
 
   server = new RecordingMediaServer(recordings, assets);
   await server.start();

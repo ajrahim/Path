@@ -76,6 +76,7 @@ describe("RecordingController click analysis", () => {
       {} as never,
       null,
       analyzer,
+      { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     );
 
     await expect(controller.analyzeClicks("recording-1")).resolves.toEqual({
@@ -115,6 +116,7 @@ describe("RecordingController click analysis", () => {
       {} as never,
       null,
       analyzer,
+      { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     );
 
     await expect(controller.analyzeClicks("recording-1")).resolves.toEqual({
@@ -164,6 +166,7 @@ describe("RecordingController click analysis", () => {
       {} as never,
       null,
       analyzer,
+      { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     );
 
     await controller.analyzeClicks("recording-1");

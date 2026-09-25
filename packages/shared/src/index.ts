@@ -4,3 +4,4 @@ export * from "./Ipc";
 export * from "./InstructionFlows";
 export { RENDERER_ROUTES } from "./RendererRoutes";
 export * from "./GuideContext";
+export * from "./CliTools";

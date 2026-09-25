@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@path/shared/messages/en.json";
-import { loadInstructionFlows } from "@path/shared";
+import { parseInstructionFlowState } from "@path/shared";
 import { WorkspaceWelcome } from "../src/components/WorkspaceWelcome";
 import { createInstructionFlowFixture } from "./InstructionFlowFixture";
 
@@ -15,7 +15,7 @@ let fixture: ReturnType<typeof createInstructionFlowFixture>;
 beforeEach(() => {
   window.localStorage.clear();
   fixture = createInstructionFlowFixture({
-    ...loadInstructionFlows(null),
+    ...parseInstructionFlowState(null),
     selectedId: "provide-feedback",
     customFlows: [
       { id: "custom-saved", name: "My format", instructions: "Preserve this", icon: "file-text" },

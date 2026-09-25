@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1787467322603,
-      "tag": "0000_luxuriant_pete_wisdom",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1788588570566,
-      "tag": "0001_normal_mole_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1789960971739,
-      "tag": "0002_brave_shockwave",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1790215481501,
-      "tag": "0003_smiling_logan",
+      "when": 1790286539941,
+      "tag": "0000_baseline",
       "breakpoints": true
     }
   ]

@@ -6,18 +6,19 @@ import { appSettings } from "./Schema";
 export class AppSettingsRepository {
   constructor(private readonly db: PathDatabase) {}
 
-  async get<T>(key: string): Promise<T | null> {
-    const row = await this.db.query.appSettings.findFirst({ where: eq(appSettings.key, key) });
+  get(key: string): unknown {
+    const row = this.db.select().from(appSettings).where(eq(appSettings.key, key)).get();
 
-    return row ? (row.valueJson as T) : null;
+    return row ? row.valueJson : null;
   }
 
-  async set<T>(key: string, value: T): Promise<void> {
+  set(key: string, value: unknown): void {
     const updatedAt = new Date().toISOString();
 
-    await this.db
+    this.db
       .insert(appSettings)
       .values({ key, valueJson: value, updatedAt })
-      .onConflictDoUpdate({ target: appSettings.key, set: { valueJson: value, updatedAt } });
+      .onConflictDoUpdate({ target: appSettings.key, set: { valueJson: value, updatedAt } })
+      .run();
   }
 }

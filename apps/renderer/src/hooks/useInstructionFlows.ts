@@ -2,8 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useTranslations } from "next-intl";
 import {
   BUILT_IN_FLOWS,
-  FLOW_STORAGE_KEY,
-  loadInstructionFlows,
+  parseInstructionFlowState,
   resolveInstructionFlows,
   type InstructionFlowIcon,
   type InstructionFlow,
@@ -74,7 +73,7 @@ function reduceFlows(state: FlowWorkflow, action: FlowAction): FlowWorkflow {
 export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?: boolean } = {}) {
   const t = useTranslations();
   const [state, dispatch] = useReducer(reduceFlows, {
-    flows: loadInstructionFlows(null),
+    flows: parseInstructionFlowState(null),
     loaded: false,
     isBusy: false,
     error: null,
@@ -96,32 +95,18 @@ export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?
     });
 
     async function load(): Promise<void> {
-      let flows: InstructionFlowState | null = null;
-
       try {
         if (!api) {
-          dispatch({ type: "snapshot", flows: loadInstructionFlows(null), loaded: true });
+          dispatch({ type: "snapshot", flows: parseInstructionFlowState(null), loaded: true });
 
           return;
         }
 
-        flows = await api.get();
-
-        if (session === sessionRef.current) dispatch({ type: "snapshot", flows });
-        // Legacy data is retained as a recovery source. Desktop migration tracks imported IDs,
-        // so another window cannot overwrite edits or resurrect a deleted migrated prompt.
-        const legacy = window.localStorage.getItem(FLOW_STORAGE_KEY);
-
-        if (legacy) {
-          const { selectedId, customFlows } = loadInstructionFlows(legacy);
-
-          flows = await api.migrate({ selectedId, customFlows });
-        }
+        const flows = await api.get();
 
         if (session === sessionRef.current) dispatch({ type: "snapshot", flows, loaded: true });
       } catch (error) {
         if (session === sessionRef.current) {
-          if (flows) dispatch({ type: "snapshot", flows, loaded: true });
           dispatch({ type: "load-failed", error: message(error, t("settings.loadError")) });
         }
       }

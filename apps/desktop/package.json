@@ -13,7 +13,7 @@
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node Build.mjs",
-    "dev": "npm run build && wait-on http://127.0.0.1:3000 && cross-env PATH_APP_RENDERER_URL=http://127.0.0.1:3000 electron .",
+    "dev": "npm run build && wait-on http-get://127.0.0.1:3000 --timeout 60000 --httpTimeout 10000 --simultaneous 1 && cross-env PATH_APP_RENDERER_URL=http://127.0.0.1:3000 electron .",
     "package": "npm run rebuild:native && electron-builder --publish never",
     "package:dir": "npm run rebuild:native && electron-builder --dir --publish never",
     "rebuild:native": "node scripts/RebuildNative.mjs",

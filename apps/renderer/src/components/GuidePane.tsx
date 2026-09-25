@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
-  ChevronLeft,
-  ChevronRight,
   Copy,
   Download,
+  GitCompare,
+  History,
   RotateCcw,
   Save,
   Sparkles,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useNow, useTranslations } from "next-intl";
 import type { GuideContextItem, RecordingSummary } from "@path/shared";
 import { Button } from "@/components/Button";
 import { GuideChatInput } from "./GuideChatInput";
+import { GuideRevisionCompare } from "./GuideRevisionCompare";
+import { GuideVersionSelect } from "./GuideVersionSelect";
 import { InstructionFlowSelect } from "./InstructionFlowSelect";
 import { InstructionFlowEditor } from "./InstructionFlowEditor";
 import { useInstructionFlows } from "../hooks/useInstructionFlows";
@@ -21,6 +23,8 @@ import { useGuideDocument } from "../hooks/useGuideDocument";
 export interface GuidePaneState {
   isDirty: boolean;
   save(): Promise<boolean>;
+  /** Drops unsaved text durably so its recovery draft does not return. */
+  discard(): Promise<boolean>;
 }
 
 export function GuidePane({
@@ -31,19 +35,30 @@ export function GuidePane({
   onGuideStateChange?(state: GuidePaneState | null): void;
 }) {
   const t = useTranslations();
+  const format = useFormatter();
+  // "Last saved 5 minutes ago" stays current while the pane is open.
+  const now = useNow({ updateInterval: 60_000 });
   const flows = useInstructionFlows();
-  const { markdownInputRef, isDirty, saveDocument, ...guide } = useGuideDocument(recording);
+  const { markdownInputRef, isDirty, saveDocument, discardChanges, ...guide } =
+    useGuideDocument(recording);
+
   const [overwriteOpen, setOverwriteOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const flowSelectRef = useRef<HTMLButtonElement>(null);
   const error = guide.error ?? flows.error;
   const promptsReady = flows.loaded && !flows.isBusy;
 
-  // The workspace keeps only the latest dirty flag and saver for its discard guard.
+  const preview = guide.preview;
+  const isBusy = guide.loading || guide.generating || guide.updating || guide.restoring;
+  // The editor shows a previewed version, or the version its current text came from.
+  const shownNumber = preview?.number ?? guide.currentRevisionNumber;
+
+  // The workspace keeps only the latest dirty flag and handlers for its discard guard.
   useEffect(() => {
-    onGuideStateChange?.({ isDirty, save: saveDocument });
+    onGuideStateChange?.({ isDirty, save: saveDocument, discard: discardChanges });
 
     return () => onGuideStateChange?.(null);
-  }, [isDirty, saveDocument, onGuideStateChange]);
+  }, [isDirty, saveDocument, discardChanges, onGuideStateChange]);
 
   function requestGenerate(): void {
     if (!promptsReady) return;
@@ -61,21 +76,44 @@ export function GuidePane({
     void guide.generateGuide(flows.selectedFlow.instructions);
   }
 
-  async function updateGuide(prompt: string, context: GuideContextItem[]): Promise<boolean> {
+  async function updateGuide(
+    prompt: string,
+    context: GuideContextItem[],
+    contextFolder?: string,
+  ): Promise<boolean> {
     if (!promptsReady) return false;
 
-    return guide.updateGuide(flows.selectedFlow.instructions, prompt, context);
+    return guide.updateGuide(flows.selectedFlow.instructions, prompt, context, contextFolder);
   }
 
   function retryGenerate(): void {
     if (promptsReady) void guide.generateGuide(flows.selectedFlow.instructions);
   }
 
-  let saveStatus = "";
+  // Recovery drafts never read as saved: the time shown is the last explicit, committed save.
+  function saveStatusText(): string {
+    if (guide.saving) return t("guide.saving");
 
-  if (guide.saving) saveStatus = t("guide.saving");
-  else if (isDirty) saveStatus = t("guide.unsaved");
-  else if (guide.markdown) saveStatus = t("guide.saved");
+    const lastSaved = guide.savedAt ? format.relativeTime(new Date(guide.savedAt), now) : null;
+
+    if (!isDirty) return lastSaved ? t("guide.lastSaved", { time: lastSaved }) : "";
+    if (guide.draftStatus === "failed" || guide.draftStatus === "conflict") {
+      return t("guide.draftNotKept");
+    }
+
+    if (guide.isRecoveredDraft) return t("guide.draftRecovered");
+
+    return lastSaved ? t("guide.unsavedLastSaved", { time: lastSaved }) : t("guide.unsaved");
+  }
+
+  /** Choosing the version the editor text came from returns to editing it. */
+  function showRevision(number: number | null): void {
+    const isCurrent = number === null || number === guide.currentRevisionNumber;
+
+    void guide.previewRevision(isCurrent ? null : number);
+  }
+
+  const saveStatus = saveStatusText();
 
   return (
     <>
@@ -120,7 +158,7 @@ export function GuidePane({
               file.type.startsWith("image/"),
             );
 
-            if (images.length === 0) return;
+            if (images.length === 0 || preview) return;
 
             event.preventDefault();
             void guide.insertImages(images);
@@ -128,9 +166,39 @@ export function GuidePane({
         >
           {recording ? (
             <>
+              {preview && (
+                <div className="guide-preview-bar" role="status">
+                  <span>{t("guide.previewing", { number: preview.number })}</span>
+                  <div className="guide-preview-actions">
+                    <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
+                      <GitCompare aria-hidden="true" size={13} />
+                      {t("guide.compare")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={isBusy}
+                      onClick={() => void guide.restoreRevision(preview.number)}
+                    >
+                      <History aria-hidden="true" size={13} />
+                      {guide.restoring ? t("guide.restoring") : t("guide.restore")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={guide.restoring}
+                      onClick={() => void guide.previewRevision(null)}
+                    >
+                      {t("guide.backToCurrent")}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <textarea
                 ref={markdownInputRef}
-                value={guide.markdown}
+                className={preview ? "guide-previewing" : undefined}
+                value={preview?.markdown ?? guide.markdown}
+                readOnly={preview !== null}
                 disabled={guide.loading}
                 onChange={(event) => guide.editMarkdown(event.target.value)}
                 onPaste={(event) => {
@@ -138,7 +206,7 @@ export function GuidePane({
                     file.type.startsWith("image/"),
                   );
 
-                  if (images.length === 0) return;
+                  if (images.length === 0 || preview) return;
 
                   event.preventDefault();
                   void guide.insertImages(images);
@@ -149,72 +217,24 @@ export function GuidePane({
               <GuideChatInput
                 key={recording?.id}
                 updating={guide.updating}
-                disabled={guide.loading || guide.generating || !promptsReady}
+                disabled={
+                  guide.loading || guide.generating || guide.restoring || !promptsReady || !!preview
+                }
                 onSend={updateGuide}
               />
               <div className="markdown-editor-footer">
                 <div className="markdown-footer-info">
-                  {guide.versions.length > 0 ? (
-                    <span className="guide-version-select">
-                      <button
-                        type="button"
-                        className="guide-version-step"
-                        title={t("guide.versionPrevious")}
-                        aria-label={t("guide.versionPrevious")}
-                        disabled={
-                          guide.loading ||
-                          guide.generating ||
-                          guide.updating ||
-                          (guide.atVersion && guide.activeVersion <= 0)
-                        }
-                        onClick={() =>
-                          guide.selectVersion(
-                            guide.atVersion ? guide.activeVersion - 1 : guide.activeVersion,
-                          )
-                        }
-                      >
-                        <ChevronLeft aria-hidden="true" size={14} />
-                      </button>
-                      <select
-                        className="guide-version-menu"
-                        aria-label={t("guide.versionLabel")}
-                        disabled={guide.loading || guide.generating || guide.updating}
-                        value={guide.atVersion ? guide.activeVersion : "edits"}
-                        onChange={(event) => {
-                          if (event.target.value !== "edits") {
-                            guide.selectVersion(Number(event.target.value));
-                          }
-                        }}
-                      >
-                        {guide.versions.map((_, index) => (
-                          <option key={index} value={index}>
-                            {t("guide.versionOption", {
-                              index: index + 1,
-                              count: guide.versions.length,
-                            })}
-                          </option>
-                        ))}
-                        {!guide.atVersion && (
-                          <option value="edits">{t("guide.versionEdits")}</option>
-                        )}
-                      </select>
-                      <button
-                        type="button"
-                        className="guide-version-step"
-                        title={t("guide.versionNext")}
-                        aria-label={t("guide.versionNext")}
-                        disabled={
-                          guide.loading ||
-                          guide.generating ||
-                          guide.updating ||
-                          !guide.atVersion ||
-                          guide.activeVersion >= guide.versions.length - 1
-                        }
-                        onClick={() => guide.selectVersion(guide.activeVersion + 1)}
-                      >
-                        <ChevronRight aria-hidden="true" size={14} />
-                      </button>
-                    </span>
+                  {guide.revisions.length > 0 ? (
+                    <GuideVersionSelect
+                      revisions={guide.revisions}
+                      hasOlderRevisions={guide.hasOlderRevisions}
+                      shownNumber={shownNumber}
+                      currentNumber={guide.currentRevisionNumber}
+                      savedNumber={guide.savedRevisionNumber}
+                      disabled={isBusy}
+                      onSelect={showRevision}
+                      onLoadOlder={() => void guide.loadOlderRevisions()}
+                    />
                   ) : (
                     <span className="guide-version-empty">{t("guide.noVersions")}</span>
                   )}
@@ -243,7 +263,7 @@ export function GuidePane({
                   <Button
                     size="sm"
                     variant="secondary"
-                    disabled={!isDirty || guide.saving || guide.generating || guide.updating}
+                    disabled={!isDirty || guide.saving || isBusy || !!preview}
                     onClick={() => void saveDocument()}
                   >
                     <Save size={13} />
@@ -268,6 +288,11 @@ export function GuidePane({
               <strong>{t("guide.emptyTitle")}</strong>
               <p>{flows.selectedFlow.name}</p>
             </div>
+          )}
+          {guide.notice && !error && (
+            <p className="markdown-image-error guide-notice" role="status">
+              <span>{guide.notice}</span>
+            </p>
           )}
           {error && (
             <p className="markdown-image-error" role="alert">
@@ -319,6 +344,14 @@ export function GuidePane({
             </footer>
           </div>
         </div>
+      )}
+      {compareOpen && preview && (
+        <GuideRevisionCompare
+          revisionNumber={preview.number}
+          revisionMarkdown={preview.markdown}
+          currentMarkdown={guide.markdown}
+          onClose={() => setCompareOpen(false)}
+        />
       )}
       <InstructionFlowEditor flows={flows} />
     </>

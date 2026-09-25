@@ -1,7 +1,9 @@
-import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { join, resolve } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiModelSelection } from "@path/shared";
 import { DesktopSettingsService } from "../src/settings/DesktopSettingsService";
+import { ManagedRecordingAssets } from "../src/storage/ManagedRecordingAssets";
+import { openInProcessDatabase, type InProcessDatabase } from "./InProcessDatabase";
 
 vi.mock("electron", () => ({ app: { setLoginItemSettings: vi.fn() } }));
 
@@ -18,167 +20,117 @@ const apiSelection: AiModelSelection = {
   modelName: "Text model",
 };
 
-function createSettings(stored?: unknown) {
-  const values = new Map<string, unknown>([["desktop-settings", structuredClone(stored)]]);
-  const repository = {
-    get: vi.fn(async (key: string) => structuredClone(values.get(key))),
-    set: vi.fn(async (key: string, value: unknown) => {
-      values.set(key, structuredClone(value));
-    }),
-  };
+const databases: InProcessDatabase[] = [];
 
-  const assets = { addAllowedRoot: vi.fn(), setRoot: vi.fn().mockResolvedValue(undefined) };
-  const settings = new DesktopSettingsService(repository as never, assets as never, "recordings");
+afterEach(() => {
+  for (const database of databases.splice(0)) database.close();
+});
 
-  return { settings, repository, assets };
+function openDatabase(): InProcessDatabase {
+  const database = openInProcessDatabase();
+
+  databases.push(database);
+
+  return database;
 }
 
-describe("DesktopSettingsService AI models", () => {
-  it("starts both roles with the existing default model", async () => {
-    const { settings } = createSettings();
-
-    await settings.initialize();
-
-    expect(settings.get().aiModelSelections).toEqual({
-      visual: {
-        source: "local",
-        modelId: "llama3.2-vision:latest",
-        modelName: "llama3.2-vision:latest",
-      },
-      text: {
-        source: "local",
-        modelId: "llama3.2-vision:latest",
-        modelName: "llama3.2-vision:latest",
-      },
-    });
-  });
-
-  it.each([localSelection, apiSelection])(
-    "migrates a legacy $source selection to both roles without changing the provider",
-    async (selection) => {
-      const { settings } = createSettings({ aiModelSelection: selection });
-
-      await settings.initialize();
-
-      expect(settings.get().aiModelSelections).toEqual({ visual: selection, text: selection });
-    },
+/** A fresh service over the same stored data, as after an app restart. */
+function createSettings(database: InProcessDatabase) {
+  const assets = new ManagedRecordingAssets();
+  const diagnostics = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
+  const settings = new DesktopSettingsService(
+    database.repositories,
+    assets,
+    join(database.directory, "recordings"),
+    diagnostics,
   );
 
-  it("falls back to the legacy local model when no valid selection was stored", async () => {
-    const { settings } = createSettings({ localVisionModel: " custom-local:latest " });
+  return { settings, assets, diagnostics };
+}
+
+describe("DesktopSettingsService", () => {
+  it("starts from defaults on first launch and registers the default recordings root", async () => {
+    const database = openDatabase();
+    const { settings, assets } = createSettings(database);
 
     await settings.initialize();
 
-    const selection = {
-      source: "local",
-      modelId: "custom-local:latest",
-      modelName: "custom-local:latest",
-    };
-
-    expect(settings.get().aiModelSelections).toEqual({ visual: selection, text: selection });
-    expect(settings.get().localVisionModel).toBe("custom-local:latest");
-  });
-
-  it.each([undefined, { ...apiSelection, provider: "unknown" }])(
-    "retains valid new roles and migrates missing or malformed roles independently: %j",
-    async (textSelection) => {
-      const { settings } = createSettings({
-        aiModelSelection: apiSelection,
-        aiModelSelections: { visual: localSelection, text: textSelection },
-        general: { minimizeToTray: false },
-        guideInstructions: "Existing instructions",
-        recordingsDirectory: "custom-recordings",
-      });
-
-      await settings.initialize();
-
-      expect(settings.get()).toMatchObject({
-        aiModelSelections: { visual: localSelection, text: apiSelection },
-        general: { minimizeToTray: false },
-        guideInstructions: "Existing instructions",
-        recordingsDirectory: resolve("custom-recordings"),
-      });
-    },
-  );
-
-  it.each([
-    null,
-    [],
-    { source: "local", modelId: "", modelName: "Invalid" },
-    { source: "local", modelId: "   ", modelName: "Invalid" },
-    { source: "api", provider: "unknown", modelId: "model", modelName: "Invalid" },
-    { ...localSelection, unexpected: true },
-  ])("ignores malformed persisted selections: %j", async (selection) => {
-    const { settings } = createSettings({
-      aiModelSelection: selection,
-      aiModelSelections: { visual: selection, text: selection },
-      localVisionModel: "legacy-model",
+    expect(settings.get()).toEqual({
+      general: { minimizeToTray: true },
+      timelineImports: { maxFileSizeMb: 10 },
+      recordingsDirectory: resolve(database.directory, "recordings"),
+      aiModelSelections: {
+        visual: {
+          source: "local",
+          modelId: "llama3.2-vision:latest",
+          modelName: "llama3.2-vision:latest",
+        },
+        text: {
+          source: "local",
+          modelId: "llama3.2-vision:latest",
+          modelName: "llama3.2-vision:latest",
+        },
+      },
     });
-
-    await settings.initialize();
-
-    expect(settings.get().aiModelSelections.visual.modelId).toBe("legacy-model");
-    expect(settings.get().aiModelSelections.text.modelId).toBe("legacy-model");
+    expect(assets.currentRoot.path).toBe(resolve(database.directory, "recordings"));
+    await expect(database.repositories.appSettings.get("desktop-settings")).resolves.toBeNull();
   });
 
-  it("uses defaults for an invalid legacy local model", async () => {
-    const { settings } = createSettings({ localVisionModel: "   " });
-
-    await settings.initialize();
-
-    expect(settings.get().aiModelSelections.visual.modelId).toBe("llama3.2-vision:latest");
-    expect(settings.get().aiModelSelections.text.modelId).toBe("llama3.2-vision:latest");
-  });
-
-  it("saves independent selections and preserves them after reload", async () => {
-    const { settings, repository, assets } = createSettings();
+  it("persists every change and restores it after a restart", async () => {
+    const database = openDatabase();
+    const { settings } = createSettings(database);
 
     await settings.initialize();
     await settings.updateAiModelSelection("visual", localSelection);
     await settings.updateAiModelSelection("text", apiSelection);
+    await settings.updateGeneral({ minimizeToTray: false });
+    await settings.updateTimelineImports({ maxFileSizeMb: 25 });
 
-    const reloaded = new DesktopSettingsService(repository as never, assets as never, "recordings");
+    const { settings: reloaded } = createSettings(database);
 
     await reloaded.initialize();
 
-    expect(reloaded.get().aiModelSelections).toEqual({
-      visual: localSelection,
-      text: apiSelection,
+    expect(reloaded.get()).toMatchObject({
+      general: { minimizeToTray: false },
+      timelineImports: { maxFileSizeMb: 25 },
+      aiModelSelections: { visual: localSelection, text: apiSelection },
     });
-    expect(reloaded.get().localVisionModel).toBe(localSelection.modelId);
   });
 
-  it("keeps legacy local updates scoped to visual and text updates out of the legacy field", async () => {
-    const { settings } = createSettings({ aiModelSelection: apiSelection });
+  it("keeps earlier recording roots managed after the location changes", async () => {
+    const database = openDatabase();
+    const { settings, assets } = createSettings(database);
+    const moved = join(database.directory, "moved");
 
     await settings.initialize();
-    await settings.updateLocalVisionModel("new-vision");
 
-    expect(settings.get().aiModelSelections).toEqual({
-      visual: { source: "local", modelId: "new-vision", modelName: "new-vision" },
-      text: apiSelection,
-    });
+    const firstRoot = assets.currentRoot;
 
-    await settings.updateAiModelSelection("text", localSelection);
+    await settings.updateRecordingsDirectory(moved);
 
-    expect(settings.get().localVisionModel).toBe("new-vision");
-    expect(settings.get().aiModelSelections.visual.modelId).toBe("new-vision");
+    expect(settings.get().recordingsDirectory).toBe(resolve(moved));
+    expect(assets.currentRoot.path).toBe(resolve(moved));
+    expect(assets.isManagedFile(join(firstRoot.path, "recording", "recording.mp4"))).toBe(true);
+
+    const { settings: reloaded, assets: reloadedAssets } = createSettings(database);
+
+    await reloaded.initialize();
+
+    expect(reloadedAssets.currentRoot.path).toBe(resolve(moved));
+    expect(reloadedAssets.isManagedFile(join(firstRoot.path, "recording", "a.png"))).toBe(true);
+    await expect(database.repositories.storageRoots.list()).resolves.toHaveLength(2);
   });
 
-  it("returns snapshots that cannot change either role or their persisted selection", async () => {
-    const { settings } = createSettings({ aiModelSelection: localSelection });
+  it("returns snapshots that cannot change the stored settings", async () => {
+    const database = openDatabase();
+    const { settings } = createSettings(database);
 
     await settings.initialize();
 
     const snapshot = settings.get();
 
     snapshot.aiModelSelections.visual.modelId = "changed-visual";
-    snapshot.aiModelSelections.text.modelId = "changed-text";
-
-    expect(settings.get().aiModelSelections).toEqual({
-      visual: localSelection,
-      text: localSelection,
-    });
+    expect(settings.get().aiModelSelections.visual.modelId).toBe("llama3.2-vision:latest");
 
     const result = await settings.updateAiModelSelection("text", apiSelection);
 
@@ -186,14 +138,17 @@ describe("DesktopSettingsService AI models", () => {
     expect(settings.get().aiModelSelections.text).toEqual(apiSelection);
   });
 
-  it("keeps the current choice after a save failure and accepts a later selection", async () => {
-    const { settings, repository } = createSettings({ aiModelSelection: apiSelection });
+  it("keeps the current choice after a failed write and accepts a later change", async () => {
+    const database = openDatabase();
+    const { settings } = createSettings(database);
 
     await settings.initialize();
 
     const before = settings.get();
 
-    repository.set.mockRejectedValueOnce(new Error("Storage unavailable"));
+    vi.spyOn(database.repositories.appSettings, "set").mockRejectedValueOnce(
+      new Error("Storage unavailable"),
+    );
 
     await expect(settings.updateAiModelSelection("visual", localSelection)).rejects.toThrow(
       "Storage unavailable",
@@ -202,115 +157,60 @@ describe("DesktopSettingsService AI models", () => {
 
     await settings.updateAiModelSelection("text", localSelection);
 
-    expect(settings.get().aiModelSelections).toEqual({
-      visual: apiSelection,
-      text: localSelection,
-    });
+    expect(settings.get().aiModelSelections.text).toEqual(localSelection);
   });
 
-  it("serializes overlapping role saves and exposes only persisted choices", async () => {
-    const { settings, repository, assets } = createSettings();
+  it("serializes overlapping changes so none is lost", async () => {
+    const database = openDatabase();
+    const { settings } = createSettings(database);
 
     await settings.initialize();
 
-    const before = settings.get();
-    const save = repository.set.getMockImplementation()!;
-    let finishSave!: () => void;
-    const pendingSave = new Promise<void>((resolveSave) => {
-      finishSave = resolveSave;
-    });
+    const updates = [
+      settings.updateAiModelSelection("visual", localSelection),
+      settings.updateAiModelSelection("text", apiSelection),
+      settings.updateGeneral({ minimizeToTray: false }),
+    ];
 
-    repository.set.mockImplementationOnce(async (key, value) => {
-      await pendingSave;
-      await save(key, value);
-    });
+    await Promise.all(updates);
 
-    const visualUpdate = settings.updateAiModelSelection("visual", localSelection);
-    const textUpdate = settings.updateAiModelSelection("text", apiSelection);
-
-    await Promise.resolve();
-
-    expect(repository.set).toHaveBeenCalledTimes(1);
-    expect(settings.get()).toEqual(before);
-
-    finishSave();
-    await Promise.all([visualUpdate, textUpdate]);
-
-    const reloaded = new DesktopSettingsService(repository as never, assets as never, "recordings");
+    const { settings: reloaded } = createSettings(database);
 
     await reloaded.initialize();
 
-    expect(reloaded.get().aiModelSelections).toEqual({
-      visual: localSelection,
-      text: apiSelection,
+    expect(reloaded.get()).toMatchObject({
+      general: { minimizeToTray: false },
+      aiModelSelections: { visual: localSelection, text: apiSelection },
     });
   });
 
-  it("preserves general changes and the model choice when settings saves overlap", async () => {
-    const { settings, repository, assets } = createSettings();
+  it.each([
+    { timelineImports: { maxFileSizeMb: 0 } },
+    { timelineImports: { maxFileSizeMb: 2.5 } },
+    { aiModelSelections: { visual: { source: "local", modelId: "", modelName: "x" } } },
+    "not an object",
+  ])("uses defaults for invalid stored settings without overwriting them: %j", async (patch) => {
+    const database = openDatabase();
+    const { settings: first } = createSettings(database);
+
+    await first.initialize();
+
+    const stored =
+      typeof patch === "string"
+        ? patch
+        : { ...first.get(), general: { minimizeToTray: false }, ...patch };
+
+    await database.repositories.appSettings.set("desktop-settings", stored);
+
+    const { settings, diagnostics } = createSettings(database);
 
     await settings.initialize();
 
-    const save = repository.set.getMockImplementation()!;
-    let finishSave!: () => void;
-    const pendingSave = new Promise<void>((resolveSave) => {
-      finishSave = resolveSave;
-    });
-
-    repository.set.mockImplementationOnce(async (key, value) => {
-      await pendingSave;
-      await save(key, value);
-    });
-
-    const modelUpdate = settings.updateAiModelSelection("text", apiSelection);
-
-    await Promise.resolve();
-
-    const generalUpdate = settings.updateGeneral({ minimizeToTray: false });
-
-    await Promise.resolve();
-
-    expect(repository.set).toHaveBeenCalledTimes(1);
-
-    finishSave();
-    await Promise.all([modelUpdate, generalUpdate]);
-
-    const reloaded = new DesktopSettingsService(repository as never, assets as never, "recordings");
-
-    await reloaded.initialize();
-
-    expect(reloaded.get().general.minimizeToTray).toBe(false);
-    expect(reloaded.get().aiModelSelections.text).toEqual(apiSelection);
-    expect(settings.get().general.minimizeToTray).toBe(false);
-  });
-});
-
-describe("DesktopSettingsService timeline imports", () => {
-  it("defaults the import limit to 10 MB and persists a changed limit", async () => {
-    const { settings, repository, assets } = createSettings();
-
-    await settings.initialize();
-
+    expect(settings.get().general.minimizeToTray).toBe(true);
     expect(settings.get().timelineImports).toEqual({ maxFileSizeMb: 10 });
-
-    await settings.updateTimelineImports({ maxFileSizeMb: 25 });
-
-    const reloaded = new DesktopSettingsService(repository as never, assets as never, "recordings");
-
-    await reloaded.initialize();
-
-    expect(reloaded.get().timelineImports).toEqual({ maxFileSizeMb: 25 });
+    expect(diagnostics.warn).toHaveBeenCalledOnce();
+    await expect(database.repositories.appSettings.get("desktop-settings")).resolves.toEqual(
+      stored,
+    );
   });
-
-  it.each([{ maxFileSizeMb: 0 }, { maxFileSizeMb: 101 }, { maxFileSizeMb: 2.5 }, "10", null])(
-    "ignores an invalid stored import limit: %j",
-    async (timelineImports) => {
-      const { settings } = createSettings({ timelineImports, general: { minimizeToTray: false } });
-
-      await settings.initialize();
-
-      expect(settings.get().timelineImports).toEqual({ maxFileSizeMb: 10 });
-      expect(settings.get().general.minimizeToTray).toBe(false);
-    },
-  );
 });

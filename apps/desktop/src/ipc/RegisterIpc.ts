@@ -1,20 +1,31 @@
+import type { CliToolService } from "../ai/CliToolService";
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { stat, writeFile } from "node:fs/promises";
-import type { RecordingRepository, ProjectRepository } from "@path/database";
 import {
+  cliConnectSchema,
+  cliSelectionSchema,
+  cliModeSchema,
+  cliModelsInputSchema,
   clickAssetInputSchema,
   clickTrackingInputSchema,
   projectChangeInputSchema,
   exportMarkdownInputSchema,
   generateGuideInputSchema,
   saveGuideDocumentInputSchema,
+  saveGuideDraftInputSchema,
+  discardGuideDraftInputSchema,
+  listGuideRevisionsInputSchema,
+  guideRevisionInputSchema,
+  restoreGuideRevisionInputSchema,
+  appFlushCompleteInputSchema,
+  timelineImportRowsInputSchema,
+  locateTimelineImportRowInputSchema,
   updateClickDescriptionInputSchema,
   aiProviderInputSchema,
   activityItemInputSchema,
   IPC_CHANNELS,
   isActiveRecordingStatus,
   instructionFlowIdInputSchema,
-  migrateInstructionFlowsInputSchema,
   saveInstructionFlowInputSchema,
   openSettingsInputSchema,
   recorderPopoverExpandedInputSchema,
@@ -32,20 +43,16 @@ import {
   updateGeneralSettingsInputSchema,
   updateTimelineImportSettingsInputSchema,
   updateGuideInputSchema,
-  updateGuideInstructionsInputSchema,
-  updateLocalVisionModelInputSchema,
   updateAiModelSelectionInputSchema,
   type AppInfo,
   type TimelineImportKind,
 } from "@path/shared";
 import type { AiCredentialStore } from "../storage/AiCredentialStore";
-import {
-  buildDocumentActivity,
-  buildDocumentPrompt,
-  buildDocumentUpdatePrompt,
-  normalizeDocumentMarkdown,
-} from "../ai/DocumentPrompt";
+import type { AssetDeletionQueue } from "../storage/AssetDeletionQueue";
+import type { RemoteRepositories } from "../storage/DatabaseClient";
+import type { GuideDocumentService } from "../documents/GuideDocumentService";
 import { listProviderModels } from "../ai/ProviderModels";
+import type { RendererFlush } from "./RendererFlush";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 import type { TrayController } from "../tray/TrayController";
 import { applyWindowTitleBarTheme } from "../windows/SettingsWindow";
@@ -58,9 +65,13 @@ import type { SelectedAiService } from "../ai/SelectedAiService";
 import type { TimelineImportService } from "../recording/TimelineImportService";
 
 export interface IpcDependencies {
-  recordings: RecordingRepository;
-  projects: ProjectRepository;
-  assets: ManagedRecordingAssets;
+  cliTools: CliToolService;
+  recordings: RemoteRepositories["recordings"];
+  projects: RemoteRepositories["projects"];
+  documents: GuideDocumentService;
+  assets: Pick<ManagedRecordingAssets, "isManagedFile">;
+  assetDeletions: Pick<AssetDeletionQueue, "process">;
+  rendererFlush: Pick<RendererFlush, "acknowledge">;
   tray: TrayController;
   recording: RecordingController;
   captureWorker: BrowserWindow;
@@ -94,9 +105,13 @@ function platform(): AppInfo["platform"] {
 
 // Validate renderer input here, then delegate state changes to their main-process owners.
 export function registerIpcHandlers({
+  cliTools,
   recordings,
   projects,
+  documents,
   assets,
+  assetDeletions,
+  rendererFlush,
   tray,
   recording,
   captureWorker,
@@ -110,6 +125,35 @@ export function registerIpcHandlers({
   timelineImports,
   openSettingsWindow,
 }: IpcDependencies): void {
+  ipcMain.handle(IPC_CHANNELS.cliGet, () => cliTools.get());
+  ipcMain.handle(IPC_CHANNELS.cliRefresh, (_event, input: unknown) => {
+    const parsed = input === undefined ? undefined : cliModelsInputSchema.parse(input);
+
+    return cliTools.refresh(parsed?.tool, parsed?.model);
+  });
+  ipcMain.handle(IPC_CHANNELS.cliConnect, (_event, input: unknown) => {
+    const parsed = cliConnectSchema.parse(input);
+
+    return cliTools.connect(parsed.tool, parsed.connected);
+  });
+  ipcMain.handle(IPC_CHANNELS.cliSelect, (_event, input: unknown) =>
+    cliTools.select(cliSelectionSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.cliSetMode, (_event, input: unknown) =>
+    cliTools.setMode(cliModeSchema.parse(input).mode),
+  );
+  ipcMain.handle(IPC_CHANNELS.cliChooseFolder, async (event) => {
+    if (cliTools.get().mode !== "cli") throw new Error("Select CLI Tool first");
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options = { properties: ["openDirectory"] as Array<"openDirectory"> };
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options);
+
+    if (result.canceled || !result.filePaths[0]) return null;
+
+    return cliTools.allowFolder(result.filePaths[0]);
+  });
   ipcMain.handle(
     IPC_CHANNELS.appInfo,
     () => ({ version: app.getVersion(), platform: platform(), dataDirectory }) satisfies AppInfo,
@@ -132,11 +176,13 @@ export function registerIpcHandlers({
 
     openSettingsWindow(section);
   });
+  ipcMain.handle(IPC_CHANNELS.appFlushComplete, (event, input: unknown) => {
+    const { requestId } = appFlushCompleteInputSchema.parse(input);
+
+    rendererFlush.acknowledge(event.sender.id, requestId);
+  });
 
   ipcMain.handle(IPC_CHANNELS.instructionFlowsGet, () => instructionFlows.get());
-  ipcMain.handle(IPC_CHANNELS.instructionFlowsMigrate, (_event, input: unknown) =>
-    instructionFlows.migrate(migrateInstructionFlowsInputSchema.parse(input)),
-  );
   ipcMain.handle(IPC_CHANNELS.instructionFlowsSelect, (_event, input: unknown) =>
     instructionFlows.select(instructionFlowIdInputSchema.parse(input)),
   );
@@ -154,11 +200,6 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.settingsUpdateTimelineImports, (_event, input: unknown) =>
     settings.updateTimelineImports(updateTimelineImportSettingsInputSchema.parse(input)),
   );
-  ipcMain.handle(IPC_CHANNELS.settingsUpdateGuideInstructions, (_event, input: unknown) => {
-    const { guideInstructions } = updateGuideInstructionsInputSchema.parse(input);
-
-    return settings.updateGuideInstructions(guideInstructions);
-  });
   ipcMain.handle(IPC_CHANNELS.settingsChooseRecordingsDirectory, async (event) => {
     // An active capture must keep the same managed root until its assets finish processing.
     if (isActiveRecordingStatus(recording.getState().status)) {
@@ -210,16 +251,6 @@ export function registerIpcHandlers({
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsListLocalModels, () => aiService.listLocalModels());
-  ipcMain.handle(IPC_CHANNELS.settingsUpdateLocalVisionModel, async (_event, input: unknown) => {
-    const { model } = updateLocalVisionModelInputSchema.parse(input);
-    const availableModels = await aiService.listLocalModels();
-
-    if (!availableModels.some((candidate) => candidate.id === model)) {
-      throw new Error(`Local vision model is not available: ${model}`);
-    }
-
-    return settings.updateLocalVisionModel(model);
-  });
   ipcMain.handle(IPC_CHANNELS.settingsListAvailableAiModels, () => aiService.listModels());
   ipcMain.handle(IPC_CHANNELS.settingsUpdateAiModelSelection, async (_event, input: unknown) => {
     const { purpose, selection } = updateAiModelSelectionInputSchema.parse(input);
@@ -241,54 +272,12 @@ export function registerIpcHandlers({
     return settings.updateAiModelSelection(purpose, selection);
   });
 
-  ipcMain.handle(IPC_CHANNELS.guidesGenerate, async (_event, input: unknown) => {
-    const { id, instructions } = generateGuideInputSchema.parse(input);
-    const [session, transcript, clicks] = await Promise.all([
-      recordings.get(id),
-      recordings.listTranscript(id),
-      recordings.listClicks(id),
-    ]);
-
-    if (!session) throw new Error(`Recording not found: ${id}`);
-
-    const importedEntries = await timelineImports.documentEntries(id);
-    const activity = buildDocumentActivity(transcript, clicks, importedEntries);
-    const prompt = buildDocumentPrompt(session.title, activity, instructions);
-    const markdown = normalizeDocumentMarkdown(await aiService.generateText(prompt));
-
-    if (!markdown) throw new Error("The selected AI model returned no guide");
-
-    return { title: session.title, markdown };
-  });
-  ipcMain.handle(IPC_CHANNELS.guidesUpdate, async (_event, input: unknown) => {
-    const { id, instructions, currentMarkdown, updatePrompt, context } =
-      updateGuideInputSchema.parse(input);
-
-    const [session, transcript, clicks] = await Promise.all([
-      recordings.get(id),
-      recordings.listTranscript(id),
-      recordings.listClicks(id),
-    ]);
-
-    if (!session) throw new Error(`Recording not found: ${id}`);
-
-    const importedEntries = await timelineImports.documentEntries(id);
-    const activity = buildDocumentActivity(transcript, clicks, importedEntries);
-    const prompt = buildDocumentUpdatePrompt(
-      session.title,
-      activity,
-      instructions,
-      currentMarkdown,
-      updatePrompt,
-      context?.length ? await aiService.describeContext(context) : "",
-    );
-
-    const markdown = normalizeDocumentMarkdown(await aiService.generateText(prompt));
-
-    if (!markdown) throw new Error("The selected AI model returned no guide");
-
-    return { title: session.title, markdown };
-  });
+  ipcMain.handle(IPC_CHANNELS.guidesGenerate, (_event, input: unknown) =>
+    documents.generate(generateGuideInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesUpdate, (_event, input: unknown) =>
+    documents.update(updateGuideInputSchema.parse(input)),
+  );
   ipcMain.handle(IPC_CHANNELS.guidesExportMarkdown, async (event, input: unknown) => {
     const { suggestedName, markdown } = exportMarkdownInputSchema.parse(input);
     const safeName = suggestedName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").trim() || "guide";
@@ -310,13 +299,26 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.guidesGetDocument, (_event, input: unknown) => {
     const { id } = recordingIdInputSchema.parse(input);
 
-    return recordings.getDocument(id);
+    return documents.getDocument(id);
   });
-  ipcMain.handle(IPC_CHANNELS.guidesSaveDocument, (_event, input: unknown) => {
-    const { id, markdown } = saveGuideDocumentInputSchema.parse(input);
-
-    return recordings.saveDocument(id, markdown);
-  });
+  ipcMain.handle(IPC_CHANNELS.guidesSaveDocument, (_event, input: unknown) =>
+    documents.save(saveGuideDocumentInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesSaveDraft, (_event, input: unknown) =>
+    documents.saveDraft(saveGuideDraftInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesDiscardDraft, (_event, input: unknown) =>
+    documents.discardDraft(discardGuideDraftInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesListRevisions, (_event, input: unknown) =>
+    documents.listRevisions(listGuideRevisionsInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesGetRevision, (_event, input: unknown) =>
+    documents.getRevision(guideRevisionInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesRestoreRevision, (_event, input: unknown) =>
+    documents.restoreRevision(restoreGuideRevisionInputSchema.parse(input)),
+  );
 
   ipcMain.handle(IPC_CHANNELS.projectsList, () => projects.list());
   ipcMain.handle(IPC_CHANNELS.projectsChange, (_event, input: unknown) => {
@@ -336,10 +338,10 @@ export function registerIpcHandlers({
   });
   ipcMain.handle(IPC_CHANNELS.recordingsDelete, async (_event, input: unknown) => {
     const { id } = recordingIdInputSchema.parse(input);
-    const existing = await recordings.get(id);
 
+    // Rows and the deletion intent commit together; files are removed after, and retried.
     await recordings.delete(id);
-    await assets.delete(id, existing?.videoPath);
+    void assetDeletions.process();
   });
   ipcMain.handle(IPC_CHANNELS.recordingsMediaUrl, (_event, input: unknown) => {
     const { id } = recordingIdInputSchema.parse(input);
@@ -348,10 +350,9 @@ export function registerIpcHandlers({
   });
   ipcMain.handle(IPC_CHANNELS.recordingsThumbnailUrl, async (_event, input: unknown) => {
     const { id } = recordingIdInputSchema.parse(input);
-    const recording = await recordings.get(id);
-    const thumbnailPath = recording?.thumbnailPath ?? assets.thumbnailPath(id);
+    const thumbnailPath = (await recordings.get(id))?.thumbnailPath;
 
-    if (!assets.isManagedFile(thumbnailPath)) {
+    if (!thumbnailPath || !assets.isManagedFile(thumbnailPath)) {
       return null;
     }
 
@@ -430,6 +431,17 @@ export function registerIpcHandlers({
 
     return timelineImports.list(id);
   });
+  ipcMain.handle(IPC_CHANNELS.recordingsListTimelineImportRows, (_event, input: unknown) => {
+    const { recordingId, kind, start, limit, query } = timelineImportRowsInputSchema.parse(input);
+
+    return timelineImports.listRows(recordingId, kind, start, limit, query);
+  });
+  ipcMain.handle(IPC_CHANNELS.recordingsLocateTimelineImportRow, async (_event, input: unknown) => {
+    const { recordingId, kind, timestampMs, query } =
+      locateTimelineImportRowInputSchema.parse(input);
+
+    return { index: await timelineImports.locateRow(recordingId, kind, timestampMs, query) };
+  });
   ipcMain.handle(IPC_CHANNELS.recordingsImportTimelineFile, (event, input: unknown) => {
     const { recordingId, kind } = timelineImportInputSchema.parse(input);
     const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
@@ -459,14 +471,10 @@ export function registerIpcHandlers({
   });
   ipcMain.handle(IPC_CHANNELS.recordingsDeleteClick, async (_event, input: unknown) => {
     const { recordingId, id } = activityItemInputSchema.parse(input);
-    const click = await recordings.getClick(recordingId, id);
 
-    if (!click) throw new Error(`Click event not found: ${id}`);
-    if (click.screenshotPath) {
-      await assets.deleteFile(click.screenshotPath);
-    }
-
+    // The row and its screenshot's deletion intent commit together; the file is removed after.
     await recordings.deleteClick(recordingId, id);
+    void assetDeletions.process();
   });
 
   ipcMain.handle(IPC_CHANNELS.recordingListSources, () => recording.listSources());

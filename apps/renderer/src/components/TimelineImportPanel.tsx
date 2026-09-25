@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronRight,
   Clock3,
@@ -25,12 +25,19 @@ import {
   formatWallClockTime,
   formatWallClockTimestamp,
 } from "@/lib/Format";
+import { useTimelineImportRows } from "../hooks/useTimelineImportRows";
 import { useVirtualRows } from "../hooks/useVirtualRows";
 import { Button } from "./Button";
 import { timelinePanelId, timelineTabId } from "./TimelineTabs";
 
 // Rows have a fixed height so only the visible slice of a large import is rendered.
 const IMPORT_ROW_HEIGHT_PX = 34;
+
+// Search runs in the desktop against every row, once typing pauses.
+const SEARCH_DELAY_MS = 250;
+
+// The playhead row is looked up at most this often while the video plays.
+const PLAYHEAD_LOOKUP_INTERVAL_MS = 250;
 
 const KIND_MESSAGE_KEYS = {
   log: {
@@ -51,6 +58,7 @@ const KIND_MESSAGE_KEYS = {
 export function TimelineImportPanel({
   tabs,
   kind,
+  recordingId,
   recordingSelected,
   timeWindow,
   timelineImport,
@@ -66,6 +74,7 @@ export function TimelineImportPanel({
 }: {
   tabs: ReactNode;
   kind: TimelineImportKind;
+  recordingId: string | null;
   recordingSelected: boolean;
   timeWindow: RecordingTimeWindow | null;
   timelineImport: TimelineImport | null;
@@ -84,22 +93,53 @@ export function TimelineImportPanel({
   const messageKeys = KIND_MESSAGE_KEYS[kind];
   const KindIcon = kind === "log" ? ScrollText : SquareMousePointer;
   const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [playheadIndex, setPlayheadIndex] = useState(-1);
   const isPointerInsideListRef = useRef(false);
+  const lastPlayheadLookupRef = useRef(0);
+  const playheadRequestRef = useRef(0);
   const canImport = recordingSelected && timeWindow !== null && !isLoading;
-  const entries = timelineImport?.entries;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-
-  const visibleEntries = useMemo(() => {
-    if (!entries) return [];
-    if (!normalizedQuery) return entries;
-
-    return entries.filter((entry) => entry.text.toLocaleLowerCase().includes(normalizedQuery));
-  }, [entries, normalizedQuery]);
-
-  const activeIndex = playing ? lastIndexAtOrBefore(visibleEntries, currentTimeMs) : -1;
+  const rows = useTimelineImportRows({ recordingId, kind, timelineImport, query: searchQuery });
+  const { locate, loadRange } = rows;
+  const activeIndex = playing ? playheadIndex : -1;
   const { attachContainer, startIndex, endIndex, totalHeight, offsetTop, onScroll, revealIndex } =
-    useVirtualRows(visibleEntries.length, IMPORT_ROW_HEIGHT_PX);
+    useVirtualRows(rows.total, IMPORT_ROW_HEIGHT_PX);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchQuery(query.trim()), SEARCH_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Only the rows near the viewport are requested from the desktop.
+  useEffect(() => {
+    if (timelineImport && endIndex > startIndex) loadRange(startIndex, endIndex);
+  }, [timelineImport, startIndex, endIndex, loadRange]);
+
+  // Throttled lookups keep playback smooth; only the newest answer is applied.
+  useEffect(() => {
+    if (!playing || !timelineImport) return;
+
+    const delayMs = Math.max(
+      0,
+      lastPlayheadLookupRef.current + PLAYHEAD_LOOKUP_INTERVAL_MS - Date.now(),
+    );
+
+    const timer = setTimeout(() => {
+      const request = ++playheadRequestRef.current;
+
+      lastPlayheadLookupRef.current = Date.now();
+      locate(currentTimeMs).then(
+        (index) => {
+          if (request === playheadRequestRef.current) setPlayheadIndex(index);
+        },
+        () => undefined,
+      );
+    }, delayMs);
+
+    return () => clearTimeout(timer);
+  }, [playing, timelineImport, currentTimeMs, locate]);
 
   // Follow playback like Activity, unless the pointer is over the list.
   useEffect(() => {
@@ -118,11 +158,13 @@ export function TimelineImportPanel({
     // Processing recordings already have a window; only an active capture lacks one.
     // A failed load shows its error alone instead of implying the recording is unfinished.
     emptyLabel = error ? null : t("importUnavailable");
-  } else if (timelineImport && timelineImport.entries.length === 0) {
+  } else if (timelineImport && timelineImport.entryCount === 0) {
     emptyLabel = t("noRowsInVideo");
-  } else if (timelineImport && visibleEntries.length === 0) {
+  } else if (timelineImport && searchQuery && !rows.isCounting && rows.total === 0) {
     emptyLabel = t("noMatchingRows");
   }
+
+  const listError = error ?? rows.error;
 
   return (
     <section
@@ -165,10 +207,7 @@ export function TimelineImportPanel({
       </header>
       {timeWindow && (
         <p className="timeline-import-meta">
-          <span
-            className="timeline-import-window"
-            title={timeWindow.isApproximate ? t("approximateTimeHint") : undefined}
-          >
+          <span className="timeline-import-window">
             <Clock3 size={12} aria-hidden="true" />
             {t("videoTimeRange", {
               date: formatRecordingDate(timeWindow.startedAt, locale),
@@ -176,18 +215,13 @@ export function TimelineImportPanel({
               end: formatWallClockTime(timeWindow.endedAt, locale),
             })}
           </span>
-          {timeWindow.isApproximate && (
-            <span className="timeline-import-approximate" title={t("approximateTimeHint")}>
-              {t("approximateTime")}
-            </span>
-          )}
           {timelineImport && (
             <>
               <span className="timeline-import-file" title={timelineImport.fileName}>
                 <FileText size={12} aria-hidden="true" />
                 <span>{timelineImport.fileName}</span>
               </span>
-              <span>{t("importRowCount", { count: timelineImport.entries.length })}</span>
+              <span>{t("importRowCount", { count: timelineImport.entryCount })}</span>
               {timelineImport.outsideCount > 0 && (
                 <span>{t("importOutsideCount", { count: timelineImport.outsideCount })}</span>
               )}
@@ -219,9 +253,9 @@ export function TimelineImportPanel({
           />
         </div>
       )}
-      {error && (
+      {listError && (
         <p className="activity-error" role="alert">
-          {error}
+          {listError}
         </p>
       )}
       {emptyLabel !== null && (
@@ -257,20 +291,37 @@ export function TimelineImportPanel({
             // Runtime geometry: the list keeps its full height while only nearby rows render.
             style={{ height: totalHeight, paddingTop: offsetTop }}
           >
-            {visibleEntries.slice(startIndex, endIndex).map((entry, sliceIndex) => (
-              <ImportedRow
-                key={entry.id}
-                entry={entry}
-                kind={kind}
-                locale={locale}
-                selected={entry.id === selectedId}
-                active={startIndex + sliceIndex === activeIndex}
-                onSelect={() => {
-                  setSelectedId(entry.id);
-                  onSeek(entry.timestampMs);
-                }}
-              />
-            ))}
+            {Array.from({ length: endIndex - startIndex }, (_, offset) => {
+              const index = startIndex + offset;
+              const entry = rows.rowAt(index);
+
+              // A row whose page is still loading keeps its place so scrolling stays stable.
+              if (!entry) {
+                return (
+                  <li
+                    key={`loading-${index}`}
+                    className="timeline-import-row timeline-import-row-loading"
+                    style={{ height: IMPORT_ROW_HEIGHT_PX }}
+                    aria-hidden="true"
+                  />
+                );
+              }
+
+              return (
+                <ImportedRow
+                  key={entry.id}
+                  entry={entry}
+                  kind={kind}
+                  locale={locale}
+                  selected={entry.id === selectedId}
+                  active={index === activeIndex}
+                  onSelect={() => {
+                    setSelectedId(entry.id);
+                    onSeek(entry.timestampMs);
+                  }}
+                />
+              );
+            })}
           </ol>
         </div>
       )}
@@ -402,25 +453,4 @@ function ImportOffsetField({
       <span aria-hidden="true">{t("importOffsetUnit")}</span>
     </label>
   );
-}
-
-/** Entries are chronological, so binary search finds the row at or before the playhead. */
-function lastIndexAtOrBefore(entries: TimelineImportEntry[], timestampMs: number): number {
-  let low = 0;
-  let high = entries.length - 1;
-  let found = -1;
-
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const entry = entries[middle];
-
-    if (entry && entry.timestampMs <= timestampMs) {
-      found = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  return found;
 }

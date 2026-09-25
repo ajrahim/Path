@@ -128,6 +128,26 @@ html[data-theme="dark"] .guide-chat-card:focus-within {
   min-width: 8px;
 }
 
+.guide-chat-context-folder-wrap {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 180px;
+}
+
+.guide-chat-context-folder-wrap:has(button:disabled) {
+  cursor: not-allowed;
+}
+
+.guide-chat-context-folder {
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  padding-inline: 6px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .guide-chat-audio.is-listening {
   color: var(--danger);
 }
@@ -158,4 +178,14 @@ html[data-theme="dark"] .guide-chat-card:focus-within {
   margin: 0 0 8px;
   color: var(--danger);
   font-size: 12px;
+}
+
+.guide-chat-context-folder > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-chat-context-folder > svg {
+  flex-shrink: 0;
 }

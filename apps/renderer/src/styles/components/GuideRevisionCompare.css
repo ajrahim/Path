@@ -1,0 +1,61 @@
+.guide-compare-dialog {
+  width: min(760px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.guide-compare-dialog:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.guide-compare-lines {
+  min-height: 0;
+  margin: 0;
+  padding: 6px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  list-style: none;
+}
+
+.guide-compare-line {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  padding: 0 10px 0 0;
+}
+
+.guide-compare-marker {
+  color: var(--muted-ink);
+  text-align: center;
+}
+
+.guide-compare-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.guide-compare-added {
+  background: var(--success-soft);
+}
+
+.guide-compare-removed {
+  background: var(--danger-soft);
+}
+
+.guide-compare-added .guide-compare-marker {
+  color: var(--success);
+}
+
+.guide-compare-removed .guide-compare-marker {
+  color: var(--danger);
+}
+
+.guide-compare-removed .guide-compare-text {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}

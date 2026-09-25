@@ -29,8 +29,6 @@ const settings: DesktopSettings = {
   general: { minimizeToTray: true },
   timelineImports: { maxFileSizeMb: 10 },
   recordingsDirectory: "/recordings",
-  guideInstructions: "Original instructions",
-  localVisionModel: "vision",
   aiModelSelections: {
     visual: { source: "local", modelId: "vision", modelName: "Vision" },
     text: { source: "local", modelId: "vision", modelName: "Vision" },
@@ -317,4 +315,14 @@ it("keeps keyboard focus inside the prompt editor while a save is pending and re
   fireEvent.keyDown(close, { key: "Escape" });
   expect(view.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(opener);
+});
+
+it("navigates to a separate CLI connections page", async () => {
+  const view = await renderSettings();
+
+  fireEvent.click(view.getByRole("link", { name: "CLI Tools" }));
+  await view.findByRole("heading", { name: "CLI Tools" });
+  expect(view.getByText("Facebook Muse")).toBeTruthy();
+  expect(view.queryByRole("heading", { name: "General" })).toBeNull();
+  expect(window.location.hash).toBe("#cli");
 });

@@ -29,8 +29,6 @@ export interface InstructionFlowState {
   revision: number;
 }
 
-export const FLOW_STORAGE_KEY = "path.instructionFlows.v1";
-
 export const BUILT_IN_FLOWS: InstructionFlow[] = [
   {
     id: "help-guide",
@@ -63,7 +61,7 @@ const customInstructionFlowSchema = z.strictObject({
   id: instructionFlowIdSchema.refine((id) => id.startsWith("custom-")),
   name: instructionFlowNameSchema,
   instructions: instructionFlowInstructionsSchema,
-  icon: instructionFlowIconSchema.optional(),
+  icon: instructionFlowIconSchema,
 });
 
 export const instructionFlowIdInputSchema = z.strictObject({ id: instructionFlowIdSchema });
@@ -93,13 +91,7 @@ export const saveInstructionFlowInputSchema = z
     }
   });
 
-export const migrateInstructionFlowsInputSchema = z.strictObject({
-  selectedId: instructionFlowIdSchema,
-  customFlows: z.array(customInstructionFlowSchema).max(1_000),
-});
-
 export type SaveInstructionFlowInput = z.infer<typeof saveInstructionFlowInputSchema>;
-export type MigrateInstructionFlowsInput = z.infer<typeof migrateInstructionFlowsInputSchema>;
 
 const builtInOverrideSchema = z.strictObject({
   id: instructionFlowIdSchema.refine((id) => BUILT_IN_FLOWS.some((flow) => flow.id === id)),
@@ -107,24 +99,14 @@ const builtInOverrideSchema = z.strictObject({
   icon: instructionFlowIconSchema,
 });
 
-/** Reads legacy renderer data and current snapshots without allowing malformed entries through. */
-export function loadInstructionFlows(stored: string | null): InstructionFlowState {
+/** Reads a stored prompt library, dropping malformed entries instead of trusting them. */
+export function parseInstructionFlowState(parsed: unknown): InstructionFlowState {
   const state: InstructionFlowState = {
     selectedId: "help-guide",
     customFlows: [],
     builtInOverrides: [],
     revision: 0,
   };
-
-  if (!stored) return state;
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(stored);
-  } catch {
-    return state;
-  }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return state;
 
@@ -137,7 +119,7 @@ export function loadInstructionFlows(stored: string | null): InstructionFlowStat
       if (!result.success || ids.has(result.data.id)) continue;
 
       ids.add(result.data.id);
-      state.customFlows.push({ ...result.data, icon: result.data.icon ?? "file-text" });
+      state.customFlows.push(result.data);
     }
   }
 

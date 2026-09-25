@@ -26,7 +26,8 @@ function logImport(recordingId: string, offsetMs = 0): TimelineImport {
     fileName: `${recordingId}.log`,
     offsetMs,
     importedAt: "2026-09-14T11:00:00.000Z",
-    entries: [{ id: 1, occurredAt: "2026-09-14T10:00:01.000Z", timestampMs: 1_000, text: "Row" }],
+    rowCount: 1,
+    entryCount: 1,
     outsideCount: 0,
     unreadableLineCount: 0,
   };
@@ -37,7 +38,6 @@ function listed(recordingId: string): RecordingTimelineImports {
     window: {
       startedAt: "2026-09-14T10:00:00.000Z",
       endedAt: "2026-09-14T10:00:30.000Z",
-      isApproximate: false,
     },
     log: logImport(recordingId),
     element: null,

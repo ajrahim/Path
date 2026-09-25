@@ -1,99 +1,34 @@
 import { randomUUID } from "node:crypto";
-import type { AppSettingsRepository } from "@path/database";
 import {
   BUILT_IN_FLOWS,
   instructionFlowIdInputSchema,
-  loadInstructionFlows,
-  migrateInstructionFlowsInputSchema,
+  parseInstructionFlowState,
   resolveInstructionFlows,
   saveInstructionFlowInputSchema,
   type InstructionFlow,
   type InstructionFlowState,
-  type MigrateInstructionFlowsInput,
   type SaveInstructionFlowInput,
 } from "@path/shared";
+import type { RemoteRepositories } from "../storage/DatabaseClient";
 
 const PROMPTS_SETTINGS_KEY = "instruction-flows";
 
 /** Owns the prompt library across windows; each mutation starts from the last committed state. */
 export class InstructionFlowService {
-  private current = loadInstructionFlows(null);
-  private migratedLegacyIds = new Set<string>();
+  private current = parseInstructionFlowState(null);
   private mutation: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly repository: Pick<AppSettingsRepository, "get" | "set">,
+    private readonly repository: Pick<RemoteRepositories["appSettings"], "get" | "set">,
     private readonly onChanged: (state: InstructionFlowState) => void = () => undefined,
   ) {}
 
   async initialize(): Promise<void> {
-    const stored = await this.repository.get<unknown>(PROMPTS_SETTINGS_KEY);
-
-    this.current = loadInstructionFlows(stored ? JSON.stringify(stored) : null);
-    if (
-      stored &&
-      typeof stored === "object" &&
-      "migratedLegacyIds" in stored &&
-      Array.isArray(stored.migratedLegacyIds)
-    ) {
-      this.migratedLegacyIds = new Set(
-        stored.migratedLegacyIds.filter(
-          (id): id is string => typeof id === "string" && id.startsWith("custom-"),
-        ),
-      );
-    }
+    this.current = parseInstructionFlowState(await this.repository.get(PROMPTS_SETTINGS_KEY));
   }
 
   get(): InstructionFlowState {
     return structuredClone(this.current);
-  }
-
-  migrate(input: MigrateInstructionFlowsInput): Promise<InstructionFlowState> {
-    const migration = migrateInstructionFlowsInputSchema.parse(input);
-
-    return this.enqueue(async () => {
-      const next = this.get();
-      const migratedIds = new Set(this.migratedLegacyIds);
-      const existing = resolveInstructionFlows(next);
-
-      for (const flow of migration.customFlows) {
-        if (migratedIds.has(flow.id)) continue;
-        migratedIds.add(flow.id);
-        if (existing.some((candidate) => candidate.id === flow.id)) continue;
-
-        // Preserve both prompts when an earlier desktop edit already owns the legacy name.
-        let name = flow.name;
-        let suffixIndex = 2;
-
-        while (
-          existing.some(
-            (candidate) => candidate.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
-          )
-        ) {
-          const suffix = ` (${suffixIndex++})`;
-
-          name = `${flow.name.slice(0, 80 - suffix.length)}${suffix}`;
-        }
-
-        const imported: InstructionFlow = { ...flow, name, icon: flow.icon ?? "file-text" };
-
-        next.customFlows.push(imported);
-        existing.push(imported);
-      }
-
-      if (next.revision === 0 && existing.some((flow) => flow.id === migration.selectedId)) {
-        next.selectedId = migration.selectedId;
-      }
-
-      if (
-        migratedIds.size === this.migratedLegacyIds.size &&
-        next.selectedId === this.current.selectedId
-      ) {
-        return this.get();
-      }
-
-      return this.commit(next, migratedIds);
-    });
   }
 
   select(input: { id: string }): Promise<InstructionFlowState> {
@@ -204,17 +139,10 @@ export class InstructionFlowService {
     return result;
   }
 
-  private async commit(
-    next: InstructionFlowState,
-    migratedIds = this.migratedLegacyIds,
-  ): Promise<InstructionFlowState> {
+  private async commit(next: InstructionFlowState): Promise<InstructionFlowState> {
     next.revision = this.current.revision + 1;
-    await this.repository.set(PROMPTS_SETTINGS_KEY, {
-      ...next,
-      migratedLegacyIds: [...migratedIds],
-    });
+    await this.repository.set(PROMPTS_SETTINGS_KEY, next);
     this.current = next;
-    this.migratedLegacyIds = migratedIds;
     this.onChanged(this.get());
 
     return this.get();

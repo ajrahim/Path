@@ -1,9 +1,19 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import {
+  type AnySQLiteColumn,
+  foreignKey,
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import type {
-  CaptureRegion,
   CaptureMode,
-  GuideFormat,
-  GuideStatus,
+  CaptureRegion,
+  DocumentRevisionKind,
   MediaPause,
   MouseButton,
   RecordingStatus,
@@ -11,11 +21,21 @@ import type {
   TranscriptStatus,
 } from "@path/shared";
 
-/** Durable metadata only; large media assets remain in separately managed directories. */
+/** Directories that hold recording assets; earlier roots stay registered after a location change. */
+export const storageRoots = sqliteTable("storage_roots", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull().unique(),
+  createdAt: text("created_at").notNull(),
+});
+
+/** Durable metadata only; large media assets live in `<storage root>/<recording id>/`. */
 export const recordings = sqliteTable(
   "recordings",
   {
     id: text("id").primaryKey(),
+    storageRootId: text("storage_root_id")
+      .notNull()
+      .references(() => storageRoots.id),
     title: text("title").notNull(),
     status: text("status").$type<RecordingStatus>().notNull(),
     captureMode: text("capture_mode").$type<CaptureMode>().notNull(),
@@ -30,10 +50,9 @@ export const recordings = sqliteTable(
       .$type<TranscriptStatus>()
       .notNull()
       .default("pending"),
-    guideStatus: text("guide_status").$type<GuideStatus>().notNull().default("none"),
 
     startedAt: text("started_at").notNull(),
-    // Wall-clock media zero and pauses; null for recordings captured before timing was stored.
+    // Wall-clock media zero and pauses, stored when capture stops.
     mediaStartedAt: text("media_started_at"),
     mediaPausesJson: text("media_pauses_json", { mode: "json" }).$type<MediaPause[] | null>(),
     completedAt: text("completed_at"),
@@ -43,6 +62,7 @@ export const recordings = sqliteTable(
   (table) => [
     index("recordings_created_at_idx").on(table.createdAt),
     index("recordings_status_idx").on(table.status),
+    index("recordings_storage_root_idx").on(table.storageRootId),
   ],
 );
 
@@ -96,25 +116,86 @@ export const clickEvents = sqliteTable(
   (table) => [index("click_recording_time_idx").on(table.recordingId, table.timestampMs)],
 );
 
-/** Persisted documents schema; the editor exports Markdown directly. */
+/**
+ * One document per recording. The saved revision is the last explicit save; the draft version
+ * advances on every draft change so a stale editor cannot overwrite newer unsaved text.
+ */
 export const documents = sqliteTable(
   "documents",
   {
     id: text("id").primaryKey(),
     recordingId: text("recording_id")
       .notNull()
+      .unique()
       .references(() => recordings.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    format: text("format").$type<GuideFormat>().notNull(),
-    language: text("language").notNull(),
-    markdown: text("markdown").notNull(),
+    savedRevisionNumber: integer("saved_revision_number"),
+    savedAt: text("saved_at"),
+    draftVersion: integer("draft_version").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
-  (table) => [index("documents_recording_idx").on(table.recordingId)],
+  (table) => [
+    // A saved pointer must name a revision of this same document.
+    foreignKey({
+      columns: [table.id, table.savedRevisionNumber],
+      foreignColumns: [documentRevisions.documentId, documentRevisions.number],
+    }),
+  ],
 );
 
-/** One imported log or element file per kind; a new import replaces the previous one. */
+/** Append-only snapshots; embedded data-URL images are stored once in `document_images`. */
+export const documentRevisions = sqliteTable(
+  "document_revisions",
+  {
+    // Annotated because documents also references this table through its saved revision.
+    documentId: text("document_id")
+      .notNull()
+      .references((): AnySQLiteColumn => documents.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(),
+    kind: text("kind").$type<DocumentRevisionKind>().notNull(),
+    contentHash: text("content_hash").notNull(),
+    body: text("body").notNull(),
+    bodyEncoding: text("body_encoding").$type<DocumentBodyEncoding>().notNull(),
+    characterCount: integer("character_count").notNull(),
+    restoredFromNumber: integer("restored_from_number"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.number] }),
+    index("document_revisions_hash_idx").on(table.documentId, table.contentHash),
+  ],
+);
+
+export type DocumentBodyEncoding = "plain" | "image-refs";
+
+/** Content-addressed embedded images shared by every revision of one document. */
+export const documentImages = sqliteTable(
+  "document_images",
+  {
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    hash: text("hash").notNull(),
+    dataUrl: text("data_url").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.documentId, table.hash] })],
+);
+
+/** Unsaved editor text that survives restarts; it exists only while it differs from the save. */
+export const documentDrafts = sqliteTable("document_drafts", {
+  documentId: text("document_id")
+    .primaryKey()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  markdown: text("markdown").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type TimelineImportState = "staging" | "ready";
+
+/**
+ * One ready import per recording and kind. A replacement streams into a staging import and is
+ * promoted in one transaction, so readers never observe a partially written file.
+ */
 export const timelineImports = sqliteTable(
   "timeline_imports",
   {
@@ -123,12 +204,19 @@ export const timelineImports = sqliteTable(
       .notNull()
       .references(() => recordings.id, { onDelete: "cascade" }),
     kind: text("kind").$type<TimelineImportKind>().notNull(),
+    state: text("state").$type<TimelineImportState>().notNull(),
     fileName: text("file_name").notNull(),
     offsetMs: integer("offset_ms").notNull().default(0),
+    rowCount: integer("row_count").notNull().default(0),
     unreadableLineCount: integer("unreadable_line_count").notNull().default(0),
     importedAt: text("imported_at").notNull(),
   },
-  (table) => [uniqueIndex("timeline_imports_recording_kind_idx").on(table.recordingId, table.kind)],
+  (table) => [
+    uniqueIndex("timeline_imports_ready_kind_idx")
+      .on(table.recordingId, table.kind)
+      .where(sql`state = 'ready'`),
+    index("timeline_imports_state_idx").on(table.state),
+  ],
 );
 
 /** Rows keep their original wall-clock time so offset changes re-align them without re-import. */
@@ -145,15 +233,23 @@ export const timelineImportEntries = sqliteTable(
   (table) => [index("timeline_import_entries_time_idx").on(table.importId, table.occurredAtMs)],
 );
 
-/** JSON values stay untyped here so their owning service controls validation and compatibility. */
+/**
+ * Managed files whose database rows are already gone. The intent is written in the same
+ * transaction as the row deletion, so a locked or interrupted file removal is retried later.
+ */
+export const assetDeletions = sqliteTable("asset_deletions", {
+  path: text("path").primaryKey(),
+  isDirectory: integer("is_directory", { mode: "boolean" }).notNull(),
+  requestedAt: text("requested_at").notNull(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+});
+
+/** JSON values stay untyped here so their owning service controls validation. */
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
   valueJson: text("value_json", { mode: "json" }).$type<unknown>().notNull(),
   updatedAt: text("updated_at").notNull(),
 });
-
-export type RecordingRow = typeof recordings.$inferSelect;
-export type NewRecordingRow = typeof recordings.$inferInsert;
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
@@ -173,3 +269,5 @@ export const projectRecordings = sqliteTable(
   },
   (table) => [index("project_recordings_project_idx").on(table.projectId)],
 );
+
+export type RecordingRow = typeof recordings.$inferSelect;

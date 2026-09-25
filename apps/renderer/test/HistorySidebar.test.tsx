@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { Provider } from "react-redux";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -81,6 +81,60 @@ describe("HistorySidebar layout and version", () => {
 
     expect(versionSpan).toBeTruthy();
     expect(versionSpan.textContent).toBe("v0.3.0");
+  });
+
+  it("fills an empty library with a start prompt and offers search recovery", async () => {
+    const onNewRecording = vi.fn();
+    const desktop = {
+      app: { getInfo: vi.fn().mockResolvedValue({ version: "0.3.0" }) },
+      projects: { list: vi.fn().mockResolvedValue([]) },
+      recordings: { list: vi.fn().mockResolvedValue([]) },
+    } as unknown as DesktopApi;
+
+    window.desktop = desktop;
+
+    const store = createRendererStore({ getDesktopApi: () => desktop });
+    const view = render(
+      <Provider store={store}>
+        <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+          <HistorySidebar
+            selectedId={null}
+            onSelect={vi.fn()}
+            onDeleted={vi.fn()}
+            onNewRecording={onNewRecording}
+            onOpenSettings={vi.fn()}
+          />
+        </NextIntlClientProvider>
+      </Provider>,
+    );
+
+    await act(async () => {});
+
+    const start = view.container.querySelector(".history-empty-start")!;
+
+    // The empty section fills the list instead of sitting under an "All" heading.
+    expect(view.container.querySelector(".history-all-empty")).toBeTruthy();
+    expect(view.container.querySelector(".history-all .history-section-label")).toBeNull();
+    expect(start.textContent).toContain(messages.history.empty);
+    expect(start.textContent).toContain(messages.history.emptyDescription);
+
+    fireEvent.click(within(start as HTMLElement).getByRole("button", { name: /New Recording/ }));
+    expect(onNewRecording).toHaveBeenCalledOnce();
+
+    const search = view.getByRole("textbox", { name: messages.history.search });
+
+    fireEvent.change(search, { target: { value: "missing" } });
+    await act(async () => {});
+
+    const noMatches = view.container.querySelector(".history-empty-search")!;
+
+    expect(view.container.querySelector(".history-empty-start")).toBeNull();
+    expect(noMatches.textContent).toContain(messages.history.noMatches);
+
+    fireEvent.click(
+      within(noMatches as HTMLElement).getByRole("button", { name: messages.history.clearSearch }),
+    );
+    expect((search as HTMLInputElement).value).toBe("");
   });
 
   it("handles missing desktop bridge gracefully without rendering version", async () => {

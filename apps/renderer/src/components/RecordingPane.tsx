@@ -382,6 +382,7 @@ export function RecordingPane({
           key={`${recordingId ?? "none"}-${timelineTab}`}
           tabs={timelineTabs}
           kind={timelineTab}
+          recordingId={recordingId}
           recordingSelected={Boolean(recording)}
           timeWindow={timelineImports.window}
           timelineImport={timelineImports.imports[timelineTab]}

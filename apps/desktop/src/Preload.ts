@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS, type DesktopApi } from "@path/shared";
 
+// Work that must finish before quit; main waits for one acknowledgment per window.
+const flushListeners = new Set<() => Promise<void>>();
+
+ipcRenderer.on(IPC_CHANNELS.appFlushRequested, (_event, requestId: number) => {
+  void Promise.allSettled([...flushListeners].map((flush) => flush())).then(() =>
+    ipcRenderer.invoke(IPC_CHANNELS.appFlushComplete, { requestId }),
+  );
+});
+
 // Expose the typed application contract without exposing Electron event objects or raw IPC.
 const desktopApi: DesktopApi = {
   app: {
@@ -11,14 +20,33 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.appSetRecorderPopoverExpanded, input),
     setTitleBarTheme: (input) => ipcRenderer.invoke(IPC_CHANNELS.appSetTitleBarTheme, input),
     openSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.appOpenSettings, input),
+    onFlushRequested: (listener) => {
+      flushListeners.add(listener);
+
+      return () => flushListeners.delete(listener);
+    },
+  },
+  cli: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.cliGet),
+    refresh: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliRefresh, input),
+    connect: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliConnect, input),
+    select: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliSelect, input),
+    setMode: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliSetMode, input),
+    chooseFolder: () => ipcRenderer.invoke(IPC_CHANNELS.cliChooseFolder),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+
+      ipcRenderer.on(IPC_CHANNELS.cliChanged, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.cliChanged, handler);
+    },
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     updateGeneral: (input) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGeneral, input),
     updateTimelineImports: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateTimelineImports, input),
-    updateGuideInstructions: (input) =>
-      ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateGuideInstructions, input),
     chooseRecordingsDirectory: () =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsChooseRecordingsDirectory),
     openRecordingsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.settingsOpenRecordingsDirectory),
@@ -29,15 +57,12 @@ const desktopApi: DesktopApi = {
     listAiProviderModels: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsListAiProviderModels, input),
     listLocalModels: () => ipcRenderer.invoke(IPC_CHANNELS.settingsListLocalModels),
-    updateLocalVisionModel: (input) =>
-      ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateLocalVisionModel, input),
     listAvailableAiModels: () => ipcRenderer.invoke(IPC_CHANNELS.settingsListAvailableAiModels),
     updateAiModelSelection: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateAiModelSelection, input),
   },
   instructionFlows: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsGet),
-    migrate: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsMigrate, input),
     select: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsSelect, input),
     save: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsSave, input),
     remove: (input) => ipcRenderer.invoke(IPC_CHANNELS.instructionFlowsRemove, input),
@@ -56,6 +81,19 @@ const desktopApi: DesktopApi = {
     exportMarkdown: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesExportMarkdown, input),
     getDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetDocument, input),
     saveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveDocument, input),
+    saveDraft: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveDraft, input),
+    discardDraft: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesDiscardDraft, input),
+    listRevisions: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesListRevisions, input),
+    getRevision: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetRevision, input),
+    restoreRevision: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesRestoreRevision, input),
+    onChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, change: Parameters<typeof listener>[0]) =>
+        listener(change);
+
+      ipcRenderer.on(IPC_CHANNELS.guidesChanged, handler);
+
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.guidesChanged, handler);
+    },
   },
   projects: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.projectsList),
@@ -80,6 +118,10 @@ const desktopApi: DesktopApi = {
     retryProcessing: (input) => ipcRenderer.invoke(IPC_CHANNELS.recordingsRetryProcessing, input),
     listTimelineImports: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.recordingsListTimelineImports, input),
+    listTimelineImportRows: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsListTimelineImportRows, input),
+    locateTimelineImportRow: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.recordingsLocateTimelineImportRow, input),
     importTimelineFile: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.recordingsImportTimelineFile, input),
     updateTimelineImportOffset: (input) =>

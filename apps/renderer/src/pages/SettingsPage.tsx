@@ -1,3 +1,4 @@
+import { CliSettings } from "../components/CliSettings";
 import {
   Bot,
   Check,
@@ -11,6 +12,7 @@ import {
   Sparkles,
   Sun,
   Trash2,
+  Terminal,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
@@ -143,6 +145,17 @@ export default function SettingsPage() {
               <Sparkles size={16} />
               {t("settings.prompts")}
             </a>
+            <a
+              href="#cli"
+              aria-current={activeSection === "cli" ? "page" : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection("cli");
+              }}
+            >
+              <Terminal size={16} />
+              {t("cli.title")}
+            </a>
           </nav>
           <span className="settings-version">
             {t("app.name")} {version}
@@ -150,6 +163,7 @@ export default function SettingsPage() {
         </aside>
 
         <div className="settings-content" ref={contentRef}>
+          {activeSection === "cli" && <CliSettings />}
           {(error || notice) && (
             <div
               className={error ? "settings-banner settings-banner-error" : "settings-banner"}

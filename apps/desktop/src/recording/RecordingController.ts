@@ -8,7 +8,7 @@ import {
   type DesktopCapturerSource,
 } from "electron";
 import { SessionClock, transitionRecordingState, type RecordingState } from "@path/recording-core";
-import type { RecordingRepository } from "@path/database";
+import type { RecordingAssetLocation } from "@path/database";
 import {
   IPC_CHANNELS,
   MINIMUM_RECORDING_DURATION_MS,
@@ -20,6 +20,8 @@ import {
   type RecordingRuntimeState,
   type StartRecordingInput,
 } from "@path/shared";
+import type { RemoteRepositories } from "../storage/DatabaseClient";
+import type { Diagnostics } from "../storage/DiagnosticLog";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 import messages from "@path/shared/messages/en.json";
 import type { MediaProcessor } from "../media/FfmpegMediaProcessor";
@@ -30,6 +32,7 @@ import { AiRateLimitError } from "../ai/SelectedAiService";
 
 interface ActiveRecording {
   id: string;
+  location: RecordingAssetLocation;
   input: StartRecordingInput;
   rawVideoPath: string;
   finalVideoPath: string;
@@ -55,13 +58,14 @@ export class RecordingController {
   private readonly clickAnalysisJobs = new Map<string, Promise<ClickAnalysisResult>>();
 
   constructor(
-    private readonly recordings: RecordingRepository,
+    private readonly recordings: RemoteRepositories["recordings"],
     private readonly assets: ManagedRecordingAssets,
     private readonly captureWorker: BrowserWindow,
     private readonly mediaProcessor: MediaProcessor,
     private readonly clickCapture: ClickCaptureCoordinator,
     private readonly transcriptProvider: TranscriptProvider | null,
-    private readonly clickActionAnalyzer: ClickActionAnalyzer | null = null,
+    private readonly clickActionAnalyzer: ClickActionAnalyzer | null,
+    private readonly diagnostics: Diagnostics,
   ) {}
 
   onStateChanged(listener: (state: RecordingRuntimeState) => void): void {
@@ -122,6 +126,9 @@ export class RecordingController {
     }
 
     const id = randomUUID();
+    // New recordings always start in the current root; the row records which root owns them.
+    const root = this.assets.currentRoot;
+    const location: RecordingAssetLocation = { recordingId: id, storageRootPath: root.path };
     let directoryCreated = false;
     let rowCreated = false;
 
@@ -129,15 +136,16 @@ export class RecordingController {
     this.error = null;
 
     try {
-      await this.assets.createRecordingDirectory(id);
+      await this.assets.createRecordingDirectory(location);
       directoryCreated = true;
 
-      const rawVideoPath = this.assets.videoPath(id);
-      const finalVideoPath = this.assets.finalVideoPath(id);
+      const rawVideoPath = this.assets.videoPath(location);
+      const finalVideoPath = this.assets.finalVideoPath(location);
       const startedAt = new Date().toISOString();
 
       await this.recordings.create({
         id,
+        storageRootId: root.id,
         title: input.title,
         captureMode: input.captureMode,
         captureRegion: input.captureRegion,
@@ -145,7 +153,7 @@ export class RecordingController {
       });
       rowCreated = true;
 
-      this.active = { id, input, rawVideoPath, finalVideoPath, source };
+      this.active = { id, location, input, rawVideoPath, finalVideoPath, source };
       this.clock = null;
       this.mediaStartedAt = null;
       this.writeQueue = Promise.resolve();
@@ -173,7 +181,9 @@ export class RecordingController {
 
       // Roll back only the resources this attempt actually created.
       if (rowCreated) await this.recordings.markFailed(id);
-      if (directoryCreated) await this.assets.delete(id);
+      if (directoryCreated) {
+        await this.assets.remove(this.assets.recordingDirectory(location), true);
+      }
 
       this.error = message;
       this.state = transitionRecordingState(this.state, "FAIL");
@@ -272,7 +282,7 @@ export class RecordingController {
       await this.clickCapture.stop();
       if (this.state === "RECORDING" && this.active?.input.captureClicks && this.clock) {
         await this.clickCapture.start({
-          recordingId: this.active.id,
+          location: this.active.location,
           clock: this.clock,
           input: this.active.input,
           source: this.active.source,
@@ -306,9 +316,14 @@ export class RecordingController {
   async captureComplete(): Promise<void> {
     if (!this.active || this.state !== "STOPPING") return;
 
-    // Drain media and screenshot writes before publishing processing or ready state.
+    // Drain media, screenshot, and click writes before publishing processing or ready state.
     await this.writeQueue;
-    await this.clickCapture.flush();
+    const { unsavedClickCount } = await this.clickCapture.flush();
+
+    if (unsavedClickCount > 0) {
+      this.error = `${unsavedClickCount} captured clicks could not be saved`;
+    }
+
     const durationMs = Math.round(this.clock?.elapsedMs() ?? 0);
 
     this.state = transitionRecordingState(this.state, "STOPPED");
@@ -325,12 +340,12 @@ export class RecordingController {
 
     try {
       const finalThumbnailPath = await this.finalizeVideoFiles(
-        this.active.id,
+        this.active.location,
         this.active.rawVideoPath,
         this.active.finalVideoPath,
       );
 
-      await this.transcribeRecording(this.active.id, this.active.rawVideoPath, {
+      await this.transcribeRecording(this.active.location, this.active.rawVideoPath, {
         includeMicrophone: this.active.input.includeMicrophone,
         durationMs: Math.round(this.clock?.elapsedMs() ?? 0),
       });
@@ -379,11 +394,15 @@ export class RecordingController {
       throw new Error("Only failed recordings can be reprocessed");
     }
 
-    // The stored path may reference the raw capture or an earlier managed root.
+    // Assets stay in the root the recording was captured in, even after a location change.
+    const location = await this.recordings.getAssetLocation(session.id);
+
+    if (!location) throw new Error(`Recording not found: ${recordingId}`);
+
     const rawVideoPath =
       session.videoPath?.endsWith(".webm") === true
         ? session.videoPath
-        : this.assets.videoPath(session.id);
+        : this.assets.videoPath(location);
 
     if (!this.assets.isManagedFile(rawVideoPath)) {
       throw new Error("The original capture is outside the managed recording directories");
@@ -400,18 +419,18 @@ export class RecordingController {
     this.emitState();
 
     const durationMs = session.durationMs ?? 0;
-    const finalVideoPath = this.assets.finalVideoPath(session.id);
+    const finalVideoPath = this.assets.finalVideoPath(location);
 
     await this.recordings.markProcessing(session.id, durationMs, rawVideoPath);
 
     try {
       const finalThumbnailPath = await this.finalizeVideoFiles(
-        session.id,
+        location,
         rawVideoPath,
         finalVideoPath,
       );
 
-      await this.transcribeRecording(session.id, rawVideoPath, { durationMs });
+      await this.transcribeRecording(location, rawVideoPath, { durationMs });
       await this.analyzeClicks(session.id);
       await this.recordings.markReady(
         session.id,
@@ -433,29 +452,31 @@ export class RecordingController {
   }
 
   private async finalizeVideoFiles(
-    recordingId: string,
+    location: RecordingAssetLocation,
     rawVideoPath: string,
     finalVideoPath: string,
   ): Promise<string | undefined> {
     await this.mediaProcessor.finalize(rawVideoPath, finalVideoPath);
-    const thumbnailPath = this.assets.thumbnailPath(recordingId);
+    const thumbnailPath = this.assets.thumbnailPath(location);
 
     try {
       await this.mediaProcessor.extractThumbnail(finalVideoPath, thumbnailPath);
 
       return thumbnailPath;
     } catch (thumbnailError) {
-      console.warn("Failed to generate video thumbnail", thumbnailError);
+      this.diagnostics.warn("Failed to generate video thumbnail", thumbnailError);
 
       return undefined;
     }
   }
 
   private async transcribeRecording(
-    recordingId: string,
+    location: RecordingAssetLocation,
     rawVideoPath: string,
     options: { includeMicrophone?: boolean; durationMs: number },
   ): Promise<void> {
+    const { recordingId } = location;
+
     if (options.includeMicrophone === false) {
       await this.recordings.replaceTranscript(recordingId, []);
       await this.recordings.markTranscriptReady(recordingId);
@@ -482,7 +503,7 @@ export class RecordingController {
 
     this.state = transitionRecordingState(this.state, "VIDEO_PROCESSED");
     this.emitState();
-    const audioPath = this.assets.audioPath(recordingId);
+    const audioPath = this.assets.audioPath(location);
 
     await this.recordings.markTranscriptProcessing(recordingId, audioPath);
 
@@ -502,7 +523,7 @@ export class RecordingController {
       this.state = transitionRecordingState(this.state, "EVENTS_INDEXED");
     } catch (error) {
       // A transcription failure is recorded separately so the captured video remains usable.
-      console.error("Local transcription failed", error);
+      this.diagnostics.error("Local transcription failed", error);
       await this.recordings.markTranscriptFailed(recordingId);
       this.state = transitionRecordingState(this.state, "TRANSCRIPTION_FAILED");
     }
@@ -581,14 +602,14 @@ export class RecordingController {
       } catch (error) {
         if (error instanceof AiRateLimitError) {
           // Stop the batch on throttling instead of repeatedly hitting the same provider limit.
-          console.warn(
-            `AI click analysis paused after rate limiting; retry after ${Math.ceil(error.retryAfterMs / 1_000)} seconds.`,
+          this.diagnostics.warn(
+            `AI click analysis paused after rate limiting; retry after ${Math.ceil(error.retryAfterMs / 1_000)} seconds`,
           );
           failedCount += pending.length - index;
           break;
         }
 
-        console.error(`AI analysis failed for click ${click.id}`, error);
+        this.diagnostics.error("AI analysis failed for a click", error);
         failedCount += 1;
       }
     }
@@ -608,7 +629,7 @@ export class RecordingController {
 
       // Only preparation artifacts are disposable here; later failures retain captured media.
       if (this.state === "PREPARING") {
-        await this.assets.delete(failedRecording.id);
+        await this.assets.remove(this.assets.recordingDirectory(failedRecording.location), true);
       }
     }
 

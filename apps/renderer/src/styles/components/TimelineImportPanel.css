@@ -135,14 +135,6 @@
   white-space: nowrap;
 }
 
-.timeline-import-approximate {
-  padding: 0 6px;
-  border-radius: 4px;
-  background: var(--warning-soft);
-  color: var(--warning);
-  font-weight: 600;
-}
-
 .timeline-import-offset {
   display: inline-flex;
   flex: 0 0 auto;
@@ -200,6 +192,11 @@
   border-bottom: 1px solid var(--border);
   background: transparent;
   transition: background-color 140ms ease;
+}
+
+/* A row whose page is still loading keeps its height with a muted placeholder. */
+.timeline-import-row-loading {
+  background: var(--panel-muted);
 }
 
 .timeline-import-row:hover,
@@ -307,10 +304,6 @@ html[data-theme="dark"] .timeline-import-row.selected {
 html[data-theme="dark"] .timeline-import-row.timeline-import-row-active {
   background: color-mix(in srgb, var(--accent) 6%, var(--surface-raised));
   box-shadow: inset 2px 0 0 var(--primary-on-dark);
-}
-
-html[data-theme="dark"] .timeline-import-approximate {
-  background: color-mix(in srgb, var(--warning) 10%, var(--surface-raised));
 }
 
 @container (max-width: 400px) {

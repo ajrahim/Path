@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname } from "node:path";
 import { pipeline } from "node:stream/promises";
-import type { RecordingRepository } from "@path/database";
+import type { RemoteRepositories } from "../storage/DatabaseClient";
 import { recordingIdInputSchema } from "@path/shared";
 import type { ManagedRecordingAssets } from "../storage/ManagedRecordingAssets";
 
@@ -43,8 +43,8 @@ export class RecordingMediaServer {
   private port: number | null = null;
 
   constructor(
-    private readonly recordings: RecordingRepository,
-    private readonly assets: ManagedRecordingAssets,
+    private readonly recordings: Pick<RemoteRepositories["recordings"], "get" | "getClick">,
+    private readonly assets: Pick<ManagedRecordingAssets, "isManagedFile">,
   ) {}
 
   async start(): Promise<void> {
@@ -154,7 +154,7 @@ export class RecordingMediaServer {
       if (thumbnailMatch) {
         const { id } = recordingIdInputSchema.parse({ id: thumbnailMatch[1] });
         const recording = await this.recordings.get(id);
-        const thumbnailPath = recording?.thumbnailPath ?? this.assets.thumbnailPath(id);
+        const thumbnailPath = recording?.thumbnailPath;
 
         if (!thumbnailPath || !this.assets.isManagedFile(thumbnailPath)) {
           return void response.writeHead(404).end();

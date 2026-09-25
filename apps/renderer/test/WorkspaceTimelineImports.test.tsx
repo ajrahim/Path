@@ -70,7 +70,6 @@ const imports: RecordingTimelineImports = {
   window: {
     startedAt: "2026-09-14T10:00:00.000Z",
     endedAt: "2026-09-14T10:00:30.000Z",
-    isApproximate: false,
   },
   log: null,
   element: null,
@@ -138,7 +137,8 @@ it("imports a log while the recording processes and keeps it after processing fi
         fileName: "app.log",
         offsetMs: 0,
         importedAt: "2026-09-14T10:01:05.000Z",
-        entries: [],
+        rowCount: 0,
+        entryCount: 0,
         outsideCount: 0,
         unreadableLineCount: 0,
       },

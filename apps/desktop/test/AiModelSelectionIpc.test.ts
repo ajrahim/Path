@@ -52,6 +52,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   registerIpcHandlers({
+    cliTools: {} as never,
     instructionFlows: {} as never,
     timelineImports: {} as never,
     settings: { updateAiModelSelection } as never,

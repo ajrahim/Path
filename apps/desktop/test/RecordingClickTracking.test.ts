@@ -13,6 +13,7 @@ async function setup() {
   const controller = new RecordingController(
     { create: vi.fn() } as never,
     {
+      currentRoot: { id: "root", path: "/managed" },
       createRecordingDirectory: vi.fn(),
       videoPath: () => "raw.webm",
       finalVideoPath: () => "final.mp4",
@@ -21,6 +22,8 @@ async function setup() {
     {} as never,
     capture as never,
     null,
+    null,
+    { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   );
 
   vi.spyOn(controller, "listSources").mockResolvedValue([

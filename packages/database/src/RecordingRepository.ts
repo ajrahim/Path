@@ -1,29 +1,30 @@
-import { randomUUID } from "node:crypto";
-import { and, desc, eq, or } from "drizzle-orm";
+import { join } from "node:path";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import type {
   CaptureMode,
   CaptureRegion,
   ClickEvent,
-  PersistedGuide,
   RecordingMediaTiming,
   RecordingSession,
   RecordingSummary,
   TranscriptSegment,
 } from "@path/shared";
 import type { PathDatabase } from "./Connection";
+import { RecordNotFoundError } from "./DatabaseErrors";
 import {
+  assetDeletions,
   clickEvents,
-  documents,
   recordings,
+  storageRoots,
   transcriptSegments,
   type RecordingRow,
 } from "./Schema";
 
-class RecordingNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Recording not found: ${id}`);
-    this.name = "RecordingNotFoundError";
-  }
+// Stay well below SQLite's bound-parameter limit for one multi-row insert.
+const CLICK_INSERT_BATCH_SIZE = 200;
+
+function recordingNotFound(id: string): RecordNotFoundError {
+  return new RecordNotFoundError(`Recording not found: ${id}`);
 }
 
 // History receives metadata without the session's managed video/audio paths.
@@ -49,44 +50,80 @@ function toSession(row: RecordingRow): RecordingSession {
     captureRegion: row.captureRegionJson,
     videoPath: row.videoPath,
     audioPath: row.audioPath,
-    guideStatus: row.guideStatus,
     mediaTiming: row.mediaStartedAt
       ? { startedAt: row.mediaStartedAt, pauses: row.mediaPausesJson ?? [] }
       : null,
   };
 }
 
+function toTranscriptSegment(segment: typeof transcriptSegments.$inferSelect): TranscriptSegment {
+  // Optional DTO fields are omitted rather than leaking SQLite's null representation.
+  return {
+    id: segment.id,
+    recordingId: segment.recordingId,
+    startMs: segment.startMs,
+    endMs: segment.endMs,
+    text: segment.text,
+    ...(segment.speaker !== null ? { speaker: segment.speaker } : {}),
+    ...(segment.confidence !== null ? { confidence: segment.confidence } : {}),
+  };
+}
+
 export interface CreateRecordingInput {
   id: string;
+  storageRootId: string;
   title: string;
   captureMode: CaptureMode;
   captureRegion?: CaptureRegion;
   startedAt: string;
 }
 
-/** Owns recording metadata and activity rows; managed media deletion belongs to the asset service. */
+/** Where a recording's managed assets live: `<storageRootPath>/<recordingId>/`. */
+export interface RecordingAssetLocation {
+  recordingId: string;
+  storageRootPath: string;
+}
+
+/**
+ * Owns recording metadata and activity rows. Methods are synchronous because they run inside the
+ * desktop's database worker, where each call executes to completion before the next begins.
+ */
 export class RecordingRepository {
   constructor(private readonly db: PathDatabase) {}
 
-  async list(): Promise<RecordingSummary[]> {
-    const rows = await this.db.select().from(recordings).orderBy(desc(recordings.createdAt));
-
-    return rows.map(toSummary);
+  list(): RecordingSummary[] {
+    return this.db
+      .select()
+      .from(recordings)
+      .orderBy(desc(recordings.createdAt))
+      .all()
+      .map(toSummary);
   }
 
-  async get(id: string): Promise<RecordingSession | null> {
-    const row = await this.db.query.recordings.findFirst({ where: eq(recordings.id, id) });
+  get(id: string): RecordingSession | null {
+    const row = this.db.select().from(recordings).where(eq(recordings.id, id)).get();
 
     return row ? toSession(row) : null;
   }
 
-  async create(input: CreateRecordingInput): Promise<RecordingSession> {
-    const now = new Date().toISOString();
+  getAssetLocation(id: string): RecordingAssetLocation | null {
+    const row = this.db
+      .select({ recordingId: recordings.id, storageRootPath: storageRoots.path })
+      .from(recordings)
+      .innerJoin(storageRoots, eq(storageRoots.id, recordings.storageRootId))
+      .where(eq(recordings.id, id))
+      .get();
 
-    const [row] = await this.db
+    return row ?? null;
+  }
+
+  create(input: CreateRecordingInput): RecordingSession {
+    const now = new Date().toISOString();
+    const row = this.db
       .insert(recordings)
       .values({
         id: input.id,
+        storageRootId: input.storageRootId,
         title: input.title,
         status: "recording",
         captureMode: input.captureMode,
@@ -95,60 +132,49 @@ export class RecordingRepository {
         createdAt: now,
         updatedAt: now,
       })
-      .returning();
-
-    if (!row) {
-      throw new Error("Failed to create recording");
-    }
+      .returning()
+      .get();
 
     return toSession(row);
   }
 
-  async rename(id: string, title: string): Promise<RecordingSummary> {
-    const [row] = await this.db
+  rename(id: string, title: string): RecordingSummary {
+    const row = this.db
       .update(recordings)
       .set({ title, updatedAt: new Date().toISOString() })
       .where(eq(recordings.id, id))
-      .returning();
+      .returning()
+      .get();
 
-    if (!row) {
-      throw new RecordingNotFoundError(id);
-    }
+    if (!row) throw recordingNotFound(id);
 
     return toSummary(row);
   }
 
-  async markProcessing(id: string, durationMs: number, videoPath: string): Promise<void> {
-    const result = await this.db
+  markProcessing(id: string, durationMs: number, videoPath: string): void {
+    const result = this.db
       .update(recordings)
       .set({ status: "processing", durationMs, videoPath, updatedAt: new Date().toISOString() })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
 
-    if (result.changes === 0) {
-      throw new RecordingNotFoundError(id);
-    }
+    if (result.changes === 0) throw recordingNotFound(id);
   }
 
   /** Stored once capture completes so imported wall-clock evidence can be aligned to media time. */
-  async recordMediaTiming(id: string, timing: RecordingMediaTiming): Promise<void> {
-    const result = await this.db
+  recordMediaTiming(id: string, timing: RecordingMediaTiming): void {
+    const result = this.db
       .update(recordings)
       .set({ mediaStartedAt: timing.startedAt, mediaPausesJson: timing.pauses })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
 
-    if (result.changes === 0) {
-      throw new RecordingNotFoundError(id);
-    }
+    if (result.changes === 0) throw recordingNotFound(id);
   }
 
   /** A final processed path may replace the raw path without changing the recording's identity. */
-  async markReady(
-    id: string,
-    completedAt: string,
-    videoPath?: string,
-    thumbnailPath?: string,
-  ): Promise<void> {
-    const result = await this.db
+  markReady(id: string, completedAt: string, videoPath?: string, thumbnailPath?: string): void {
+    const result = this.db
       .update(recordings)
       .set({
         status: "ready",
@@ -157,248 +183,244 @@ export class RecordingRepository {
         ...(videoPath ? { videoPath } : {}),
         ...(thumbnailPath ? { thumbnailPath } : {}),
       })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
 
-    if (result.changes === 0) {
-      throw new RecordingNotFoundError(id);
-    }
+    if (result.changes === 0) throw recordingNotFound(id);
   }
 
-  async markFailed(id: string): Promise<void> {
-    await this.db
+  markFailed(ids: string | string[]): void {
+    const recordingIds = Array.isArray(ids) ? ids : [ids];
+
+    if (recordingIds.length === 0) return;
+
+    this.db
       .update(recordings)
       .set({ status: "failed", updatedAt: new Date().toISOString() })
-      .where(eq(recordings.id, id));
+      .where(inArray(recordings.id, recordingIds))
+      .run();
   }
 
-  async listUnfinished(): Promise<RecordingSession[]> {
-    const rows = await this.db
-      .select()
+  /**
+   * Startup recovery: interrupted captures cannot resume. They are marked failed, and their
+   * incomplete media directories are queued for deletion in the same transaction.
+   */
+  failUnfinished(): RecordingAssetLocation[] {
+    return this.db.transaction((tx) => {
+      const unfinished = tx
+        .select({ recordingId: recordings.id, storageRootPath: storageRoots.path })
+        .from(recordings)
+        .innerJoin(storageRoots, eq(storageRoots.id, recordings.storageRootId))
+        .where(or(eq(recordings.status, "recording"), eq(recordings.status, "processing")))
+        .all();
+
+      if (unfinished.length === 0) return [];
+
+      tx.update(recordings)
+        .set({ status: "failed", transcriptStatus: "failed", updatedAt: new Date().toISOString() })
+        .where(
+          inArray(
+            recordings.id,
+            unfinished.map((recording) => recording.recordingId),
+          ),
+        )
+        .run();
+
+      queueAssetDeletions(
+        tx,
+        unfinished.map((location) => ({
+          path: recordingDirectoryPath(location),
+          isDirectory: true,
+        })),
+      );
+
+      return unfinished;
+    });
+  }
+
+  /** Ready recordings and their final media paths, read in one query for startup validation. */
+  listReadyMedia(): { id: string; videoPath: string | null }[] {
+    return this.db
+      .select({ id: recordings.id, videoPath: recordings.videoPath })
       .from(recordings)
-      .where(or(eq(recordings.status, "recording"), eq(recordings.status, "processing")));
-
-    return rows.map(toSession);
+      .where(eq(recordings.status, "ready"))
+      .all();
   }
 
-  /** Startup recovery records interruption; the desktop separately removes incomplete media. */
-  async markUnfinishedFailed(): Promise<void> {
-    await this.db
-      .update(recordings)
-      .set({ status: "failed", transcriptStatus: "failed", updatedAt: new Date().toISOString() })
-      .where(or(eq(recordings.status, "recording"), eq(recordings.status, "processing")));
-  }
-
-  async markTranscriptProcessing(id: string, audioPath: string): Promise<void> {
-    await this.db
+  markTranscriptProcessing(id: string, audioPath: string): void {
+    this.db
       .update(recordings)
       .set({ transcriptStatus: "processing", audioPath, updatedAt: new Date().toISOString() })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
   }
 
-  async markTranscriptReady(id: string): Promise<void> {
-    await this.db
+  markTranscriptReady(id: string): void {
+    this.db
       .update(recordings)
       .set({ transcriptStatus: "ready", updatedAt: new Date().toISOString() })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
   }
 
-  async markTranscriptFailed(id: string): Promise<void> {
-    await this.db
+  markTranscriptFailed(id: string): void {
+    this.db
       .update(recordings)
       .set({ transcriptStatus: "failed", updatedAt: new Date().toISOString() })
-      .where(eq(recordings.id, id));
+      .where(eq(recordings.id, id))
+      .run();
   }
 
-  async replaceTranscript(recordingId: string, segments: TranscriptSegment[]): Promise<void> {
-    await this.db.delete(transcriptSegments).where(eq(transcriptSegments.recordingId, recordingId));
+  /** Replaces the whole transcript atomically; a failed insert keeps the previous segments. */
+  replaceTranscript(recordingId: string, segments: TranscriptSegment[]): void {
+    this.db.transaction((tx) => {
+      tx.delete(transcriptSegments).where(eq(transcriptSegments.recordingId, recordingId)).run();
 
-    if (segments.length > 0) {
+      if (segments.length === 0) return;
+
       // Ownership comes from the requested recording, not IDs supplied by a provider.
-      await this.db
-        .insert(transcriptSegments)
-        .values(segments.map((segment) => ({ ...segment, recordingId })));
-    }
+      tx.insert(transcriptSegments)
+        .values(segments.map((segment) => ({ ...segment, recordingId })))
+        .run();
+    });
   }
 
-  async listTranscript(recordingId: string): Promise<TranscriptSegment[]> {
-    const segments = await this.db
+  listTranscript(recordingId: string): TranscriptSegment[] {
+    return this.db
       .select()
       .from(transcriptSegments)
       .where(eq(transcriptSegments.recordingId, recordingId))
-      .orderBy(transcriptSegments.startMs);
-
-    // Optional DTO fields are omitted rather than leaking SQLite's null representation.
-    return segments.map((segment) => ({
-      id: segment.id,
-      recordingId: segment.recordingId,
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text,
-      ...(segment.speaker !== null ? { speaker: segment.speaker } : {}),
-      ...(segment.confidence !== null ? { confidence: segment.confidence } : {}),
-    }));
+      .orderBy(transcriptSegments.startMs)
+      .all()
+      .map(toTranscriptSegment);
   }
 
-  async updateTranscript(
-    recordingId: string,
-    id: string,
-    text: string,
-  ): Promise<TranscriptSegment> {
-    const [segment] = await this.db
+  updateTranscript(recordingId: string, id: string, text: string): TranscriptSegment {
+    const segment = this.db
       .update(transcriptSegments)
       .set({ text })
       .where(and(eq(transcriptSegments.recordingId, recordingId), eq(transcriptSegments.id, id)))
-      .returning();
+      .returning()
+      .get();
 
-    if (!segment) throw new Error(`Transcript segment not found: ${id}`);
+    if (!segment) throw new RecordNotFoundError(`Transcript segment not found: ${id}`);
 
-    return {
-      id: segment.id,
-      recordingId: segment.recordingId,
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      text: segment.text,
-      ...(segment.speaker !== null ? { speaker: segment.speaker } : {}),
-      ...(segment.confidence !== null ? { confidence: segment.confidence } : {}),
-    };
+    return toTranscriptSegment(segment);
   }
 
-  async deleteTranscript(recordingId: string, id: string): Promise<void> {
-    const deleted = await this.db
+  deleteTranscript(recordingId: string, id: string): void {
+    const result = this.db
       .delete(transcriptSegments)
       .where(and(eq(transcriptSegments.recordingId, recordingId), eq(transcriptSegments.id, id)))
-      .returning({ id: transcriptSegments.id });
+      .run();
 
-    if (deleted.length === 0) {
-      throw new Error(`Transcript segment not found: ${id}`);
-    }
+    if (result.changes === 0) throw new RecordNotFoundError(`Transcript segment not found: ${id}`);
   }
 
-  async insertClick(click: ClickEvent): Promise<void> {
-    await this.db.insert(clickEvents).values(click);
+  /** Inserts captured clicks in one transaction; either the whole batch is stored or none is. */
+  insertClicks(clicks: ClickEvent[]): void {
+    if (clicks.length === 0) return;
+
+    this.db.transaction((tx) => {
+      for (let start = 0; start < clicks.length; start += CLICK_INSERT_BATCH_SIZE) {
+        tx.insert(clickEvents)
+          .values(clicks.slice(start, start + CLICK_INSERT_BATCH_SIZE))
+          .run();
+      }
+    });
   }
 
-  async updateClickScreenshot(id: string, screenshotPath: string): Promise<void> {
-    await this.db.update(clickEvents).set({ screenshotPath }).where(eq(clickEvents.id, id));
+  updateClickActionDescription(id: string, actionDescription: string): void {
+    this.db.update(clickEvents).set({ actionDescription }).where(eq(clickEvents.id, id)).run();
   }
 
-  async updateClickActionDescription(id: string, actionDescription: string): Promise<void> {
-    await this.db.update(clickEvents).set({ actionDescription }).where(eq(clickEvents.id, id));
-  }
-
-  async listClicks(recordingId: string): Promise<ClickEvent[]> {
+  listClicks(recordingId: string): ClickEvent[] {
     return this.db
       .select()
       .from(clickEvents)
       .where(eq(clickEvents.recordingId, recordingId))
-      .orderBy(clickEvents.timestampMs);
+      .orderBy(clickEvents.timestampMs)
+      .all();
   }
 
   /** Match both IDs so a screenshot lookup cannot cross recording ownership. */
-  async getClick(recordingId: string, clickId: string): Promise<ClickEvent | null> {
-    const click = await this.db.query.clickEvents.findFirst({
-      where: (table, { and, eq: equals }) =>
-        and(equals(table.recordingId, recordingId), equals(table.id, clickId)),
-    });
+  getClick(recordingId: string, clickId: string): ClickEvent | null {
+    const click = this.db
+      .select()
+      .from(clickEvents)
+      .where(and(eq(clickEvents.recordingId, recordingId), eq(clickEvents.id, clickId)))
+      .get();
 
     return click ?? null;
   }
 
-  async deleteClick(recordingId: string, id: string): Promise<void> {
-    const deleted = await this.db
-      .delete(clickEvents)
-      .where(and(eq(clickEvents.recordingId, recordingId), eq(clickEvents.id, id)))
-      .returning({ id: clickEvents.id });
+  /** Removes the row and queues its screenshot for deletion in the same transaction. */
+  deleteClick(recordingId: string, id: string): void {
+    this.db.transaction((tx) => {
+      const click = tx
+        .delete(clickEvents)
+        .where(and(eq(clickEvents.recordingId, recordingId), eq(clickEvents.id, id)))
+        .returning({ screenshotPath: clickEvents.screenshotPath })
+        .get();
 
-    if (deleted.length === 0) throw new Error(`Click event not found: ${id}`);
+      if (!click) throw new RecordNotFoundError(`Click event not found: ${id}`);
+
+      if (click.screenshotPath) {
+        queueAssetDeletions(tx, [{ path: click.screenshotPath, isDirectory: false }]);
+      }
+    });
   }
 
-  async updateClickDescription(
-    recordingId: string,
-    id: string,
-    actionDescription: string,
-  ): Promise<ClickEvent> {
-    const [click] = await this.db
+  updateClickDescription(recordingId: string, id: string, actionDescription: string): ClickEvent {
+    const click = this.db
       .update(clickEvents)
       .set({ actionDescription })
       .where(and(eq(clickEvents.recordingId, recordingId), eq(clickEvents.id, id)))
-      .returning();
+      .returning()
+      .get();
 
-    if (!click) throw new Error(`Click event not found: ${id}`);
+    if (!click) throw new RecordNotFoundError(`Click event not found: ${id}`);
 
     return click;
   }
 
-  async getDocument(recordingId: string): Promise<PersistedGuide | null> {
-    const [document] = await this.db
-      .select()
-      .from(documents)
-      .where(eq(documents.recordingId, recordingId))
-      .orderBy(desc(documents.updatedAt))
-      .limit(1);
+  /**
+   * Foreign-key cascades remove activity, imports, and document history. The recording's asset
+   * directory is queued for deletion in the same transaction, so files are never orphaned.
+   */
+  delete(id: string): void {
+    this.db.transaction((tx) => {
+      const location = tx
+        .select({ recordingId: recordings.id, storageRootPath: storageRoots.path })
+        .from(recordings)
+        .innerJoin(storageRoots, eq(storageRoots.id, recordings.storageRootId))
+        .where(eq(recordings.id, id))
+        .get();
 
-    if (!document) return null;
+      if (!location) return;
 
-    return {
-      recordingId: document.recordingId,
-      title: document.title,
-      markdown: document.markdown,
-      updatedAt: document.updatedAt,
-    };
+      tx.delete(recordings).where(eq(recordings.id, id)).run();
+      queueAssetDeletions(tx, [{ path: recordingDirectoryPath(location), isDirectory: true }]);
+    });
   }
+}
 
-  /** One Markdown document per recording; a later save replaces the earlier draft. */
-  async saveDocument(recordingId: string, markdown: string): Promise<PersistedGuide> {
-    const session = await this.get(recordingId);
+type Transaction = Parameters<Parameters<PathDatabase["transaction"]>[0]>[0];
 
-    if (!session) throw new RecordingNotFoundError(recordingId);
+function recordingDirectoryPath(location: RecordingAssetLocation): string {
+  return join(location.storageRootPath, location.recordingId);
+}
 
-    const existing = await this.getDocument(recordingId);
-    const now = new Date().toISOString();
+function queueAssetDeletions(
+  tx: Transaction,
+  paths: { path: string; isDirectory: boolean }[],
+): void {
+  if (paths.length === 0) return;
 
-    if (existing) {
-      const [updated] = await this.db
-        .update(documents)
-        .set({ title: session.title, markdown, updatedAt: now })
-        .where(eq(documents.recordingId, recordingId))
-        .returning();
+  const requestedAt = new Date().toISOString();
 
-      if (!updated) throw new Error(`Guide document not found for recording: ${recordingId}`);
-
-      return {
-        recordingId: updated.recordingId,
-        title: updated.title,
-        markdown: updated.markdown,
-        updatedAt: updated.updatedAt,
-      };
-    }
-
-    const [created] = await this.db
-      .insert(documents)
-      .values({
-        id: randomUUID(),
-        recordingId,
-        title: session.title,
-        format: "help-guide",
-        language: "en",
-        markdown,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    if (!created) throw new Error("Failed to save guide document");
-
-    return {
-      recordingId: created.recordingId,
-      title: created.title,
-      markdown: created.markdown,
-      updatedAt: created.updatedAt,
-    };
-  }
-
-  /** Foreign-key cascades remove activity rows; this does not delete filesystem assets. */
-  async delete(id: string): Promise<void> {
-    await this.db.delete(recordings).where(eq(recordings.id, id));
-  }
+  tx.insert(assetDeletions)
+    .values(paths.map((entry) => ({ ...entry, requestedAt })))
+    .onConflictDoNothing()
+    .run();
 }

@@ -53,6 +53,7 @@ function createController() {
   };
 
   const assets = {
+    currentRoot: { id: "root", path: "/managed" },
     createRecordingDirectory: vi.fn().mockResolvedValue("/managed/recording"),
     videoPath: vi.fn().mockReturnValue("/managed/recording/raw.webm"),
     finalVideoPath: vi.fn().mockReturnValue("/managed/recording/recording.mp4"),
@@ -70,9 +71,11 @@ function createController() {
     {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
-      flush: vi.fn().mockResolvedValue(undefined),
+      flush: vi.fn().mockResolvedValue({ unsavedClickCount: 0 }),
     } as never,
     null,
+    null,
+    { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
   );
 
   return { controller, recordings };

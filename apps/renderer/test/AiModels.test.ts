@@ -17,8 +17,6 @@ const settings: DesktopSettings = {
   general: { minimizeToTray: true },
   timelineImports: { maxFileSizeMb: 10 },
   recordingsDirectory: "/recordings",
-  guideInstructions: "",
-  localVisionModel: "first",
   aiModelSelections: {
     visual: { source: "local", modelId: "first", modelName: "First" },
     text: { source: "local", modelId: "writer", modelName: "Writer" },

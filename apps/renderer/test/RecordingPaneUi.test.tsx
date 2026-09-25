@@ -32,6 +32,8 @@ const bridge = vi.hoisted(() => ({
   mediaUrl: vi.fn(),
   retryProcessing: vi.fn(),
   listTimelineImports: vi.fn(),
+  listTimelineImportRows: vi.fn(),
+  locateTimelineImportRow: vi.fn(),
   importTimelineFile: vi.fn(),
   updateTimelineImportOffset: vi.fn(),
   removeTimelineImport: vi.fn(),
@@ -111,22 +113,28 @@ beforeEach(() => {
     window: {
       startedAt: "2026-09-14T10:00:00.000Z",
       endedAt: "2026-09-14T10:00:30.000Z",
-      isApproximate: false,
     },
     log: {
       kind: "log",
       fileName: "app.log",
       offsetMs: 0,
       importedAt: "2026-09-14T11:00:00.000Z",
-      entries: [
-        { id: 1, occurredAt: "2026-09-14T10:00:03.000Z", timestampMs: 3_000, text: "Opened form" },
-        { id: 2, occurredAt: "2026-09-14T10:00:07.250Z", timestampMs: 7_250, text: "Saved form" },
-      ],
+      rowCount: 3,
+      entryCount: 2,
       outsideCount: 1,
       unreadableLineCount: 0,
     },
     element: null,
   });
+  bridge.listTimelineImportRows.mockResolvedValue({
+    start: 0,
+    total: 2,
+    entries: [
+      { id: 1, occurredAt: "2026-09-14T10:00:03.000Z", timestampMs: 3_000, text: "Opened form" },
+      { id: 2, occurredAt: "2026-09-14T10:00:07.250Z", timestampMs: 7_250, text: "Saved form" },
+    ],
+  });
+  bridge.locateTimelineImportRow.mockResolvedValue({ index: -1 });
   bridge.screenshotUrl.mockImplementation(
     async ({ id }: { id: string }) => `blob:screenshot-${id}`,
   );
@@ -336,7 +344,7 @@ describe("RecordingPane UI interactions", () => {
     expect(screen.getByText("app.log")).toBeTruthy();
     expect(screen.getByText("1 outside the video")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /00:07\.250\s*Saved form/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /00:07\.250\s*Saved form/ }));
     expect(view.container.querySelector("video")!.currentTime).toBe(7.25);
 
     fireEvent.click(screen.getByRole("tab", { name: messages.recording.elements }));

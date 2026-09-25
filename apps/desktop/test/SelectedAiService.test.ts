@@ -657,12 +657,14 @@ describe("SelectedAiService", () => {
   });
 
   it("maps effort to Gemini thinking budgets and levels", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ candidates: [{ content: { parts: [{ text: "# Guide" }] } }] }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ candidates: [{ content: { parts: [{ text: "# Guide" }] } }] }),
+          { status: 200 },
+        ),
+      );
 
     vi.stubGlobal("fetch", fetchMock);
     const settings = {
@@ -675,6 +677,7 @@ describe("SelectedAiService", () => {
           effort: "high",
         }),
     } as never;
+
     const service = new SelectedAiService(
       settings,
       { get: vi.fn().mockResolvedValue("secret") } as never,
@@ -734,4 +737,22 @@ describe("SelectedAiService", () => {
     await expect(service.generateText("Fail once")).rejects.toThrow("Invalid key");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+it("routes text to a selected CLI and surfaces failures without falling back to the local model", async () => {
+  const cli = {
+    get: () => ({ mode: "cli" }),
+    generate: vi
+      .fn()
+      .mockResolvedValueOnce("# CLI")
+      .mockRejectedValueOnce(new Error("Unavailable")),
+  };
+
+  const ollama = { generateText: vi.fn() };
+  const service = new SelectedAiService({} as never, {} as never, ollama as never, cli as never);
+
+  await expect(service.generateText("Write", "chosen-folder")).resolves.toBe("# CLI");
+  expect(cli.generate).toHaveBeenCalledWith("Write", "chosen-folder");
+  await expect(service.generateText("Write")).rejects.toThrow("Unavailable");
+  expect(ollama.generateText).not.toHaveBeenCalled();
 });

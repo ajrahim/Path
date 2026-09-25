@@ -6,7 +6,13 @@
       "project": ["scripts/**/*.mjs", "tests/**/*.mjs"]
     },
     "apps/desktop": {
-      "entry": ["src/Main.ts", "src/Preload.ts", "test/**/*.test.ts", "scripts/*.mjs"],
+      "entry": [
+        "src/Main.ts",
+        "src/Preload.ts",
+        "src/storage/DatabaseWorker.ts",
+        "test/**/*.test.ts",
+        "scripts/*.mjs"
+      ],
       "project": ["src/**/*.ts", "test/**/*.ts", "scripts/*.mjs"]
     },
     "apps/renderer": {

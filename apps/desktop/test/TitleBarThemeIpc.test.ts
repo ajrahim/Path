@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   handlers.clear();
   registerIpcHandlers({
+    cliTools: {} as never,
     instructionFlows: {} as never,
     settings: {} as never,
     aiService: {} as never,
