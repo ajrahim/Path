@@ -13,13 +13,14 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Current capabilities and limitations      | [Current state](memory-bank/CurrentState.md)                        |
 | Reasons behind durable choices            | [Decisions](memory-bank/Decisions.md)                               |
 | Recording and document behavior           | [Recording workflow specification](../specs/RecordingWorkflow.md)   |
-| Recording library Projects                | [Project grouping behavior](specs/RecordingProjects.md)             |
-| Welcome screen and document shortcuts     | [Workspace welcome](specs/WorkspaceWelcome.md)                      |
+| Recording library Projects                | [Project grouping behavior](../specs/RecordingProjects.md)          |
+| Welcome screen and document shortcuts     | [Workspace welcome](../specs/WorkspaceWelcome.md)                   |
 | Imported logs and element paths           | [Recording logs and elements](../specs/RecordingLogsAndElements.md) |
 | Chat image and text context               | [Guide chat context](../specs/GuideChatContext.md)                  |
 | CLI text generation and code context      | [CLI tools](../specs/CliTools.md)                                   |
 | Settings sections and prompt library      | [Settings and prompts](../specs/SettingsAndPrompts.md)              |
 | Storage ownership, drafts, history        | [Local persistence](../specs/LocalPersistence.md)                   |
+| Reset to a fresh installation             | [Clear all data and settings](../specs/ResetAppData.md)             |
 | Local application links and video imports | [Application links](../specs/AppLinks.md)                           |
 | Feature specification creation            | [Create spec skill](../.github/skills/spec-create/SKILL.md)         |
 | Spec implementation workflow              | [Implement spec skill](../.github/skills/spec-implement/SKILL.md)   |

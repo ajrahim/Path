@@ -282,6 +282,7 @@ describe("HistorySidebar layout and version", () => {
 describe("HistorySidebar context menus", () => {
   // Dialog modality varies by jsdom version; these tests assert content, not modality.
   window.HTMLDialogElement.prototype.showModal = function () {};
+
   window.HTMLDialogElement.prototype.close = function () {};
 
   const readyRecording = {
@@ -389,6 +390,7 @@ describe("HistorySidebar context menus", () => {
     const { view } = await renderSidebar({
       projects: [{ id: "p1", name: "Demo", recordingIds: [] }],
     });
+
     const heading = view.getByRole("button", { name: "Demo" });
 
     fireEvent.contextMenu(heading, { clientX: 120, clientY: 200 });
@@ -400,7 +402,9 @@ describe("HistorySidebar context menus", () => {
     fireEvent.click(view.getByRole("menuitem", { name: "Remove Project" }));
 
     expect(
-      view.getByText('Remove "Demo"? Its recordings will remain in All. No recordings will be deleted.'),
+      view.getByText(
+        'Remove "Demo"? Its recordings will remain in All. No recordings will be deleted.',
+      ),
     ).toBeTruthy();
   });
 

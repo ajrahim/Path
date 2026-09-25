@@ -3,6 +3,7 @@
 /* Shared defaults precede owner rules. Button alone stays below caller utilities. */
 @import "./global.css";
 @import "./components/Button.css";
+@import "./components/ClearDataDialog.css";
 @import "./pages/WorkspacePage.css";
 @import "./components/LocalModelSelect.css";
 @import "./components/CliToolPicker.css";

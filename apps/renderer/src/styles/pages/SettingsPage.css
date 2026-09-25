@@ -973,3 +973,17 @@ html[data-theme="dark"]
     padding: 12px;
   }
 }
+.settings-reset {
+  margin-top: 24px;
+}
+
+.settings-reset p {
+  margin: 0 0 12px;
+  color: var(--muted-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-reset .path-button-danger {
+  color: var(--danger);
+}

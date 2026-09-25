@@ -7,6 +7,7 @@ import {
   runtimeReceived,
 } from "@/state/RecordingSlice";
 import type { RendererStore } from "./RendererStore";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 /** Owns one window's runtime subscription and polling fallback until its controls unmount. */
 export function connectRecordingBridge(
@@ -48,7 +49,7 @@ export function connectRecordingBridge(
           runtimeReadFailed({
             connectionId,
             revision,
-            error: error instanceof Error ? error.message : "Unable to refresh recording state",
+            error: getErrorMessage(error, "Unable to refresh recording state"),
           }),
         );
       }

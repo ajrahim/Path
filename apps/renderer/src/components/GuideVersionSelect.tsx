@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, History } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import type { DocumentRevisionSummary } from "@path/shared";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 /**
  * Document history picker in the editor footer. It uses the same borderless trigger, check-marked
@@ -38,6 +39,8 @@ export function GuideVersionSelect({
   const label =
     shownNumber === null ? t("versionCurrent") : t("versionName", { number: shownNumber });
 
+  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
 
@@ -49,14 +52,6 @@ export function GuideVersionSelect({
 
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: "nearest" });
-
-    function closeOutside(event: PointerEvent): void {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOutside);
-
-    return () => document.removeEventListener("pointerdown", closeOutside);
   }, [open]);
 
   function close(): void {

@@ -13,6 +13,7 @@ import { PathLinkNotifications } from "./links/PathLinkNotifications";
 import { PathProtocol } from "./links/PathProtocol";
 import { recoverRecordings } from "./recording/StartupRecovery";
 import { AssetDeletionQueue } from "./storage/AssetDeletionQueue";
+import { AppDataReset } from "./storage/AppDataReset";
 import { DatabaseClient, type DatabaseUnavailableError } from "./storage/DatabaseClient";
 import { DiagnosticLog } from "./storage/DiagnosticLog";
 import { ManagedRecordingAssets } from "./storage/ManagedRecordingAssets";
@@ -83,6 +84,29 @@ if (!hasSingleInstanceLock) {
     const migrationsDirectory = app.isPackaged
       ? join(process.resourcesPath, "migrations")
       : resolve(app.getAppPath(), "../../packages/database/drizzle");
+
+    const dataReset = new AppDataReset(
+      layout,
+      () =>
+        DatabaseClient.open({
+          workerPath: join(__dirname, "database-worker.cjs"),
+          databasePath: layout.databasePath,
+          migrationsFolder: migrationsDirectory,
+        }),
+      session.defaultSession,
+    );
+
+    try {
+      await dataReset.completePending();
+    } catch (error) {
+      dialog.showErrorBox(
+        "Path could not finish clearing its data",
+        `${error instanceof Error ? error.message : String(error)}\n\nClose any programs using Path's files and reopen Path to retry.`,
+      );
+      app.exit(1);
+
+      return;
+    }
 
     const rendererDirectory = app.isPackaged
       ? join(process.resourcesPath, "renderer")
@@ -325,6 +349,8 @@ if (!hasSingleInstanceLock) {
       openRecording: openLinkedRecording,
     });
 
+    let isResetRequested = false;
+
     registerIpcHandlers({
       cliTools,
       recordings,
@@ -345,6 +371,22 @@ if (!hasSingleInstanceLock) {
       aiService,
       timelineImports,
       openSettingsWindow,
+      clearAppData: async () => {
+        if (isResetRequested) return;
+
+        isResetRequested = true;
+        try {
+          await dataReset.request();
+        } catch (error) {
+          isResetRequested = false;
+
+          throw error;
+        }
+
+        // Do not replay a launch link and import old content into the newly cleared profile.
+        app.relaunch({ args: process.argv.slice(1).filter((arg) => !/^pathai:/i.test(arg)) });
+        setImmediate(() => app.quit());
+      },
     });
 
     appLinks.attach({

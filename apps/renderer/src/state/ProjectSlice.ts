@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import type { ProjectChangeInput, RecordingProject } from "@path/shared";
-import type { DesktopDependencies } from "./DesktopDependencies";
+import { DESKTOP_UNAVAILABLE_MESSAGE, type DesktopDependencies } from "./DesktopDependencies";
 
 interface ProjectState {
   projects: RecordingProject[];
@@ -23,7 +23,7 @@ export const changeProject = createAsyncThunk<RecordingProject[], ProjectChangeI
   async (input, { extra }) => {
     const desktop = extra.getDesktopApi();
 
-    if (!desktop) throw new Error("The desktop bridge is unavailable");
+    if (!desktop) throw new Error(DESKTOP_UNAVAILABLE_MESSAGE);
 
     return desktop.projects.change(input);
   },

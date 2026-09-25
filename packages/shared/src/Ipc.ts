@@ -13,7 +13,6 @@ import {
   timelineImportKinds,
 } from "./Contracts";
 import type {
-  AiModel,
   AvailableAiModels,
   AiProvider,
   AiProviderKeyStatus,
@@ -28,7 +27,6 @@ import type {
   RecordingProject,
   RegionSelectionContext,
   StartRecordingInput,
-  SetAiProviderKeyResult,
   CommittedGuideRevision,
   DesktopSettings,
   DocumentRevision,
@@ -54,6 +52,7 @@ export const IPC_CHANNELS = {
   appSetRecorderPopoverExpanded: "app:set-recorder-popover-expanded",
   appSetTitleBarTheme: "app:set-title-bar-theme",
   appOpenSettings: "app:open-settings",
+  appClearData: "app:clear-data",
   appFlushRequested: "app:flush-requested",
   appFlushComplete: "app:flush-complete",
   appRecordingOpened: "app:recording-opened",
@@ -75,8 +74,6 @@ export const IPC_CHANNELS = {
   settingsGetAiProviderKeyStatus: "settings:get-ai-provider-key-status",
   settingsSetAiProviderKey: "settings:set-ai-provider-key",
   settingsRemoveAiProviderKey: "settings:remove-ai-provider-key",
-  settingsListAiProviderModels: "settings:list-ai-provider-models",
-  settingsListLocalModels: "settings:list-local-models",
   settingsListAvailableAiModels: "settings:list-available-ai-models",
   settingsUpdateAiModelSelection: "settings:update-ai-model-selection",
 
@@ -344,6 +341,8 @@ export const restoreGuideRevisionInputSchema = guideRevisionInputSchema.extend({
   replacedMarkdown: markdownSchema.optional(),
 });
 
+export const clearAppDataInputSchema = z.strictObject({ confirmed: z.literal(true) });
+
 export const appFlushCompleteInputSchema = z.strictObject({
   requestId: z.number().int().min(1),
 });
@@ -382,6 +381,7 @@ export interface DesktopApi {
     showMainWindow(): Promise<void>;
     setRecorderPopoverExpanded(input: { expanded: boolean }): Promise<void>;
     openSettings(input?: z.infer<typeof openSettingsInputSchema>): Promise<void>;
+    clearData(input: z.infer<typeof clearAppDataInputSchema>): Promise<void>;
     /** Receives a recording opened by an application link or notification. */
     onRecordingOpened(listener: (input: { recordingId: string }) => void): () => void;
     /** Takes the latest open request, including one received before the workspace mounted. */
@@ -411,10 +411,8 @@ export interface DesktopApi {
     getAiProviderKeyStatus(): Promise<AiProviderKeyStatus>;
     setAiProviderKey(
       input: z.infer<typeof setAiProviderKeyInputSchema>,
-    ): Promise<SetAiProviderKeyResult>;
+    ): Promise<AiProviderKeyStatus>;
     removeAiProviderKey(input: { provider: AiProvider }): Promise<AiProviderKeyStatus>;
-    listAiProviderModels(input: { provider: AiProvider }): Promise<AiModel[]>;
-    listLocalModels(): Promise<AiModel[]>;
     listAvailableAiModels(): Promise<AvailableAiModels>;
     updateAiModelSelection(
       input: z.infer<typeof updateAiModelSelectionInputSchema>,

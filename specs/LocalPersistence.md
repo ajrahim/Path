@@ -64,6 +64,7 @@ Renderer windows hold loaded summaries, pages, and editor state in hooks and Red
 - Deleting a recording or click records its files in `asset_deletions` in the same transaction. Files are removed afterwards and retried at the next startup. Only `<registered root>/<recording id>` directories and files inside registered roots are ever removed.
 - Transcript replacement is atomic.
 - Diagnostics rotate at 1 MB, keep 5 files, and drop files older than 14 days. Retention never applies to imports or document history.
+- An explicit [Clear all data and settings](ResetAppData.md) confirmation removes Path-owned data on the next startup and recreates fresh defaults. Imported originals and unrelated files in registered roots remain intact.
 
 ## Acceptance Criteria
 

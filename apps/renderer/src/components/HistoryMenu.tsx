@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 export interface HistoryMenuItem {
   label: string;
@@ -48,24 +49,20 @@ export function HistoryMenu({
       }
     : null;
 
+  useOutsidePointerDown(anchor !== null, [menuRef], onClose);
+
   useEffect(() => {
     if (!anchor) return;
     menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-
-    const outside = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
-    };
 
     const onScroll = (event: Event) => {
       if (!menuRef.current?.contains(event.target as Node)) onClose();
     };
 
-    document.addEventListener("pointerdown", outside);
     window.addEventListener("resize", onClose);
     document.addEventListener("scroll", onScroll, true);
 
     return () => {
-      document.removeEventListener("pointerdown", outside);
       window.removeEventListener("resize", onClose);
       document.removeEventListener("scroll", onScroll, true);
     };

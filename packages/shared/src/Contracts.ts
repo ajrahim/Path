@@ -88,11 +88,6 @@ export interface AvailableAiModels {
   ollama: { status: "running" | "unavailable"; endpoint: string };
 }
 
-export interface SetAiProviderKeyResult {
-  keyStatus: AiProviderKeyStatus;
-  models: AiModel[];
-}
-
 export interface GeneralSettings {
   minimizeToTray: boolean;
 }

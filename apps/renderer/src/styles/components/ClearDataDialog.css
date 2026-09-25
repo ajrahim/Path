@@ -1,0 +1,44 @@
+.clear-data-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-float);
+}
+
+.clear-data-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.clear-data-dialog h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.clear-data-dialog p {
+  margin: 0 0 12px;
+  color: var(--muted-ink);
+  line-height: 1.5;
+}
+
+.clear-data-dialog p[role="alert"] {
+  color: var(--danger);
+}
+
+.clear-data-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.clear-data-dialog .path-button-danger {
+  color: var(--danger);
+}

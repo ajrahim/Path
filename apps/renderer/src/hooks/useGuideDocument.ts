@@ -10,6 +10,7 @@ import { useTranslations } from "next-intl";
 import { getDesktopApi } from "@/lib/Desktop";
 import { subscribeGuideImages } from "@/lib/GuideImageBus";
 import { renderMarkdownToHtml } from "@/lib/RenderMarkdown";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 /** Unsaved text is written as a recovery draft once typing pauses for this long. */
 export const DRAFT_AUTOSAVE_DELAY_MS = 1_000;
@@ -241,10 +242,6 @@ function persistedDraftStatus(session: DocumentSession): DraftStatus {
   return session.persistedMarkdown === session.savedMarkdown ? "clean" : "stored";
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 /**
  * Owns one recording's Markdown editor. The saved document, recovery draft, and revision
  * history are durable in the desktop; this hook keeps the editor text, debounces draft writes,
@@ -301,7 +298,7 @@ export function useGuideDocument(
         .catch((error: unknown) => {
           if (session.active) {
             dispatch({ type: "loading", loading: false });
-            dispatch({ type: "error", error: errorMessage(error, t("guide.loadFailed")) });
+            dispatch({ type: "error", error: getErrorMessage(error, t("guide.loadFailed")) });
           }
         });
 
@@ -449,7 +446,7 @@ export function useGuideDocument(
       }
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.historyFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.historyFailed")) });
       }
     }
   }
@@ -527,7 +524,7 @@ export function useGuideDocument(
     } catch (error) {
       if (session.active) {
         dispatch({ type: "draft-status", status: "failed" });
-        dispatch({ type: "error", error: errorMessage(error, t("guide.draftFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.draftFailed")) });
       }
 
       return false;
@@ -613,7 +610,7 @@ export function useGuideDocument(
       insertSnippet(session, imageMarkdown.join("\n\n"));
     } catch (error) {
       if (session.active && session.revision === revision) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.imageInsertFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.imageInsertFailed")) });
       }
     }
   }
@@ -665,7 +662,7 @@ export function useGuideDocument(
       session.copiedTimer = setTimeout(() => dispatch({ type: "copied", copied: false }), 2_000);
     } catch (error) {
       if (session.active && session.copying === operation && session.revision === revision) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.copyFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.copyFailed")) });
       }
     }
   }
@@ -690,7 +687,7 @@ export function useGuideDocument(
       }
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.exportFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.exportFailed")) });
       }
     } finally {
       session.exporting = false;
@@ -763,7 +760,7 @@ export function useGuideDocument(
       return true;
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.saveFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.saveFailed")) });
       }
 
       return false;
@@ -808,7 +805,7 @@ export function useGuideDocument(
       return true;
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.discardFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.discardFailed")) });
       }
 
       return false;
@@ -849,7 +846,7 @@ export function useGuideDocument(
       if (session.active && session.revision === revision) {
         dispatch({
           type: "error",
-          error: errorMessage(error, t("guide.generateFailed")),
+          error: getErrorMessage(error, t("guide.generateFailed")),
           canRetryGenerate: true,
         });
       }
@@ -904,7 +901,7 @@ export function useGuideDocument(
     } catch (error) {
       // Updates are retried by sending a new chat prompt, never by regenerating the flow.
       if (session.active && session.revision === revision) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.updateFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.updateFailed")) });
       }
 
       return false;
@@ -961,7 +958,7 @@ export function useGuideDocument(
       }
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.historyFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.historyFailed")) });
       }
     }
   }
@@ -993,7 +990,7 @@ export function useGuideDocument(
       return true;
     } catch (error) {
       if (session.active) {
-        dispatch({ type: "error", error: errorMessage(error, t("guide.restoreFailed")) });
+        dispatch({ type: "error", error: getErrorMessage(error, t("guide.restoreFailed")) });
       }
 
       return false;

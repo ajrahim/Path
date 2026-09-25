@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { instructionFlowIcons, type InstructionFlowIcon } from "@path/shared";
 import { InstructionFlowGlyph } from "./InstructionFlowGlyph";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 export function InstructionFlowIconSelect({
   icon,
@@ -20,17 +21,11 @@ export function InstructionFlowIconSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
 
+  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
     menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
-
-    function closeOutside(event: PointerEvent): void {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOutside);
-
-    return () => document.removeEventListener("pointerdown", closeOutside);
   }, [open]);
 
   function close(): void {
@@ -89,17 +84,23 @@ export function InstructionFlowIconSelect({
             const index = items.indexOf(document.activeElement as HTMLButtonElement);
             let next = index;
 
-            if (event.key === "ArrowRight") {next = (index + 1) % items.length;}
-            else if (event.key === "ArrowLeft") {next = (index + items.length - 1) % items.length;}
-            else if (event.key === "ArrowDown" || event.key === "ArrowUp")
-              {next = (index + 5) % items.length;}
-            else if (event.key === "Home") {next = 0;}
-            else if (event.key === "End") {next = items.length - 1;}
-            else if (event.key === "Tab") {
+            if (event.key === "ArrowRight") {
+              next = (index + 1) % items.length;
+            } else if (event.key === "ArrowLeft") {
+              next = (index + items.length - 1) % items.length;
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              next = (index + 5) % items.length;
+            } else if (event.key === "Home") {
+              next = 0;
+            } else if (event.key === "End") {
+              next = items.length - 1;
+            } else if (event.key === "Tab") {
               close();
 
               return;
-            } else {return;}
+            } else {
+              return;
+            }
 
             event.preventDefault();
             items[next]?.focus();

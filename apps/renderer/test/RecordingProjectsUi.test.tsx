@@ -151,7 +151,7 @@ describe("Recording Projects", () => {
     fireEvent.change(view.getByRole("textbox", { name: "Search recordings" }), {
       target: { value: "" },
     });
-    fireEvent.click(view.getByRole("button", { name: "Project actions: Onboarding" }));
+    fireEvent.contextMenu(within(folder).getByRole("button", { name: "Onboarding" }));
     fireEvent.click(view.getByRole("menuitem", { name: "Remove Project" }));
     expect(view.getByText(/No recordings will be deleted/)).toBeTruthy();
     await act(async () => {
@@ -175,7 +175,7 @@ describe("Recording Projects", () => {
         within(view.getByRole("dialog")).getByRole("button", { name: "Create Project" }),
       );
     });
-    fireEvent.click(view.getByRole("button", { name: "More actions" }));
+    fireEvent.contextMenu(view.getByRole("button", { name: /Workspace walkthrough/ }));
     fireEvent.click(view.getByRole("menuitem", { name: "Move to Project" }));
     fireEvent.change(view.getByLabelText("Move to"), {
       target: { value: "22222222-2222-4222-8222-222222222222" },

@@ -1,4 +1,3 @@
-import { app } from "electron";
 import { resolve } from "node:path";
 import {
   DEFAULT_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
@@ -62,7 +61,6 @@ export class DesktopSettingsService {
     }
 
     await this.applyRecordingsDirectory(this.current.recordingsDirectory);
-    this.disableLaunchAtLogin();
   }
 
   get(): DesktopSettings {
@@ -141,10 +139,5 @@ export class DesktopSettingsService {
     const registered = await this.repositories.storageRoots.list();
 
     await this.assets.useRoots(current, registered);
-  }
-
-  private disableLaunchAtLogin(): void {
-    if (!["darwin", "win32"].includes(process.platform)) return;
-    app.setLoginItemSettings({ openAtLogin: false });
   }
 }

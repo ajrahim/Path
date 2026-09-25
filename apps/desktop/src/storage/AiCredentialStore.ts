@@ -7,6 +7,8 @@ type EncryptedCredentials = Partial<Record<AiProvider, string>>;
 
 // Plaintext keys stay in main-process memory; persisted values use Electron's encrypted storage.
 export class AiCredentialStore {
+  private mutation: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly path: string) {}
 
   async getStatus(): Promise<AiProviderKeyStatus> {
@@ -23,12 +25,9 @@ export class AiCredentialStore {
       throw new Error("Secure credential storage is unavailable");
     }
 
-    const credentials = await this.read();
-
-    credentials[provider] = safeStorage.encryptString(key).toString("base64");
-    await this.write(credentials);
-
-    return this.getStatus();
+    return this.updateCredentials((credentials) => {
+      credentials[provider] = safeStorage.encryptString(key).toString("base64");
+    });
   }
 
   async get(provider: AiProvider): Promise<string | null> {
@@ -47,13 +46,29 @@ export class AiCredentialStore {
     }
   }
 
-  async remove(provider: AiProvider): Promise<AiProviderKeyStatus> {
-    const credentials = await this.read();
+  remove(provider: AiProvider): Promise<AiProviderKeyStatus> {
+    return this.updateCredentials((credentials) => {
+      delete credentials[provider];
+    });
+  }
 
-    delete credentials[provider];
-    await this.write(credentials);
+  private updateCredentials(
+    change: (credentials: EncryptedCredentials) => void,
+  ): Promise<AiProviderKeyStatus> {
+    // Serialize the entire read-modify-write, including use of the shared temporary file.
+    const result = this.mutation.then(async () => {
+      const credentials = await this.read();
 
-    return this.getStatus();
+      change(credentials);
+      await this.write(credentials);
+
+      return this.getStatus();
+    });
+
+    // A failed write must not prevent later credential changes.
+    this.mutation = result.catch(() => undefined);
+
+    return result;
   }
 
   private async read(): Promise<EncryptedCredentials> {

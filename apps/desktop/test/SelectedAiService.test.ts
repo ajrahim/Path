@@ -96,18 +96,6 @@ describe("SelectedAiService", () => {
     });
   });
 
-  it("preserves the legacy local vision list while the catalog includes text models", async () => {
-    const text = { id: "text", name: "Text", supportedPurposes: ["text"] };
-    const visual = { id: "visual", name: "Visual", supportedPurposes: ["visual", "text"] };
-    const service = new SelectedAiService(
-      {} as never,
-      {} as never,
-      { listModels: vi.fn().mockResolvedValue([text, visual]) } as never,
-    );
-
-    await expect(service.listLocalModels()).resolves.toEqual([visual]);
-  });
-
   it("uses the selected API model for image analysis", async () => {
     const screenshotPath = join(tmpdir(), "path-selected-ai-test.png");
 

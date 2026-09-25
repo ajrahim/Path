@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { RecordingSummary } from "@path/shared";
 import { Button } from "./Button";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 export function RecordingDeleteDialog({
   recording,
@@ -42,7 +43,7 @@ export function RecordingDeleteDialog({
     try {
       await onConfirm(recording);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("history.deleteError"));
+      setError(getErrorMessage(caught, t("history.deleteError")));
     } finally {
       deletingRef.current = false;
       setDeleting(false);

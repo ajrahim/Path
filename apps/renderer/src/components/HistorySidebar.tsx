@@ -147,16 +147,14 @@ export function HistorySidebar({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveError, setMoveError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RecordingSummary | null>(null);
-  const [contextMenu, setContextMenu] = useState<
-    | {
-        target:
-          | { kind: "recording"; recording: RecordingSummary; location: string }
-          | { kind: "project"; project: RecordingProject };
-        x: number;
-        y: number;
-      }
-    | null
-  >(null);
+  const [contextMenu, setContextMenu] = useState<{
+    target:
+      | { kind: "recording"; recording: RecordingSummary; location: string }
+      | { kind: "project"; project: RecordingProject };
+    x: number;
+    y: number;
+  } | null>(null);
+
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const projectRefs = useRef(new Map<string, HTMLButtonElement>());
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
@@ -299,9 +297,8 @@ export function HistorySidebar({
             kind: "move",
             recordingId: recording.id,
             projectId:
-              projectLibrary.projects.find((project) =>
-                project.recordingIds.includes(recording.id),
-              )?.id ?? null,
+              projectLibrary.projects.find((project) => project.recordingIds.includes(recording.id))
+                ?.id ?? null,
           }),
         disabled: projectLibrary.saving || projectLibrary.status !== "ready",
       },

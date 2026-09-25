@@ -20,6 +20,7 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.appSetRecorderPopoverExpanded, input),
     setTitleBarTheme: (input) => ipcRenderer.invoke(IPC_CHANNELS.appSetTitleBarTheme, input),
     openSettings: (input) => ipcRenderer.invoke(IPC_CHANNELS.appOpenSettings, input),
+    clearData: (input) => ipcRenderer.invoke(IPC_CHANNELS.appClearData, input),
     consumeRecordingOpened: () => ipcRenderer.invoke(IPC_CHANNELS.appConsumeRecordingOpened),
     onRecordingOpened: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, input: Parameters<typeof listener>[0]) =>
@@ -63,9 +64,6 @@ const desktopApi: DesktopApi = {
     setAiProviderKey: (input) => ipcRenderer.invoke(IPC_CHANNELS.settingsSetAiProviderKey, input),
     removeAiProviderKey: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsRemoveAiProviderKey, input),
-    listAiProviderModels: (input) =>
-      ipcRenderer.invoke(IPC_CHANNELS.settingsListAiProviderModels, input),
-    listLocalModels: () => ipcRenderer.invoke(IPC_CHANNELS.settingsListLocalModels),
     listAvailableAiModels: () => ipcRenderer.invoke(IPC_CHANNELS.settingsListAvailableAiModels),
     updateAiModelSelection: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.settingsUpdateAiModelSelection, input),

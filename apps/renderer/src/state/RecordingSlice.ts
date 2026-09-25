@@ -1,7 +1,13 @@
 import { createAsyncThunk, createSlice, isAnyOf } from "@reduxjs/toolkit";
 import type { PayloadAction } from "@reduxjs/toolkit";
-import type { CaptureSource, RecordingRuntimeState, StartRecordingInput } from "@path/shared";
-import type { DesktopDependencies } from "@/state/DesktopDependencies";
+import type {
+  CaptureSource,
+  DesktopApi,
+  RecordingRuntimeState,
+  StartRecordingInput,
+} from "@path/shared";
+import { getErrorMessage } from "@/lib/ErrorMessage";
+import { DESKTOP_UNAVAILABLE_MESSAGE, type DesktopDependencies } from "@/state/DesktopDependencies";
 
 // Request IDs distinguish concurrent commands; revisions reject replies older than pushed state.
 interface RecordingState {
@@ -44,9 +50,7 @@ export const loadCaptureSources = createAsyncThunk<CaptureSource[], void, Record
     try {
       return (await extra.getDesktopApi()?.recording.listSources()) ?? [];
     } catch (error) {
-      return rejectWithValue(
-        error instanceof Error ? error.message : "Unable to list capture sources",
-      );
+      return rejectWithValue(getErrorMessage(error, "Unable to list capture sources"));
     }
   },
 );
@@ -56,14 +60,14 @@ export const startRecording = createAsyncThunk<RuntimeReply, StartRecordingInput
   async (input, { extra, getState, rejectWithValue }) => {
     const desktop = extra.getDesktopApi();
 
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+    if (!desktop) return rejectWithValue(DESKTOP_UNAVAILABLE_MESSAGE);
 
     const { connectionId, revision } = getState().recording;
 
     try {
       return { runtime: await desktop.recording.start(input), connectionId, revision };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Recording preparation failed";
+      const message = getErrorMessage(error, "Recording preparation failed");
 
       try {
         const runtime = await desktop.recording.getState();
@@ -78,78 +82,53 @@ export const startRecording = createAsyncThunk<RuntimeReply, StartRecordingInput
   { condition: (_, { getState }) => getState().recording.commandRequestId === null },
 );
 
-export const stopRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk>(
+/** One runtime command at a time; the reply carries the connection and revision it was sent from. */
+function createRuntimeCommand<Input = void>(
+  typePrefix: string,
+  sendCommand: (desktop: DesktopApi, input: Input) => Promise<RecordingRuntimeState>,
+  failureMessage: string,
+) {
+  return createAsyncThunk<RuntimeReply, Input, RecordingThunk>(
+    typePrefix,
+    async (input, { extra, getState, rejectWithValue }) => {
+      const desktop = extra.getDesktopApi();
+
+      if (!desktop) return rejectWithValue(DESKTOP_UNAVAILABLE_MESSAGE);
+
+      const { connectionId, revision } = getState().recording;
+
+      try {
+        return { runtime: await sendCommand(desktop, input), connectionId, revision };
+      } catch (error) {
+        return rejectWithValue(getErrorMessage(error, failureMessage));
+      }
+    },
+    { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+  );
+}
+
+export const stopRecording = createRuntimeCommand(
   "recording/stop",
-  async (_, { extra, getState, rejectWithValue }) => {
-    const desktop = extra.getDesktopApi();
-
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
-
-    const { connectionId, revision } = getState().recording;
-
-    try {
-      return { runtime: await desktop.recording.stop(), connectionId, revision };
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to stop recording");
-    }
-  },
-  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+  (desktop) => desktop.recording.stop(),
+  "Unable to stop recording",
 );
 
-export const pauseRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk>(
+export const pauseRecording = createRuntimeCommand(
   "recording/pause",
-  async (_, { extra, getState, rejectWithValue }) => {
-    const desktop = extra.getDesktopApi();
-
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
-
-    const { connectionId, revision } = getState().recording;
-
-    try {
-      return { runtime: await desktop.recording.pause(), connectionId, revision };
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to pause recording");
-    }
-  },
-  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+  (desktop) => desktop.recording.pause(),
+  "Unable to pause recording",
 );
 
-export const resumeRecording = createAsyncThunk<RuntimeReply, void, RecordingThunk>(
+export const resumeRecording = createRuntimeCommand(
   "recording/resume",
-  async (_, { extra, getState, rejectWithValue }) => {
-    const desktop = extra.getDesktopApi();
-
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
-
-    const { connectionId, revision } = getState().recording;
-
-    try {
-      return { runtime: await desktop.recording.resume(), connectionId, revision };
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to resume recording");
-    }
-  },
-  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+  (desktop) => desktop.recording.resume(),
+  "Unable to resume recording",
 );
 
-export const setRecordingClickTracking = createAsyncThunk<RuntimeReply, boolean, RecordingThunk>(
+export const setRecordingClickTracking = createRuntimeCommand<boolean>(
   "recording/setClickTracking",
-  async (enabled, { extra, getState, rejectWithValue }) => {
-    const desktop = extra.getDesktopApi();
-
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
-
-    const { connectionId, revision } = getState().recording;
-
-    try {
-      return { runtime: await desktop.recording.setClickTracking(enabled), connectionId, revision };
-    } catch (error) {
-      return rejectWithValue(
-        error instanceof Error ? error.message : "Unable to toggle click tracking",
-      );
-    }
-  },
-  { condition: (_, { getState }) => getState().recording.commandRequestId === null },
+  (desktop, enabled) => desktop.recording.setClickTracking(enabled),
+  "Unable to toggle click tracking",
 );
 
 // The desktop remains authoritative; the slice reconciles its events, reads, and command replies.

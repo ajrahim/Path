@@ -30,7 +30,7 @@ npm run dev
 
 Development starts Next.js on port 3000 and launches Electron. The browser alone cannot provide desktop capture or native storage capabilities. The launcher can reuse an existing Path renderer on that port.
 
-AI is optional for capture and video processing. Open AI models in the application header to choose a Visual model for screenshot analysis and a Text model for document generation. Each choice is saved independently; the same model can serve both roles. For local AI, run Ollama with a vision-capable model for Visual and a text-generation model for Text. Alternatively, add a provider key in Settings, then choose a compatible cloud model. Existing profiles start with their previous model selected for both roles. AI failures may leave click descriptions or documents unavailable while recorded video remains usable.
+AI is optional for capture and video processing. Open AI models in the application header to choose a Visual model for screenshot analysis and a Text model for document generation. Each choice is saved independently; the same model can serve both roles. For local AI, run Ollama with a vision-capable model for Visual and a text-generation model for Text. Alternatively, add a provider key in Settings, then choose a compatible cloud model. AI failures may leave click descriptions or documents unavailable while recorded video remains usable.
 
 Windows transcription uses the runtime under `apps/desktop/vendor/whisper/win32-x64/Release`. Its first run downloads an English `tiny.en` model and verifies its size and SHA-256. See the included third-party license before redistributing that runtime.
 
@@ -174,6 +174,8 @@ Renderer application code uses flat `src/pages`, `src/components`, `src/hooks`, 
 SQLite stores recording metadata, editable transcript and click records, imported log and element rows, documents with their recovery drafts and version history, and settings and prompts. All SQL runs in a desktop worker thread, so large imports and history reads do not block the app. Media files remain outside the database. Microphone transcription produces `audio.wav` and a raw `transcript.json`; later transcript edits update SQLite rather than rewriting that raw file.
 
 Settings can change the media location for future recordings. Existing files remain in their original roots, which stay registered for managed access. The database, credentials, logs, and model cache remain in the user-data directory. Only the Light/Dark appearance choice lives in the renderer profile.
+
+**Settings > General > Clear all data and settings** permanently resets Path after confirmation and restarts it with fresh defaults. This removes managed recordings from all registered locations, documents and history, projects, prompts, saved API keys, preferences, caches, and local backups. Imported originals, exported files, unrelated files in custom recording folders, and third-party tools/accounts remain intact. Finish any active recording first. See [reset behavior and verification](specs/ResetAppData.md).
 
 ## Packaging
 

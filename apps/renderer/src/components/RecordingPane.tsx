@@ -24,6 +24,7 @@ import { ScreenshotHoverCard, ScreenshotViewer, screenshotHoverPosition } from "
 import { TimelineImportPanel } from "./TimelineImportPanel";
 import { TimelineTabs, type TimelineTab } from "./TimelineTabs";
 import { VideoStage } from "./VideoStage";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 export function RecordingPane({
   recording,
@@ -257,9 +258,7 @@ export function RecordingPane({
       await desktop.recordings.retryProcessing({ id: recording.id });
       refresh();
     } catch (error) {
-      setRetryError(
-        error instanceof Error && error.message ? error.message : t("recording.retryFailed"),
-      );
+      setRetryError(getErrorMessage(error, t("recording.retryFailed")));
     } finally {
       setRetrying(false);
     }

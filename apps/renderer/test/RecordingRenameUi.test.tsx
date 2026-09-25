@@ -60,7 +60,7 @@ async function renderWorkspace() {
 }
 
 function openRenameMenu(row: HTMLElement): HTMLButtonElement {
-  fireEvent.click(within(row).getByTitle(messages.actions.more));
+  fireEvent.contextMenu(row);
 
   return screen.getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename });
 }
@@ -114,7 +114,12 @@ describe("recording rename editing", () => {
 
     expect(input.disabled).toBe(false);
     expect(input.value).toBe("Sidebar draft");
-    expect(header.getAttribute("contenteditable")).toBe("true");
+    // Opening the second row's context menu selected it, so its header replaced the first one.
+    expect(
+      screen
+        .getByRole("textbox", { name: messages.navigation.editTitle })
+        .getAttribute("contenteditable"),
+    ).toBe("true");
     expect(
       screen.getByRole<HTMLButtonElement>("menuitem", { name: messages.actions.rename }).disabled,
     ).toBe(false);

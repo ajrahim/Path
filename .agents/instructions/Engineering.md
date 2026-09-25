@@ -52,6 +52,7 @@ The app's only product name is **Path**. Use `@path/*` workspace names and `PATH
 - **Environment Contract:** Treat `.env.example` as part of the public developer contract. Document all `PATH_APP_*` variables with their purpose, format, and defaults. Validate environment overrides at startup.
 - **Canonical Patterns:** Maintain one canonical approach for cross-cutting concerns (one IPC bridge structure, one error handling pattern, one media processing pipeline). Do not introduce competing patterns without a clear architectural need.
 - **Dead & Legacy Code:** Remove unused files, obsolete shims, commented-out code, and dead experiments promptly. If a deprecated API must remain temporarily, mark it explicitly with `@deprecated`.
+- **Fresh Installations:** Target the current installation format. Do not retain legacy profile discovery, old settings transforms, upgrade-only startup actions, or compatibility-only IPC. Keep initial schema creation, normal reopening, input validation, and crash recovery.
 
 ## 5. Executable specifications and delivery
 

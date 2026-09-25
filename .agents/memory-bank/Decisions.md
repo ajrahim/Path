@@ -30,9 +30,9 @@ Production builds compile Next.js to a static export served locally via Electron
 
 better-sqlite3 is synchronous, and imports of up to 100 MB blocked the Electron main thread for seconds. One `worker_threads` worker owns the connection. Requests run one at a time in arrival order, and each repository method is one transaction. Imports stream in batches. The worker exits on its own at quit: forcing termination while the native module is active crashed a host process in testing, so `terminate()` is only a deadline fallback.
 
-### 8. Pre-release migrations were squashed into one baseline
+### 8. Fresh installations use one database baseline
 
-Path had no user data to migrate, so migrations 0000–0003 were replaced by `0000_baseline`. From this baseline on, schema changes add migrations. A database with unknown migration history is refused rather than reset, and `npm run db:reset` moves it aside.
+`0000_baseline` creates the current schema on first launch. Path has no legacy profile or settings upgrade path. Schema changes after this baseline add migrations. A database with unknown migration history is refused rather than reset, and `npm run db:reset` remains an explicit development utility for moving a database aside.
 
 ### 9. Documents keep append-only snapshot revisions and a separate recovery draft
 

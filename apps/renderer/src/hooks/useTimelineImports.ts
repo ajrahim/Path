@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from "react";
 import { useTranslations } from "next-intl";
 import type { RecordingTimeWindow, TimelineImport, TimelineImportKind } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 interface ImportScope {
   recordingId: string | null;
@@ -86,10 +87,6 @@ function timelineImportsReducer(
   }
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 /** Owns the selected recording's imported logs and elements; one operation runs at a time. */
 export function useTimelineImports({
   recordingId,
@@ -129,7 +126,7 @@ export function useTimelineImports({
         });
       } catch (error) {
         if (session.active) {
-          dispatch({ type: "load-failed", error: errorMessage(error, loadFailed) });
+          dispatch({ type: "load-failed", error: getErrorMessage(error, loadFailed) });
         }
       }
     }
@@ -145,11 +142,15 @@ export function useTimelineImports({
   async function runOperation(
     kind: TimelineImportKind,
     failureMessage: string,
-    operation: (recordingId: string) => Promise<string | null>,
+    operation: (recordingId: string, isCurrent: () => boolean) => Promise<string | null>,
   ): Promise<void> {
     const session = sessionRef.current;
 
-    if (!session?.active || !scope.recordingId || operationRef.current) return;
+    if (!session?.active || session.scope !== scope || !scope.recordingId || operationRef.current) {
+      return;
+    }
+
+    const isCurrent = () => session.active && sessionRef.current === session;
 
     operationRef.current = true;
     dispatch({ type: "operation-started", kind });
@@ -157,13 +158,13 @@ export function useTimelineImports({
     let error: string | null = null;
 
     try {
-      error = await operation(scope.recordingId);
+      error = await operation(scope.recordingId, isCurrent);
     } catch (caught) {
-      error = errorMessage(caught, failureMessage);
+      error = getErrorMessage(caught, failureMessage);
     }
 
     // A completion for a recording that is no longer selected must not touch the new view.
-    if (!session.active) return;
+    if (!isCurrent()) return;
 
     operationRef.current = false;
     dispatch({ type: "operation-finished", kind, error });
@@ -174,7 +175,7 @@ export function useTimelineImports({
 
     if (!desktop) return;
 
-    await runOperation(kind, t("importFailed"), async (id) => {
+    await runOperation(kind, t("importFailed"), async (id, isCurrent) => {
       const result = await desktop.recordings.importTimelineFile({ recordingId: id, kind });
 
       if (result.status === "canceled") return null;
@@ -184,7 +185,7 @@ export function useTimelineImports({
 
       if (result.status === "no-rows") return t("importNoRows");
 
-      if (sessionRef.current?.scope.recordingId === id) {
+      if (isCurrent()) {
         dispatch({ type: "import-changed", kind, timelineImport: result.timelineImport });
       }
 
@@ -197,14 +198,14 @@ export function useTimelineImports({
 
     if (!desktop || state.imports[kind]?.offsetMs === offsetMs) return;
 
-    await runOperation(kind, t("importOffsetFailed"), async (id) => {
+    await runOperation(kind, t("importOffsetFailed"), async (id, isCurrent) => {
       const timelineImport = await desktop.recordings.updateTimelineImportOffset({
         recordingId: id,
         kind,
         offsetMs,
       });
 
-      if (sessionRef.current?.scope.recordingId === id) {
+      if (isCurrent()) {
         dispatch({ type: "import-changed", kind, timelineImport });
       }
 
@@ -217,10 +218,10 @@ export function useTimelineImports({
 
     if (!desktop) return;
 
-    await runOperation(kind, t("importRemoveFailed"), async (id) => {
+    await runOperation(kind, t("importRemoveFailed"), async (id, isCurrent) => {
       await desktop.recordings.removeTimelineImport({ recordingId: id, kind });
 
-      if (sessionRef.current?.scope.recordingId === id) {
+      if (isCurrent()) {
         dispatch({ type: "import-changed", kind, timelineImport: null });
       }
 

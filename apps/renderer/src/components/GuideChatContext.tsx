@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { MAX_GUIDE_CONTEXT_TEXT_LENGTH, type GuideContextItem } from "@path/shared";
 import { Button } from "./Button";
 import { readGuideContextImage } from "../lib/GuideContextImage";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 export function GuideChatContext({
   disabled,
@@ -41,14 +42,12 @@ export function GuideChatContext({
     triggerRef.current?.focus();
   }, [disabled]);
 
+  useOutsidePointerDown(open !== null, [rootRef], () => setOpen(null));
+
   useEffect(() => {
     if (!open) return;
     if (open === "text") textRef.current?.focus();
     else firstOptionRef.current?.focus();
-
-    function outside(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(null);
-    }
 
     function escape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
@@ -56,13 +55,9 @@ export function GuideChatContext({
       triggerRef.current?.focus();
     }
 
-    document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape);
 
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
+    return () => document.removeEventListener("keydown", escape);
   }, [open]);
 
   async function addImage(file: File) {

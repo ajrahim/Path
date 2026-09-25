@@ -11,7 +11,6 @@ const bridge = vi.hoisted(() => ({
   updateGeneral: vi.fn(),
   setAiProviderKey: vi.fn(),
   removeAiProviderKey: vi.fn(),
-  updateGuideInstructions: vi.fn(),
 }));
 
 const translate = vi.hoisted(() => (key: string) => key);
@@ -79,9 +78,7 @@ it("serializes settings saves before React has rendered the busy state", async (
 });
 
 it("does not clear a different provider's draft when an earlier key save completes", async () => {
-  const pending = Promise.withResolvers<{
-    keyStatus: { anthropic: boolean; openai: boolean; google: boolean; openrouter: boolean };
-  }>();
+  const pending = Promise.withResolvers<AiProviderKeyStatus>();
 
   bridge.setAiProviderKey.mockReturnValue(pending.promise);
   const { result } = await loadEditor();
@@ -97,9 +94,7 @@ it("does not clear a different provider's draft when an earlier key save complet
   act(() => result.current.changeKeyDraft("second-test-value"));
 
   await act(async () => {
-    pending.resolve({
-      keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
-    });
+    pending.resolve({ anthropic: false, openai: true, google: false, openrouter: false });
     await save;
   });
 
@@ -136,7 +131,7 @@ it("preserves a newly opened replacement draft when an earlier key removal compl
 });
 
 it("preserves a reopened editor even when its provider and draft match an earlier save", async () => {
-  const pending = Promise.withResolvers<{ keyStatus: AiProviderKeyStatus }>();
+  const pending = Promise.withResolvers<AiProviderKeyStatus>();
 
   bridge.setAiProviderKey.mockReturnValue(pending.promise);
   const { result } = await loadEditor();
@@ -155,9 +150,7 @@ it("preserves a reopened editor even when its provider and draft match an earlie
   act(() => result.current.changeKeyDraft("same-test-value"));
 
   await act(async () => {
-    pending.resolve({
-      keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
-    });
+    pending.resolve({ anthropic: false, openai: true, google: false, openrouter: false });
     await save;
   });
 
@@ -166,7 +159,10 @@ it("preserves a reopened editor even when its provider and draft match an earlie
 
 it("closes the unchanged editor after its key is saved", async () => {
   bridge.setAiProviderKey.mockResolvedValue({
-    keyStatus: { anthropic: false, openai: true, google: false, openrouter: false },
+    anthropic: false,
+    openai: true,
+    google: false,
+    openrouter: false,
   });
   const { result } = await loadEditor();
 

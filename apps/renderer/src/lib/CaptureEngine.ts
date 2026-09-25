@@ -1,5 +1,6 @@
 import type { CaptureWorkerStart } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 interface ElectronDesktopConstraints extends MediaTrackConstraints {
   mandatory: { chromeMediaSource: "desktop"; chromeMediaSourceId: string; maxFrameRate: number };
@@ -193,7 +194,7 @@ export class CaptureEngine {
   }
 
   private async fail(error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : "Screen capture failed";
+    const message = getErrorMessage(error, "Screen capture failed");
 
     this.cleanup();
     await getDesktopApi()?.capture.fail(message);

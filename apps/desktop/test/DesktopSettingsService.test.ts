@@ -5,8 +5,6 @@ import { DesktopSettingsService } from "../src/settings/DesktopSettingsService";
 import { ManagedRecordingAssets } from "../src/storage/ManagedRecordingAssets";
 import { openInProcessDatabase, type InProcessDatabase } from "./InProcessDatabase";
 
-vi.mock("electron", () => ({ app: { setLoginItemSettings: vi.fn() } }));
-
 const localSelection: AiModelSelection = {
   source: "local",
   modelId: "local-vision:latest",

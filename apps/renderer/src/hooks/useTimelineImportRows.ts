@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useTranslations } from "next-intl";
 import type { TimelineImport, TimelineImportEntry, TimelineImportKind } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 // Rows fetched per request; well under the bridge's page limit.
 const ROWS_PER_PAGE = 200;
@@ -23,6 +24,11 @@ interface RowsState {
   /** Matching rows; unknown until the first filtered page answers. */
   total: number | null;
   error: string | null;
+}
+
+interface RowsSession {
+  scopeKey: string;
+  inFlight: Set<number>;
 }
 
 type RowsAction =
@@ -93,13 +99,19 @@ export function useTimelineImportRows(scope: RowsScope): TimelineImportRows {
     error: null,
   });
 
-  const inFlightRef = useRef(new Set<string>());
+  const sessionRef = useRef<RowsSession | null>(null);
   const loadFailed = t("importLoadFailed");
   const { recordingId, kind, query } = scope;
 
   useEffect(() => {
-    inFlightRef.current.clear();
+    const session: RowsSession = { scopeKey, inFlight: new Set() };
+
+    sessionRef.current = session;
     dispatch({ type: "reset", scopeKey, total: unfilteredTotal });
+
+    return () => {
+      if (sessionRef.current === session) sessionRef.current = null;
+    };
   }, [scopeKey, unfilteredTotal]);
 
   const current = state.scopeKey === scopeKey ? state : null;
@@ -107,18 +119,19 @@ export function useTimelineImportRows(scope: RowsScope): TimelineImportRows {
   const loadRange = useCallback(
     (start: number, end: number) => {
       const desktop = getDesktopApi();
+      const session = sessionRef.current;
 
-      if (!desktop || !recordingId || !scopeKey) return;
+      // A failed page stays visible until the scope changes; render effects must not retry it.
+      if (!desktop || !recordingId || !scopeKey || current?.error) return;
+      if (!session || session.scopeKey !== scopeKey) return;
 
       const firstPage = Math.floor(start / ROWS_PER_PAGE);
       const lastPage = Math.floor(Math.max(start, end - 1) / ROWS_PER_PAGE);
 
       for (let page = firstPage; page <= lastPage; page += 1) {
-        const requestKey = `${scopeKey}#${page}`;
+        if (current?.pages.has(page) || session.inFlight.has(page)) continue;
 
-        if (current?.pages.has(page) || inFlightRef.current.has(requestKey)) continue;
-
-        inFlightRef.current.add(requestKey);
+        session.inFlight.add(page);
         desktop.recordings
           .listTimelineImportRows({
             recordingId,
@@ -128,22 +141,29 @@ export function useTimelineImportRows(scope: RowsScope): TimelineImportRows {
             ...(query ? { query } : {}),
           })
           .then(
-            (result) =>
+            (result) => {
+              // Revisiting the same query gets a new session, even if its scope key is identical.
+              if (sessionRef.current !== session) return;
+
               dispatch({
                 type: "page",
                 scopeKey,
                 page,
                 entries: result.entries,
                 total: result.total,
-              }),
-            (error: unknown) =>
+              });
+            },
+            (error: unknown) => {
+              if (sessionRef.current !== session) return;
+
               dispatch({
                 type: "failed",
                 scopeKey,
-                error: error instanceof Error && error.message ? error.message : loadFailed,
-              }),
+                error: getErrorMessage(error, loadFailed),
+              });
+            },
           )
-          .finally(() => inFlightRef.current.delete(requestKey));
+          .finally(() => session.inFlight.delete(page));
       }
     },
     [scopeKey, current, loadFailed, recordingId, kind, query],

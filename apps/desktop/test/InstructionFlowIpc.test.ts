@@ -92,7 +92,3 @@ it("rejects invalid icons, excessive text, and unknown fields before touching th
   expect(instructionFlows.save).not.toHaveBeenCalled();
   expect(instructionFlows.select).not.toHaveBeenCalled();
 });
-
-it("exposes no legacy prompt migration channel", () => {
-  expect([...handlers.keys()].some((channel) => channel.includes("migrate"))).toBe(false);
-});

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from "react";
 import type { ClickEvent, RecordingStatus, TranscriptSegment } from "@path/shared";
 import { clickActivityKey, mergeTimeline, transcriptActivityKey } from "@path/timeline";
 import { getDesktopApi } from "@/lib/Desktop";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 interface ActivityScope {
   recordingId: string | null;
@@ -169,10 +170,6 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
   }
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
 /** Owns the selected recording's activity, ordered edits, and analysis lifecycle. */
 export function useRecordingActivity({
   recordingId,
@@ -218,7 +215,7 @@ export function useRecordingActivity({
         });
       } catch (error) {
         if (session.active) {
-          dispatch({ type: "analysis-failed", error: errorMessage(error, analysisFailed) });
+          dispatch({ type: "analysis-failed", error: getErrorMessage(error, analysisFailed) });
         }
       }
     }
@@ -292,7 +289,7 @@ export function useRecordingActivity({
     } catch (error) {
       if (!isCurrent(session)) return "stale";
 
-      dispatch({ type: "error", error: errorMessage(error, messages.editFailed) });
+      dispatch({ type: "error", error: getErrorMessage(error, messages.editFailed) });
 
       return "failed";
     }
@@ -328,7 +325,7 @@ export function useRecordingActivity({
     } catch (error) {
       if (!isCurrent(session)) return "stale";
 
-      dispatch({ type: "error", error: errorMessage(error, messages.editFailed) });
+      dispatch({ type: "error", error: getErrorMessage(error, messages.editFailed) });
 
       return "failed";
     }
@@ -358,7 +355,7 @@ export function useRecordingActivity({
       });
     } catch (error) {
       if (isCurrent(session)) {
-        dispatch({ type: "analysis-failed", error: errorMessage(error, analysisFailed) });
+        dispatch({ type: "analysis-failed", error: getErrorMessage(error, analysisFailed) });
       }
     }
   }
@@ -376,7 +373,7 @@ export function useRecordingActivity({
       if (isCurrent(session)) dispatch({ type: "transcript-removed", id: segment.id });
     } catch (error) {
       if (isCurrent(session)) {
-        dispatch({ type: "error", error: errorMessage(error, messages.removeFailed) });
+        dispatch({ type: "error", error: getErrorMessage(error, messages.removeFailed) });
       }
     }
   }
@@ -398,7 +395,7 @@ export function useRecordingActivity({
       return true;
     } catch (error) {
       if (isCurrent(session)) {
-        dispatch({ type: "error", error: errorMessage(error, messages.removeFailed) });
+        dispatch({ type: "error", error: getErrorMessage(error, messages.removeFailed) });
       }
 
       return false;
@@ -423,7 +420,7 @@ export function useRecordingActivity({
       });
     } catch (error) {
       if (isCurrent(session)) {
-        dispatch({ type: "error", error: errorMessage(error, messages.revealFailed) });
+        dispatch({ type: "error", error: getErrorMessage(error, messages.revealFailed) });
       }
     }
   }

@@ -30,6 +30,7 @@ import { useSettingsNavigation } from "../hooks/useSettingsNavigation";
 import { useInstructionFlows } from "../hooks/useInstructionFlows";
 import { InstructionFlowEditor } from "../components/InstructionFlowEditor";
 import { InstructionFlowGlyph } from "../components/InstructionFlowGlyph";
+import { ClearDataDialog } from "../components/ClearDataDialog";
 
 const providers: Array<{ id: AiProvider; name: string; description: string }> = [
   { id: "openrouter", name: "OpenRouter", description: "One key for many models" },
@@ -43,6 +44,7 @@ export default function SettingsPage() {
   const { resolvedTheme, setTheme } = useTheme();
   const flows = useInstructionFlows({ selectOnCreate: false });
   const promptEditorOpen = flows.editor !== null;
+  const [isClearDataOpen, setIsClearDataOpen] = useState(false);
 
   useEffect(() => {
     if (resolvedTheme !== "light" && resolvedTheme !== "dark") return;
@@ -50,9 +52,9 @@ export default function SettingsPage() {
     // Native caption buttons sit above the renderer and need the same dimming as its backdrop.
     void getDesktopApi()?.app.setTitleBarTheme?.({
       theme: resolvedTheme,
-      dimmed: promptEditorOpen,
+      dimmed: promptEditorOpen || isClearDataOpen,
     });
-  }, [resolvedTheme, promptEditorOpen]);
+  }, [resolvedTheme, promptEditorOpen, isClearDataOpen]);
 
   // Keep drafts in the shared shell when navigating between section pages.
   const {
@@ -241,6 +243,17 @@ export default function SettingsPage() {
                     onCommit={(maxFileSizeMb) => void updateTimelineImports({ maxFileSizeMb })}
                   />
                 )}
+              </div>
+              <div className="settings-reset">
+                <p>{t("settings.clearDataDescription")}</p>
+                <Button
+                  variant="danger"
+                  disabled={isBusy || !settings}
+                  onClick={() => setIsClearDataOpen(true)}
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  {t("settings.clearData")}
+                </Button>
               </div>
             </section>
           )}
@@ -431,6 +444,7 @@ export default function SettingsPage() {
         </div>
       </div>
       <InstructionFlowEditor flows={flows} />
+      {isClearDataOpen && <ClearDataDialog onClose={() => setIsClearDataOpen(false)} />}
     </main>
   );
 }

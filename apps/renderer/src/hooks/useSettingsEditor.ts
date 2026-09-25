@@ -8,6 +8,7 @@ import type {
   TimelineImportSettings,
 } from "@path/shared";
 import { getDesktopApi } from "@/lib/Desktop";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 const SETTINGS_NOTICE_MS = 3_000;
 
@@ -161,7 +162,7 @@ export function useSettingsEditor(): SettingsEditor {
         }
       } catch (error) {
         if (sessionId === sessionRef.current) {
-          dispatch({ type: "failed", message: messageFromError(error, t("loadError")) });
+          dispatch({ type: "failed", message: getErrorMessage(error, t("loadError")) });
         }
       } finally {
         if (sessionId === sessionRef.current) operationRef.current = false;
@@ -217,7 +218,7 @@ export function useSettingsEditor(): SettingsEditor {
       dispatch({ type: "mutation-completed", update, notice });
     } catch (error) {
       if (sessionId === sessionRef.current) {
-        dispatch({ type: "failed", message: messageFromError(error, failureMessage) });
+        dispatch({ type: "failed", message: getErrorMessage(error, failureMessage) });
       }
     } finally {
       if (sessionId === sessionRef.current) operationRef.current = false;
@@ -297,7 +298,7 @@ export function useSettingsEditor(): SettingsEditor {
       successMessage: t("keySaved"),
       failureMessage: t("keyError"),
       run: async () => ({
-        keyStatus: (await desktop.settings.setAiProviderKey({ provider, key })).keyStatus,
+        keyStatus: await desktop.settings.setAiProviderKey({ provider, key }),
         completedKeyEditor: state.keyEditor,
       }),
     });
@@ -333,8 +334,4 @@ export function useSettingsEditor(): SettingsEditor {
     toggleKeyEditor: (provider: AiProvider) => dispatch({ type: "key-editor-toggled", provider }),
     changeKeyDraft: (draft: string) => dispatch({ type: "key-draft-changed", draft }),
   };
-}
-
-function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
 }

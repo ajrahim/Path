@@ -30,11 +30,16 @@ export class ManagedRecordingAssets {
 
   /** Registers every known root and makes one of them current, creating it if needed. */
   async useRoots(current: StorageRoot, registered: StorageRoot[]): Promise<void> {
-    for (const root of registered) this.allowedRoots.add(resolve(root.path));
+    this.registerRoots(registered);
 
     await mkdir(current.path, { recursive: true });
     this.allowedRoots.add(resolve(current.path));
     this.current = { id: current.id, path: resolve(current.path) };
+  }
+
+  /** Registers existing assets without creating or selecting a recording destination. */
+  registerRoots(roots: StorageRoot[]): void {
+    for (const root of roots) this.allowedRoots.add(resolve(root.path));
   }
 
   recordingDirectory(location: RecordingAssetLocation): string {

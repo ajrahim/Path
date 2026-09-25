@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Captions, Check, ListFilter, MousePointer2 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 type ActivityType = "all" | "clicks" | "speech";
 
@@ -27,6 +28,8 @@ export function ActivityTypeSelect({
   ] as const;
 
   const selected = options.find((option) => option.value === value)!;
+
+  useOutsidePointerDown(position !== null, [menuRef, triggerRef], () => setPosition(null));
 
   function open() {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -56,14 +59,6 @@ export function ActivityTypeSelect({
     (initialFocus.current === "last" ? items?.[items.length - 1] : checked)?.focus({
       preventScroll: true,
     });
-    function dismiss(event: PointerEvent) {
-      if (
-        !menuRef.current?.contains(event.target as Node) &&
-        !triggerRef.current?.contains(event.target as Node)
-      ) {
-        setPosition(null);
-      }
-    }
 
     function onMove(event: Event) {
       if (!(event.target instanceof Node) || !menuRef.current?.contains(event.target)) {
@@ -71,12 +66,10 @@ export function ActivityTypeSelect({
       }
     }
 
-    document.addEventListener("pointerdown", dismiss);
     window.addEventListener("resize", onMove);
     window.addEventListener("scroll", onMove, true);
 
     return () => {
-      document.removeEventListener("pointerdown", dismiss);
       window.removeEventListener("resize", onMove);
       window.removeEventListener("scroll", onMove, true);
     };

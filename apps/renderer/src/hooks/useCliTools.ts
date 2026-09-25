@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CliSelection, CliState, CliToolId } from "@path/shared";
 import { getDesktopApi } from "../lib/Desktop";
+import { getErrorMessage } from "../lib/ErrorMessage";
 
 export function useCliTools() {
   const [state, setState] = useState<CliState | null>(null);
@@ -47,7 +48,7 @@ export function useCliTools() {
 
         return true;
       } catch (error) {
-        if (mounted.current) setError(error instanceof Error ? error.message : String(error));
+        if (mounted.current) setError(getErrorMessage(error, String(error)));
 
         return false;
       } finally {

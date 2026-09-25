@@ -3,6 +3,7 @@ import { Check, ChevronDown, Pencil, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { InstructionFlow } from "@path/shared";
 import { InstructionFlowGlyph } from "./InstructionFlowGlyph";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 export function InstructionFlowSelect({
   selectedFlow,
@@ -30,6 +31,8 @@ export function InstructionFlowSelect({
   const [open, setOpen] = useState(false);
   const initialFocus = useRef<"selected" | "last">("selected");
 
+  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
 
@@ -41,14 +44,6 @@ export function InstructionFlowSelect({
 
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: "nearest" });
-
-    function closeOutside(event: PointerEvent): void {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOutside);
-
-    return () => document.removeEventListener("pointerdown", closeOutside);
   }, [open]);
 
   function choose(id: string): void {

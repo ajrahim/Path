@@ -14,6 +14,7 @@ const bridge = vi.hoisted(() => ({
   getAiProviderKeyStatus: vi.fn(),
   getInfo: vi.fn(),
   setTitleBarTheme: vi.fn(),
+  clearData: vi.fn(),
   instructionFlows: undefined as DesktopApi["instructionFlows"] | undefined,
 }));
 
@@ -50,6 +51,13 @@ beforeEach(() => {
   });
   bridge.getInfo.mockResolvedValue({ version: "0.3.0" });
   bridge.instructionFlows = createInstructionFlowFixture().api;
+  window.HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+
+  window.HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
 });
 
 afterEach(() => {
@@ -75,6 +83,55 @@ async function renderSettings() {
 
   return view;
 }
+
+it("requires confirmation to clear data, focuses Cancel, and restores the caption on dismissal", async () => {
+  const view = await renderSettings();
+  const trigger = view.getByRole("button", { name: "Clear all data and settings" });
+
+  expect(trigger.classList.contains("path-button-danger")).toBe(true);
+  fireEvent.click(trigger);
+  const dialog = view.getByRole("dialog", { name: "Clear all data and settings" });
+
+  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(bridge.setTitleBarTheme).toHaveBeenLastCalledWith({ theme: "light", dimmed: true });
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  expect(view.queryByRole("dialog")).toBeNull();
+  expect(bridge.clearData).not.toHaveBeenCalled();
+  expect(bridge.setTitleBarTheme).toHaveBeenLastCalledWith({ theme: "light", dimmed: false });
+});
+
+it("submits reset once and keeps confirmation locked until the app restarts", async () => {
+  const view = await renderSettings();
+
+  bridge.clearData.mockResolvedValue(undefined);
+  fireEvent.click(view.getByRole("button", { name: "Clear all data and settings" }));
+  const confirm = view.getByRole("button", { name: "Clear and restart" });
+
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(bridge.clearData).toHaveBeenCalledExactlyOnceWith({ confirmed: true }),
+  );
+  expect((view.getByRole("button", { name: "Restarting…" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  fireEvent(view.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  expect(view.getByRole("dialog")).toBeTruthy();
+});
+
+it("shows reset errors and allows a retry or cancellation", async () => {
+  const view = await renderSettings();
+
+  bridge.clearData.mockRejectedValueOnce(new Error("Finish the current recording first."));
+  fireEvent.click(view.getByRole("button", { name: "Clear all data and settings" }));
+  fireEvent.click(view.getByRole("button", { name: "Clear and restart" }));
+  expect((await view.findByRole("alert")).textContent).toContain("Finish the current recording");
+  expect(
+    (view.getByRole("button", { name: "Clear and restart" }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+  fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+  expect(view.queryByRole("dialog")).toBeNull();
+});
 
 it("shows one section page at a time and follows sidebar and external hash navigation", async () => {
   const view = await renderSettings();

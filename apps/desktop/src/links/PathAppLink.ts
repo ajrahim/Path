@@ -68,8 +68,9 @@ export function parsePathAppLink(raw: string): PathAppLink {
   }
 
   if (route === "status" || route === "status/") {
-    if (url.search)
+    if (url.search) {
       throw new PathAppLinkError("The Path status link does not accept query fields.");
+    }
 
     return { route: "status" };
   }

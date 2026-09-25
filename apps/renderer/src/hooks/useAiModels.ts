@@ -5,6 +5,7 @@ import {
   type ModelCatalogProvider,
   type ModelCatalogSnapshot,
 } from "@/lib/ModelCatalog";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 interface ModelState extends ModelCatalogSnapshot {
   isLoading: boolean;
@@ -79,7 +80,7 @@ export function useAiModels(provider?: ModelCatalogProvider): AiModels {
       return snapshot.keyStatus;
     } catch (error) {
       if (requestId === requestIdRef.current) {
-        dispatch({ type: "failed", message: errorMessage(error) });
+        dispatch({ type: "failed", message: getErrorMessage(error, String(error)) });
       }
 
       return null;
@@ -123,7 +124,7 @@ export function useAiModels(provider?: ModelCatalogProvider): AiModels {
       return true;
     } catch (error) {
       if (requestId === requestIdRef.current) {
-        dispatch({ type: "failed", message: errorMessage(error) });
+        dispatch({ type: "failed", message: getErrorMessage(error, String(error)) });
       }
 
       return false;
@@ -137,8 +138,4 @@ export function useAiModels(provider?: ModelCatalogProvider): AiModels {
   }
 
   return { ...state, refreshModels, selectModel, openKeySettings };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

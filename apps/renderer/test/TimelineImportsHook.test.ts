@@ -178,4 +178,50 @@ describe("timeline imports lifecycle", () => {
     expect(result.current.imports.log?.fileName).toBe("recording-b.log");
     expect(result.current.busyKind).toBeNull();
   });
+
+  it.each(["import", "offset", "remove"] as const)(
+    "discards a late %s after leaving and returning to the same recording",
+    async (operation) => {
+      const { result, rerender } = renderImports();
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      let finish!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        finish = resolve;
+      });
+
+      bridge.importTimelineFile.mockReturnValueOnce(pending);
+      bridge.updateTimelineImportOffset.mockReturnValueOnce(pending);
+      bridge.removeTimelineImport.mockReturnValueOnce(pending);
+
+      let operationDone!: Promise<void>;
+
+      act(() => {
+        if (operation === "import") operationDone = result.current.importFile("log");
+        if (operation === "offset") operationDone = result.current.updateOffset("log", 9_000);
+        if (operation === "remove") operationDone = result.current.removeImport("log");
+      });
+
+      rerender("recording-b");
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      rerender("recording-a");
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await act(async () => {
+        const staleImport = logImport("recording-a", 9_000);
+
+        finish(
+          operation === "import"
+            ? { status: "imported", timelineImport: staleImport }
+            : staleImport,
+        );
+        await operationDone;
+      });
+
+      expect(result.current.imports.log).toEqual(logImport("recording-a"));
+      expect(result.current.busyKind).toBeNull();
+      expect(result.current.errors.log).toBeNull();
+    },
+  );
 });

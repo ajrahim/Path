@@ -9,6 +9,7 @@ import {
   type InstructionFlowState,
 } from "@path/shared";
 import { getDesktopApi } from "../lib/Desktop";
+import { getErrorMessage } from "../lib/ErrorMessage";
 
 interface FlowEditor {
   editingId: string | null;
@@ -107,7 +108,7 @@ export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?
         if (session === sessionRef.current) dispatch({ type: "snapshot", flows, loaded: true });
       } catch (error) {
         if (session === sessionRef.current) {
-          dispatch({ type: "load-failed", error: message(error, t("settings.loadError")) });
+          dispatch({ type: "load-failed", error: getErrorMessage(error, t("settings.loadError")) });
         }
       }
     }
@@ -152,7 +153,11 @@ export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?
       return true;
     } catch (error) {
       if (session === sessionRef.current) {
-        dispatch({ type: "failed", editor, error: message(error, t("settings.saveError")) });
+        dispatch({
+          type: "failed",
+          editor,
+          error: getErrorMessage(error, t("settings.saveError")),
+        });
       }
 
       return false;
@@ -280,8 +285,4 @@ export function useInstructionFlows({ selectOnCreate = true }: { selectOnCreate?
     saveFlow,
     deleteFlow,
   };
-}
-
-function message(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }

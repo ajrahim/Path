@@ -91,12 +91,6 @@ export class SelectedAiService implements ClickActionAnalyzer {
     };
   }
 
-  async listLocalModels(): Promise<LocalAiModel[]> {
-    const models = await this.ollama.listModels();
-
-    return models.filter((model) => model.supportedPurposes.includes("visual"));
-  }
-
   async analyze(input: ClickActionAnalysisInput): Promise<string> {
     const selection = this.settings.get().aiModelSelections.visual;
 

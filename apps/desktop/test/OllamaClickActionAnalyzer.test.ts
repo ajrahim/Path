@@ -170,9 +170,13 @@ describe("OllamaClickActionAnalyzer", () => {
   });
 
   it("sends the selected think level for text generation", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ message: { content: "# Guide" } }), { status: 200 }),
-    );
+    // A Response body can be read once, so each generation gets its own reply.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ message: { content: "# Guide" } }), { status: 200 }),
+      );
 
     vi.stubGlobal("fetch", fetchMock);
 

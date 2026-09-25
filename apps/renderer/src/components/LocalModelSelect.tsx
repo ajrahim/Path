@@ -24,6 +24,7 @@ import { useCliTools } from "../hooks/useCliTools";
 import { CliToolPicker } from "./CliToolPicker";
 import { useAiModels } from "../hooks/useAiModels";
 import type { ModelCatalogProvider } from "../lib/ModelCatalog";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 const DIRECT_API_PROVIDERS: ReadonlyArray<{ id: AiProvider; label: string }> = [
   { id: "anthropic", label: "Anthropic" },
@@ -78,14 +79,12 @@ export function LocalModelSelect({
     if (status) setExpandedProvider((current) => (current && status[current] ? current : null));
   }
 
+  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
 
     searchRef.current?.focus();
-
-    function closeMenu(event: PointerEvent): void {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
 
     function closeOnEscape(event: KeyboardEvent): void {
       if (event.key === "Escape") {
@@ -94,13 +93,9 @@ export function LocalModelSelect({
       }
     }
 
-    document.addEventListener("pointerdown", closeMenu);
     document.addEventListener("keydown", closeOnEscape);
 
-    return () => {
-      document.removeEventListener("pointerdown", closeMenu);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
+    return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open, purpose]);
 
   async function chooseModel(selection: AiModelSelection): Promise<void> {

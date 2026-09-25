@@ -22,6 +22,7 @@ npm run build    # Next.js static export & Electron main/preload/database-worker
 | Audio transcription & whisper.cpp model         | `npm run test:transcription` (Windows x64 with real audio synthesis)                                                          |
 | Native screen capture & overlays                | `npm run test:recording` and `node tests/ElectronCaptureOverlays.mjs`                                                         |
 | Native window caption & acrylic glass           | `node tests/ElectronTitlebar.mjs`                                                                                             |
+| Fresh-install reset and browser storage         | `node tests/ElectronDataReset.mjs` (Electron native SQLite build; hidden windows and a temporary profile)                     |
 | Release versioning & PR generation              | `npm run push <patch                                                                                                          | minor | major | x.y.z>`or`npm run version:bump` |
 
 ## Native environment notes

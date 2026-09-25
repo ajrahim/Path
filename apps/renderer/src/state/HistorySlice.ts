@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice, isAnyOf } from "@reduxjs/toolkit";
 import type { RecordingSummary } from "@path/shared";
-import type { DesktopDependencies } from "@/state/DesktopDependencies";
+import { DESKTOP_UNAVAILABLE_MESSAGE, type DesktopDependencies } from "@/state/DesktopDependencies";
+import { getErrorMessage } from "@/lib/ErrorMessage";
 
 // List reads and per-recording writes have separate ownership so unrelated rows can still update.
 interface HistoryState {
@@ -29,7 +30,7 @@ export const refreshHistory = createAsyncThunk<RecordingSummary[], void, History
     try {
       return (await extra.getDesktopApi()?.recordings.list()) ?? [];
     } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to load recordings");
+      return rejectWithValue(getErrorMessage(error, "Unable to load recordings"));
     }
   },
 );
@@ -43,12 +44,12 @@ export const renameHistoryRecording = createAsyncThunk<
   async (input, { extra, rejectWithValue }) => {
     const desktop = extra.getDesktopApi();
 
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+    if (!desktop) return rejectWithValue(DESKTOP_UNAVAILABLE_MESSAGE);
 
     try {
       return await desktop.recordings.rename(input);
     } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to rename recording");
+      return rejectWithValue(getErrorMessage(error, "Unable to rename recording"));
     }
   },
   { condition: ({ id }, { getState }) => !getState().history.mutationRequestIds[id] },
@@ -59,12 +60,12 @@ export const deleteHistoryRecording = createAsyncThunk<void, { id: string }, His
   async (input, { extra, rejectWithValue }) => {
     const desktop = extra.getDesktopApi();
 
-    if (!desktop) return rejectWithValue("The desktop bridge is unavailable");
+    if (!desktop) return rejectWithValue(DESKTOP_UNAVAILABLE_MESSAGE);
 
     try {
       await desktop.recordings.delete(input);
     } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : "Unable to delete recording");
+      return rejectWithValue(getErrorMessage(error, "Unable to delete recording"));
     }
   },
   { condition: ({ id }, { getState }) => !getState().history.mutationRequestIds[id] },

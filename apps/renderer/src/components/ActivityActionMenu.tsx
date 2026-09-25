@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImagePlus, MoreHorizontal, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useOutsidePointerDown } from "../hooks/useOutsidePointerDown";
 
 export function ActivityActionMenu({
   onInsert,
@@ -20,27 +21,20 @@ export function ActivityActionMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
+  useOutsidePointerDown(position !== null, [menuRef, triggerRef], () => setPosition(null));
+
   useEffect(() => {
     if (!position) return;
     menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    function dismiss(event: PointerEvent) {
-      const target = event.target as Node;
-
-      if (!menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) {
-        setPosition(null);
-      }
-    }
 
     function closeOnMove() {
       setPosition(null);
     }
 
-    document.addEventListener("pointerdown", dismiss);
     window.addEventListener("resize", closeOnMove);
     window.addEventListener("scroll", closeOnMove, true);
 
     return () => {
-      document.removeEventListener("pointerdown", dismiss);
       window.removeEventListener("resize", closeOnMove);
       window.removeEventListener("scroll", closeOnMove, true);
     };

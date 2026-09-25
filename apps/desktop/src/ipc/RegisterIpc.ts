@@ -18,6 +18,7 @@ import {
   guideRevisionInputSchema,
   restoreGuideRevisionInputSchema,
   appFlushCompleteInputSchema,
+  clearAppDataInputSchema,
   timelineImportRowsInputSchema,
   locateTimelineImportRowInputSchema,
   updateClickDescriptionInputSchema,
@@ -84,6 +85,7 @@ export interface IpcDependencies {
   aiService: SelectedAiService;
   timelineImports: TimelineImportService;
   openSettingsWindow(section?: string): void;
+  clearAppData(): Promise<void>;
 }
 
 const TIMELINE_IMPORT_FILE_FILTERS: Record<TimelineImportKind, Electron.FileFilter[]> = {
@@ -124,6 +126,7 @@ export function registerIpcHandlers({
   aiService,
   timelineImports,
   openSettingsWindow,
+  clearAppData,
 }: IpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.cliGet, () => cliTools.get());
   ipcMain.handle(IPC_CHANNELS.cliRefresh, (_event, input: unknown) => {
@@ -175,6 +178,14 @@ export function registerIpcHandlers({
     const { section } = openSettingsInputSchema.parse(input ?? {});
 
     openSettingsWindow(section);
+  });
+  ipcMain.handle(IPC_CHANNELS.appClearData, (_event, input: unknown) => {
+    clearAppDataInputSchema.parse(input);
+    if (isActiveRecordingStatus(recording.getState().status)) {
+      throw new Error("Finish the current recording before clearing data and settings.");
+    }
+
+    return clearAppData();
   });
   ipcMain.handle(IPC_CHANNELS.appFlushComplete, (event, input: unknown) => {
     const { requestId } = appFlushCompleteInputSchema.parse(input);
@@ -237,20 +248,9 @@ export function registerIpcHandlers({
       throw new Error(`${provider} returned no compatible models`);
     }
 
-    const keyStatus = await aiCredentials.set(provider, key);
-
-    return { keyStatus, models };
-  });
-  ipcMain.handle(IPC_CHANNELS.settingsListAiProviderModels, async (_event, input: unknown) => {
-    const { provider } = aiProviderInputSchema.parse(input);
-    const key = await aiCredentials.get(provider);
-
-    if (!key) throw new Error(`No ${provider} API key is configured`);
-
-    return listProviderModels(provider, key);
+    return aiCredentials.set(provider, key);
   });
 
-  ipcMain.handle(IPC_CHANNELS.settingsListLocalModels, () => aiService.listLocalModels());
   ipcMain.handle(IPC_CHANNELS.settingsListAvailableAiModels, () => aiService.listModels());
   ipcMain.handle(IPC_CHANNELS.settingsUpdateAiModelSelection, async (_event, input: unknown) => {
     const { purpose, selection } = updateAiModelSelectionInputSchema.parse(input);
