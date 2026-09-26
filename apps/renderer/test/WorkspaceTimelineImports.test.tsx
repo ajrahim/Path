@@ -22,6 +22,7 @@ vi.mock("next/router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("../src/components/GuidePane", () => ({ GuidePane: () => null }));
 vi.mock("../src/components/SourceDialog", () => ({ SourceDialog: () => null }));
 vi.mock("../src/components/LocalModelSelect", () => ({ LocalModelSelect: () => null }));
+vi.mock("../src/components/OnboardingDialog", () => ({ OnboardingDialog: () => null }));
 
 // The page remounts the pane whenever the recording status changes; the stub exposes what survives.
 vi.mock("../src/components/RecordingPane", () => ({

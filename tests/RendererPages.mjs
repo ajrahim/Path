@@ -149,6 +149,17 @@ try {
     if (selector) await page.locator(selector).waitFor({ state: "visible" });
     if (selector !== ".app-frame") assert.equal(await page.locator(".app-frame").count(), 0);
 
+    // A fresh profile opens first-run onboarding over the workspace; skipping it is remembered.
+    const onboarding = page.getByRole("dialog", { name: "Getting started with Path" });
+
+    if (route === "/") {
+      await onboarding.waitFor({ state: "visible" });
+      await onboarding.getByRole("button", { name: "Skip" }).click();
+      await onboarding.waitFor({ state: "hidden" });
+    }
+
+    if (route === "/WorkspacePage/") assert.equal(await onboarding.count(), 0);
+
     if (route === "/RegionPage/") {
       const backgrounds = await page.evaluate(() =>
         [document.documentElement, document.body].map(
@@ -180,7 +191,7 @@ try {
     "Exported routes hydrate and navigate without runtime or asset errors",
   );
   console.log(
-    "All six direct pages and the home entry hydrate; theme, fonts, region transparency, Settings navigation, and browser history pass.",
+    "All six direct pages and the home entry hydrate; onboarding skip, theme, fonts, region transparency, Settings navigation, and browser history pass.",
   );
 } finally {
   await browser?.close();

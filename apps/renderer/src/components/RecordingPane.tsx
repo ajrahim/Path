@@ -121,9 +121,16 @@ export function RecordingPane({
     }))
     .sort((left, right) => left.distance - right.distance)[0];
 
+  // Desktop processing covers the selected speech and click work; then wait for its final data.
+  const processingActivities =
+    recordingStatus === "processing" ||
+    recording?.transcriptStatus === "processing" ||
+    activity.analyzingClicks;
+
   const canRetryAnalysis =
     recording?.status === "ready" &&
-    !activity.analyzingClicks &&
+    !processingActivities &&
+    !activity.isLoading &&
     activity.clicks.some(
       (click) => click.screenshotPath && needsClickActionAnalysis(click.actionDescription),
     );
@@ -298,7 +305,16 @@ export function RecordingPane({
     emptyTimelineLabel = t("recording.noFilteredActivity");
   }
 
-  const timelineTabs = <TimelineTabs value={timelineTab} onChange={onTimelineTabChange} />;
+  const timelineTabs = (
+    <>
+      <TimelineTabs value={timelineTab} onChange={onTimelineTabChange} />
+      {processingActivities && (
+        <span className="activity-summary" role="status">
+          {t("recording.processingActivities")}
+        </span>
+      )}
+    </>
+  );
 
   return (
     <main className="recording-panel">
@@ -344,7 +360,8 @@ export function RecordingPane({
           activePlaybackKey={activePlaybackKey}
           playing={playback.playing}
           pendingIds={activity.pendingIds}
-          analyzingClicks={activity.analyzingClicks}
+          processing={processingActivities}
+          loading={activity.isLoading}
           error={activity.error}
           emptyLabel={emptyTimelineLabel}
           canRetryAnalysis={canRetryAnalysis}

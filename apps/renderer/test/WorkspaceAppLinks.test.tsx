@@ -23,6 +23,7 @@ vi.mock("next/router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("../src/components/SourceDialog", () => ({ SourceDialog: () => null }));
 vi.mock("../src/components/LocalModelSelect", () => ({ LocalModelSelect: () => null }));
 vi.mock("../src/components/WorkspaceWelcome", () => ({ WorkspaceWelcome: () => null }));
+vi.mock("../src/components/OnboardingDialog", () => ({ OnboardingDialog: () => null }));
 vi.mock("../src/components/GuidePane", () => ({
   GuidePane: ({ recording, onGuideStateChange }: Parameters<typeof GuidePane>[0]) => (
     <button

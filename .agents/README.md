@@ -15,6 +15,7 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Recording and document behavior           | [Recording workflow specification](../specs/RecordingWorkflow.md)   |
 | Recording library Projects                | [Project grouping behavior](../specs/RecordingProjects.md)          |
 | Welcome screen and document shortcuts     | [Workspace welcome](../specs/WorkspaceWelcome.md)                   |
+| First-run onboarding carousel             | [First-run onboarding](../specs/FirstRunOnboarding.md)              |
 | Imported logs and element paths           | [Recording logs and elements](../specs/RecordingLogsAndElements.md) |
 | Chat image and text context               | [Guide chat context](../specs/GuideChatContext.md)                  |
 | CLI text generation and code context      | [CLI tools](../specs/CliTools.md)                                   |

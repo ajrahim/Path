@@ -33,5 +33,6 @@
 @import "./components/ProjectDialog.css";
 
 @import "./components/WorkspaceWelcome.css";
+@import "./components/OnboardingDialog.css";
 
 @import "./components/ActivityTypeSelect.css";

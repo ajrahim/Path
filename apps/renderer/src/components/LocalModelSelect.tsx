@@ -37,9 +37,11 @@ const MODEL_PURPOSES: readonly AiModelPurpose[] = ["visual", "text"];
 export function LocalModelSelect({
   disabled,
   catalog,
+  onSelectionChange,
 }: {
   disabled: boolean;
   catalog?: ModelCatalogProvider;
+  onSelectionChange?(): void;
 }) {
   const t = useTranslations("navigation");
   const format = useFormatter();
@@ -88,6 +90,7 @@ export function LocalModelSelect({
 
     function closeOnEscape(event: KeyboardEvent): void {
       if (event.key === "Escape") {
+        event.preventDefault();
         setOpen(false);
         triggerRefs.current[purpose]?.focus();
       }
@@ -103,6 +106,7 @@ export function LocalModelSelect({
       if (purpose === "text" && cli.state?.mode === "cli" && !(await cli.setMode("model"))) return;
       setOpen(false);
       triggerRefs.current[purpose]?.focus();
+      onSelectionChange?.();
     }
   }
 
@@ -199,7 +203,13 @@ export function LocalModelSelect({
     );
 
   return (
-    <div className="local-model-select" ref={rootRef}>
+    <div
+      className="local-model-select"
+      ref={rootRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       {MODEL_PURPOSES.map((modelPurpose) => {
         const label = t(modelPurpose === "visual" ? "visualModel" : "textModel");
         const usingCli = modelPurpose === "text" && cli.state?.mode === "cli";

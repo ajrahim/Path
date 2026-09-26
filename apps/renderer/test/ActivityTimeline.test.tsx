@@ -10,10 +10,10 @@ import { TimelineTabs } from "../src/components/TimelineTabs";
 afterEach(cleanup);
 
 function renderTimeline({
-  analyzingClicks = false,
+  processing = false,
   canRetryAnalysis = false,
 }: {
-  analyzingClicks?: boolean;
+  processing?: boolean;
   canRetryAnalysis?: boolean;
 } = {}) {
   return render(
@@ -31,7 +31,7 @@ function renderTimeline({
         activePlaybackKey={null}
         playing={false}
         pendingIds={[]}
-        analyzingClicks={analyzingClicks}
+        processing={processing}
         error={null}
         emptyLabel="Nothing here"
         canRetryAnalysis={canRetryAnalysis}
@@ -76,10 +76,12 @@ describe("ActivityTimeline header", () => {
     expect(view.queryByRole("button", { name: "Retry analysis" })).toBeNull();
   });
 
-  it("shows the analyzing indicator while click analysis runs", () => {
-    const view = renderTimeline({ analyzingClicks: true });
+  it("replaces activity controls with a spinner while processing", () => {
+    const view = renderTimeline({ processing: true });
 
-    expect(view.getByText("Analyzing clicks…")).toBeTruthy();
+    expect(view.getByRole("progressbar", { name: "Processing Activities..." })).toBeTruthy();
+    expect(view.queryByRole("textbox", { name: "Search transcript" })).toBeNull();
+    expect(view.queryByText("Nothing here")).toBeNull();
   });
 
   it("keeps the retry action in the title row when analysis can be retried", () => {

@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from "react";
-import { MousePointer2, RotateCcw, Search } from "lucide-react";
+import { LoaderCircle, MousePointer2, RotateCcw, Search } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import type { ClickEvent, TranscriptSegment } from "@path/shared";
 import { activityKey, type OrderedTimelineEntry } from "@path/timeline";
@@ -26,7 +26,8 @@ export function ActivityTimeline({
   activePlaybackKey,
   playing,
   pendingIds,
-  analyzingClicks,
+  processing,
+  loading = false,
   error,
   emptyLabel,
   canRetryAnalysis,
@@ -60,7 +61,8 @@ export function ActivityTimeline({
   activePlaybackKey: string | null;
   playing: boolean;
   pendingIds: string[];
-  analyzingClicks: boolean;
+  processing: boolean;
+  loading?: boolean;
   error: string | null;
   emptyLabel: string;
   canRetryAnalysis: boolean;
@@ -84,6 +86,7 @@ export function ActivityTimeline({
 }) {
   const t = useTranslations();
   const locale = useLocale();
+  const busy = processing || loading;
 
   return (
     <section
@@ -91,17 +94,11 @@ export function ActivityTimeline({
       role="tabpanel"
       id={timelinePanelId("activity")}
       aria-labelledby={timelineTabId("activity")}
+      data-processing={busy}
     >
       <header>
-        <div className="activity-heading">
-          {tabs}
-          {analyzingClicks && (
-            <span className="activity-summary" title={t("recording.analyzingClicks")}>
-              {t("recording.analyzingClicks")}
-            </span>
-          )}
-        </div>
-        {canRetryAnalysis && (
+        <div className="activity-heading">{tabs}</div>
+        {!busy && canRetryAnalysis && (
           <div className="activity-header-actions">
             <button
               type="button"
@@ -115,28 +112,40 @@ export function ActivityTimeline({
           </div>
         )}
       </header>
-      <div className="activity-toolbar">
-        <div className="search-control activity-search-control">
-          <Search size={14} aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={t("recording.searchTranscript")}
-            aria-label={t("recording.searchTranscript")}
-          />
-          <ActivityTypeSelect
-            value={filter}
-            counts={{ all: allCount, clicks: clickCount, speech: speechCount }}
-            onChange={onFilterChange}
-          />
+      {!busy && (
+        <div className="activity-toolbar">
+          <div className="search-control activity-search-control">
+            <Search size={14} aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder={t("recording.searchTranscript")}
+              aria-label={t("recording.searchTranscript")}
+            />
+            <ActivityTypeSelect
+              value={filter}
+              counts={{ all: allCount, clicks: clickCount, speech: speechCount }}
+              onChange={onFilterChange}
+            />
+          </div>
         </div>
-      </div>
+      )}
       {error && (
         <p className="activity-error" role="alert">
           {error}
         </p>
       )}
-      {recordingSelected && timeline.length > 0 ? (
+      {busy ? (
+        <div
+          className="activity-processing"
+          role="progressbar"
+          aria-label={t(
+            processing ? "recording.processingActivities" : "recording.loadingActivities",
+          )}
+        >
+          <LoaderCircle className="activity-processing-spinner" size={24} aria-hidden="true" />
+        </div>
+      ) : recordingSelected && timeline.length > 0 ? (
         <ol
           ref={listRef}
           className="activity-cards"

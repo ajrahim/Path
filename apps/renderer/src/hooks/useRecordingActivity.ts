@@ -17,6 +17,7 @@ interface ActivityMessages {
 }
 
 interface ActivityState {
+  isLoading: boolean;
   clicks: ClickEvent[];
   transcript: TranscriptSegment[];
   selectedActivityKey: string | null;
@@ -63,6 +64,7 @@ interface RecordingActivity extends ActivityState {
 function initialState(scope: ActivityScope): ActivitySnapshot {
   return {
     scope,
+    isLoading: Boolean(scope.recordingId),
     clicks: [],
     transcript: [],
     selectedActivityKey: null,
@@ -88,6 +90,7 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
 
       return {
         ...state,
+        isLoading: false,
         clicks: action.clicks,
         transcript: action.transcript,
         selectedActivityKey,
@@ -114,7 +117,7 @@ function activityReducer(state: ActivitySnapshot, action: ActivityAction): Activ
     }
 
     case "analysis-failed":
-      return { ...state, analyzingClicks: false, error: action.error };
+      return { ...state, isLoading: false, analyzingClicks: false, error: action.error };
 
     case "select":
       return { ...state, selectedActivityKey: action.key };
@@ -190,7 +193,11 @@ export function useRecordingActivity({
     const desktop = getDesktopApi();
 
     async function loadActivity(): Promise<void> {
-      if (!scope.recordingId || !desktop) return;
+      if (!scope.recordingId || !desktop) {
+        dispatch({ type: "loaded", clicks: [], transcript: [] });
+
+        return;
+      }
 
       try {
         const [clicks, transcript] = await Promise.all([
@@ -200,19 +207,9 @@ export function useRecordingActivity({
 
         if (!session.active) return;
 
+        // Desktop processing saves analysis before marking a recording ready.
+        // Opening it only reads saved activity; unfinished analysis is retried explicitly.
         dispatch({ type: "loaded", clicks, transcript });
-        if (scope.status !== "ready" || clicks.length === 0) return;
-
-        dispatch({ type: "analysis-started" });
-        const result = await desktop.recordings.analyzeClicks({ id: scope.recordingId });
-
-        if (!session.active) return;
-
-        dispatch({
-          type: "analyzed",
-          clicks: result.clicks,
-          error: result.failedCount > 0 && result.analyzedCount === 0 ? analysisFailed : null,
-        });
       } catch (error) {
         if (session.active) {
           dispatch({ type: "analysis-failed", error: getErrorMessage(error, analysisFailed) });
@@ -426,6 +423,7 @@ export function useRecordingActivity({
   }
 
   return {
+    isLoading: state.isLoading,
     clicks: state.clicks,
     transcript: state.transcript,
     selectedActivityKey: state.selectedActivityKey,

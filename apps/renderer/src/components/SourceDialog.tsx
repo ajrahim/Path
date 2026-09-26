@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { AppWindow, Check, Crop, Mic, Monitor, MousePointer2, ScreenShare, X } from "lucide-react";
+import { AppWindow, Check, Crop, Mic, Monitor, MousePointer2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import type { CaptureMode, CaptureSource } from "@path/shared";
 import { Button } from "@/components/Button";
@@ -9,24 +9,23 @@ import { getDesktopApi } from "@/lib/Desktop";
 import { cn } from "@/lib/ClassNames";
 import { useRecording } from "../hooks/useRecording";
 
-type SourceMode = "full-screen" | CaptureMode;
-
 interface SourceDialogProps {
   open: boolean;
   onClose(): void;
   onStarted(recordingId: string | null): void;
 }
 
-const modeIcons = { "full-screen": ScreenShare, display: Monitor, window: AppWindow, region: Crop };
+const modeIcons = { display: Monitor, window: AppWindow, region: Crop };
 
 export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
   const t = useTranslations("recording");
   const locale = useLocale();
   const actions = useTranslations("actions");
   const { snapshot, loadSources, start: startCapture } = useRecording();
-  const [mode, setMode] = useState<SourceMode>("full-screen");
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [mode, setMode] = useState<CaptureMode>("display");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [includeMicrophone, setIncludeMicrophone] = useState(false);
+  const [includeMicrophone, setIncludeMicrophone] = useState(true);
   const [captureClicks, setCaptureClicks] = useState(true);
   const [defaultTitle] = useState(() => formatDefaultRecordingTitle(new Date(), locale));
   const [title, setTitle] = useState(defaultTitle);
@@ -34,9 +33,15 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
   useEffect(() => {
     if (!open) return;
 
+    const dialog = dialogRef.current;
+
+    dialog?.showModal();
     const request = loadSources();
 
-    return () => request.abort();
+    return () => {
+      request.abort();
+      dialog?.close();
+    };
   }, [open, loadSources]);
 
   if (!open) return null;
@@ -66,7 +71,7 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
     const state = await startCapture({
       sourceId: selected.id,
       title: title.trim() || defaultTitle,
-      captureMode: mode === "window" ? "window" : mode === "region" ? "region" : "display",
+      captureMode: mode,
       ...(captureRegion ? { captureRegion } : {}),
       includeMicrophone,
       captureClicks,
@@ -79,129 +84,133 @@ export function SourceDialog({ open, onClose, onStarted }: SourceDialogProps) {
   }
 
   return (
-    <div
-      className="modal-backdrop"
-      role="presentation"
+    <dialog
+      ref={dialogRef}
+      className="source-dialog"
+      aria-labelledby="source-dialog-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target !== event.currentTarget) return;
+
+        const bounds = event.currentTarget.getBoundingClientRect();
+
+        if (
+          event.clientX < bounds.left ||
+          event.clientX > bounds.right ||
+          event.clientY < bounds.top ||
+          event.clientY > bounds.bottom
+        ) {
+          onClose();
+        }
       }}
     >
-      <section
-        className="source-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="source-dialog-title"
-      >
-        <header>
-          <h2 id="source-dialog-title">{t("sourceTitle")}</h2>
-          <Button
-            size="icon"
-            variant="ghost"
-            title={actions("cancel")}
-            aria-label={actions("cancel")}
-            onClick={onClose}
-          >
-            <X size={17} />
-          </Button>
-        </header>
-
-        <div className="capture-mode-grid" role="group" aria-label={t("steps.mode")}>
-          {(Object.keys(modeIcons) as SourceMode[]).map((item) => {
-            const Icon = modeIcons[item];
-            const key = item === "full-screen" ? "fullScreen" : item;
-
-            return (
-              <button
-                key={item}
-                type="button"
-                className={cn("capture-mode", mode === item && "capture-mode-selected")}
-                aria-pressed={mode === item}
-                onClick={() => setMode(item)}
-              >
-                <Icon size={18} aria-hidden="true" />
-                <span>{t(`modes.${key}`)}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div
-          className="source-grid"
-          role="group"
-          aria-label={t(mode === "window" ? "steps.window" : "steps.screen")}
-          aria-busy={snapshot.loadingSources}
+      <header>
+        <h2 id="source-dialog-title">{t("sourceTitle")}</h2>
+        <Button
+          size="icon"
+          variant="ghost"
+          title={actions("cancel")}
+          aria-label={actions("cancel")}
+          onClick={onClose}
         >
-          {availableSources.map((source) => (
-            <SourceTile
-              key={source.id}
-              source={source}
-              selected={source.id === selected?.id}
-              onSelect={() => setSelectedId(source.id)}
-            />
-          ))}
-          {snapshot.loadingSources && availableSources.length === 0 && (
-            <>
-              <span className="source-tile-skeleton" aria-hidden="true" />
-              <span className="source-tile-skeleton" aria-hidden="true" />
-            </>
-          )}
-          {!snapshot.loadingSources && availableSources.length === 0 && <p>{t("noSources")}</p>}
-        </div>
+          <X size={17} />
+        </Button>
+      </header>
 
+      <div className="capture-mode-grid" role="group" aria-label={t("steps.mode")}>
+        {(Object.keys(modeIcons) as CaptureMode[]).map((item) => {
+          const Icon = modeIcons[item];
+
+          return (
+            <button
+              key={item}
+              type="button"
+              className={cn("capture-mode", mode === item && "capture-mode-selected")}
+              aria-pressed={mode === item}
+              onClick={() => setMode(item)}
+            >
+              <Icon size={16} aria-hidden="true" />
+              <span>{t(`modes.${item}`)}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className="source-grid"
+        role="group"
+        aria-label={t(mode === "window" ? "steps.window" : "steps.screen")}
+        aria-busy={snapshot.loadingSources}
+      >
+        {availableSources.map((source) => (
+          <SourceTile
+            key={source.id}
+            source={source}
+            selected={source.id === selected?.id}
+            onSelect={() => setSelectedId(source.id)}
+          />
+        ))}
+        {snapshot.loadingSources && availableSources.length === 0 && (
+          <>
+            <span className="source-tile-skeleton" aria-hidden="true" />
+            <span className="source-tile-skeleton" aria-hidden="true" />
+          </>
+        )}
+        {!snapshot.loadingSources && availableSources.length === 0 && <p>{t("noSources")}</p>}
+      </div>
+
+      {mode === "region" && <p className="source-region-hint">{t("regionHint")}</p>}
+
+      {snapshot.error && (
+        <p className="recording-error" role="alert">
+          {snapshot.error}
+        </p>
+      )}
+      <footer>
         <label className="recording-title-field">
-          <span>{t("titleLabel")}</span>
+          <span className="sr-only">{t("titleLabel")}</span>
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder={defaultTitle}
+            placeholder={t("titleLabel")}
+            title={t("titleLabel")}
           />
         </label>
-
-        {snapshot.error && (
-          <p className="recording-error" role="alert">
-            {snapshot.error}
-          </p>
-        )}
-        <footer>
-          <div className="source-footer-options">
-            <label className="switch-row source-option-toggle" title={t("microphoneHint")}>
-              <Mic size={18} aria-hidden="true" />
-              <span className="source-option-label">{t("microphone")}</span>
-              <input
-                type="checkbox"
-                aria-label={t("microphone")}
-                checked={includeMicrophone}
-                onChange={(event) => setIncludeMicrophone(event.target.checked)}
-              />
-            </label>
-            <label className="switch-row source-option-toggle" title={t("captureClicksHint")}>
-              <MousePointer2 size={18} aria-hidden="true" />
-              <span className="source-option-label">{t("captureClicks")}</span>
-              <input
-                type="checkbox"
-                aria-label={t("captureClicks")}
-                checked={captureClicks}
-                onChange={(event) => setCaptureClicks(event.target.checked)}
-              />
-            </label>
-          </div>
-          <div className="source-dialog-actions">
-            <Button variant="secondary" onClick={onClose}>
-              {actions("cancel")}
-            </Button>
-            <Button
-              disabled={
-                !selected || snapshot.status === "preparing" || snapshot.isChangingRecording
-              }
-              onClick={() => void start()}
-            >
-              <Check size={15} />
-              {snapshot.status === "preparing" ? t("preparing") : t("start")}
-            </Button>
-          </div>
-        </footer>
-      </section>
-    </div>
+        <div className="source-footer-options">
+          <Button
+            className="source-option-toggle"
+            variant="ghost"
+            size="icon"
+            title={`${t("microphone")}: ${t("microphoneHint")}`}
+            aria-label={t("microphone")}
+            aria-pressed={includeMicrophone}
+            onClick={() => setIncludeMicrophone((enabled) => !enabled)}
+          >
+            <Mic size={18} aria-hidden="true" />
+          </Button>
+          <Button
+            className="source-option-toggle"
+            variant="ghost"
+            size="icon"
+            title={`${t("captureClicks")}: ${t("captureClicksHint")}`}
+            aria-label={t("captureClicks")}
+            aria-pressed={captureClicks}
+            onClick={() => setCaptureClicks((enabled) => !enabled)}
+          >
+            <MousePointer2 size={18} aria-hidden="true" />
+          </Button>
+        </div>
+        <Button
+          disabled={!selected || snapshot.status === "preparing" || snapshot.isChangingRecording}
+          onClick={() => void start()}
+        >
+          {snapshot.status === "preparing" ? t("preparing") : t("start")}
+        </Button>
+      </footer>
+    </dialog>
   );
 }
 
@@ -214,20 +223,18 @@ function SourceTile({
   selected: boolean;
   onSelect(): void;
 }) {
-  const Icon = source.type === "window" ? AppWindow : Monitor;
-
   return (
     <button
       type="button"
       className={cn("source-tile", selected && "source-tile-selected")}
       aria-pressed={selected}
+      title={source.name}
       onClick={onSelect}
     >
       <span className="source-tile-preview">
         <Image src={source.thumbnailDataUrl} alt="" width={320} height={180} unoptimized />
       </span>
       <span className="source-tile-name">
-        <Icon size={14} aria-hidden="true" />
         <span>{source.name}</span>
         {selected && <Check className="source-tile-check" size={15} aria-hidden="true" />}
       </span>

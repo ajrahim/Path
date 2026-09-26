@@ -1,4 +1,4 @@
-import type { CSSProperties, RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 import { FileVideo2, Gauge, Pause, Play, Plus, RotateCcw, Settings } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { ClickEvent } from "@path/shared";
@@ -66,7 +66,34 @@ export function VideoStage({
 }) {
   const t = useTranslations();
   const ready = Boolean(recordingId && mediaUrl);
-  const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const [playbackTime, setPlaybackTime] = useState(currentTime);
+  const displayedTime = playing ? playbackTime : currentTime;
+  const progress = duration > 0 ? Math.min(100, Math.max(0, (displayedTime / duration) * 100)) : 0;
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!playing || !video) return;
+
+    let active = true;
+    let frame: number;
+
+    // Sample the media clock smoothly without rerendering the activity list every frame.
+    const updatePlaybackTime = (): void => {
+      if (!active) return;
+
+      setPlaybackTime(video.currentTime);
+      frame = requestAnimationFrame(updatePlaybackTime);
+    };
+
+    frame = requestAnimationFrame(updatePlaybackTime);
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [playing, recordingId, mediaUrl, videoRef]);
+
   const hotspot =
     showHotspots &&
     activeClick &&
@@ -102,7 +129,10 @@ export function VideoStage({
                 src={mediaUrl ?? undefined}
                 data-recording-id={recordingId ?? undefined}
                 onClick={onTogglePlayback}
-                onPlay={() => onPlayingChange(true)}
+                onPlay={(event) => {
+                  setPlaybackTime(event.currentTarget.currentTime);
+                  onPlayingChange(true);
+                }}
                 onPause={() => onPlayingChange(false)}
                 onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
                 onLoadedMetadata={(event) => onDurationChange(event.currentTarget.duration)}
@@ -133,7 +163,7 @@ export function VideoStage({
                 )}
               </button>
               <div className="video-time">
-                <span className="video-current-time">{formatPlayerTime(currentTime)}</span>
+                <span className="video-current-time">{formatPlayerTime(displayedTime)}</span>
                 <span className="video-time-divider">/</span>
                 <span className="video-duration">{formatPlayerTime(duration)}</span>
               </div>
@@ -145,11 +175,11 @@ export function VideoStage({
                   type="range"
                   min={0}
                   max={Math.max(duration, 0.01)}
-                  step={0.05}
-                  value={Math.min(currentTime, duration || 0)}
+                  step={0.001}
+                  value={Math.min(displayedTime, duration || 0)}
                   onChange={(event) => onSeek(Number(event.target.value))}
                   aria-label={t("recording.title")}
-                  aria-valuetext={`${formatPlayerTime(currentTime)} / ${formatPlayerTime(duration)}`}
+                  aria-valuetext={`${formatPlayerTime(displayedTime)} / ${formatPlayerTime(duration)}`}
                 />
                 <div className="timeline-click-markers">
                   {clicks.map((click) => (

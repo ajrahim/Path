@@ -13,8 +13,10 @@ import { useRecording } from "@/hooks/useRecording";
 import { useTimelineImports } from "@/hooks/useTimelineImports";
 import { getDesktopApi } from "@/lib/Desktop";
 import { LocalModelSelect } from "@/components/LocalModelSelect";
+import { OnboardingDialog, type OnboardingSettingsSection } from "@/components/OnboardingDialog";
 import { WorkspaceWelcome } from "@/components/WorkspaceWelcome";
 import type { TimelineTab } from "@/components/TimelineTabs";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import { useRendererDispatch } from "@/hooks/useRendererDispatch";
 import { refreshProjects } from "@/state/ProjectSlice";
 
@@ -24,6 +26,7 @@ export default function WorkspacePage() {
   const { snapshot, refresh, rename } = useRecordingHistory();
   const { snapshot: recordingState } = useRecording();
   const dispatch = useRendererDispatch();
+  const onboarding = useOnboarding();
 
   // Selection and panel sizes belong to this window; recording data is shared within its store.
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -56,6 +59,9 @@ export default function WorkspacePage() {
     snapshot.recordings.find((recording) => recording.id === activeSelectedId) ?? null;
 
   const showWelcome = !selected && !recordingActive;
+
+  // Active capture is never covered; onboarding waits until the recording ends.
+  const showOnboarding = onboarding.isOpen && !recordingActive;
 
   // Owned above the status-keyed recording pane so an import started while the recording
   // processes, and the selected review tab, survive the remount when processing finishes.
@@ -196,11 +202,16 @@ export default function WorkspacePage() {
     }
   }
 
-  function openSettings(): void {
+  function openSettings(section?: OnboardingSettingsSection): void {
     const desktop = getDesktopApi();
 
-    if (desktop) void desktop.app.openSettings();
-    else void router.push(RENDERER_ROUTES.settings);
+    if (desktop) {
+      void desktop.app.openSettings(section ? { section } : undefined);
+
+      return;
+    }
+
+    void router.push(section ? `${RENDERER_ROUTES.settings}#${section}` : RENDERER_ROUTES.settings);
   }
 
   function resize(event: React.PointerEvent<HTMLDivElement>): void {
@@ -328,7 +339,7 @@ export default function WorkspacePage() {
               if (id === activeSelectedId) setSelectedId(null);
             }}
             onNewRecording={() => setSourceDialogOpen(true)}
-            onOpenSettings={openSettings}
+            onOpenSettings={() => openSettings()}
           />
         </div>
         <div
@@ -353,7 +364,7 @@ export default function WorkspacePage() {
                 timelineImports={timelineImports}
                 onTimelineTabChange={setTimelineTab}
                 onNewRecording={() => setSourceDialogOpen(true)}
-                onOpenSettings={openSettings}
+                onOpenSettings={() => openSettings()}
               />
               <div
                 className="resize-handle workspace-divider"
@@ -384,6 +395,16 @@ export default function WorkspacePage() {
           void refresh();
         }}
       />
+      {showOnboarding && (
+        <OnboardingDialog
+          onClose={onboarding.complete}
+          onStartRecording={() => {
+            onboarding.complete();
+            setSourceDialogOpen(true);
+          }}
+          onOpenSettings={openSettings}
+        />
+      )}
       <dialog
         ref={discardDialogRef}
         className="recording-delete-dialog"

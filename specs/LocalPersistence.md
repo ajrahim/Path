@@ -20,6 +20,7 @@ Every durable kind of Path data has one storage owner and survives restarts, cra
 | Files waiting to be deleted                         | `AssetDeletionQueue`                                                 | `asset_deletions`                                                                                                               |
 | Provider API keys                                   | `AiCredentialStore`                                                  | `credentials/ai-providers.json`, encrypted with Electron `safeStorage`; never in SQLite, settings JSON, logs, or renderer state |
 | Theme                                               | `next-themes`                                                        | Renderer `localStorage`; it must be read before first paint                                                                     |
+| First-run onboarding completion                     | `useOnboarding`                                                      | Renderer `localStorage` key `path.onboarding`; cleared with the rest of browser storage by a reset                              |
 | Application diagnostics                             | `DiagnosticLog`                                                      | `logs/main.log` and rotated files                                                                                               |
 
 Renderer windows hold loaded summaries, pages, and editor state in hooks and Redux slices. They never load a whole import or the whole database, and nothing is persisted from Redux to browser storage.

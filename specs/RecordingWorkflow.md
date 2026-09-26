@@ -15,7 +15,13 @@ Record software walkthroughs with synchronized video, microphone audio, and mous
 5. User reviews video and seekable timeline in History, edits transcripts, or deletes items.
 6. User selects an instruction flow (Help Guide, Spec Document, or custom) and AI model, then generates, edits, copies, or exports Markdown.
 
+The capture picker offers Screen, Window, and Area in a wide dialog with compact source thumbnails. Previews show the entire source without cropping, with a blue border and check for the selected source. Recording name, microphone and click capture icon toggles, and Start recording share one footer row. Microphone and click capture start enabled; users can turn either off before recording. The toggles show their selected state and provide explanatory tooltips. Area capture opens the native region chooser; canceling that chooser keeps the picker open. The close button and Escape dismiss the picker. When many sources are available, only the preview list scrolls, keeping the footer visible.
+
 ## Requirements
+
+While the selected recording's activities are processing, the review header shows “Processing Activities...” beside the tabs. The Activity tab replaces its search, filters, and list with a spinner until desktop processing, activity loading, and click analysis finish. This covers click-only, speech-only, and combined captures. Logs and Elements remain accessible. Terminal errors expose the available results and retry controls instead of keeping the spinner active.
+
+Opening a saved recording loads its persisted clicks and transcript without starting analysis again. Loading saved activity uses a separate loading indicator, not the processing label. The desktop owns initial analysis before the recording becomes ready; unfinished click descriptions can be retried explicitly with Retry analysis.
 
 - Support display, window, and region screen capture with microphone and global click hooks.
 - Process captured video post-stop into local MP4 via FFmpeg and transcribe audio via local whisper.cpp.
@@ -48,6 +54,7 @@ Record software walkthroughs with synchronized video, microphone audio, and mous
 - Timeline correlation: `packages/timeline/src/Correlate.ts`.
 - Media server: `apps/desktop/src/media/RecordingMediaServer.ts` with per-session token validation.
 - SQLite repositories: `packages/database/src/RecordingRepository.ts`.
+- Capture picker: `apps/renderer/src/components/SourceDialog.tsx`; selection, options, area cancellation, empty sources, failed starts, and dismissal are covered by `apps/renderer/test/SourceDialog.test.tsx`.
 
 ## Out of Scope
 

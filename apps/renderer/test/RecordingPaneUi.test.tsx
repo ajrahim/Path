@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { Provider } from "react-redux";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ApiAiModel,
   ClickEvent,
+  ClickAnalysisResult,
   LocalAiModel,
   RecordingSummary,
   TranscriptSegment,
@@ -200,21 +201,126 @@ function renderRecordingPane(
 ) {
   const store = createRendererStore();
 
-  return render(
+  const content = (options: typeof props) => (
     <Provider store={store}>
       <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
         <PaneWithReviewState
           recording={recording}
           onNewRecording={vi.fn()}
           onOpenSettings={vi.fn()}
-          {...props}
+          {...options}
         />
       </NextIntlClientProvider>
-    </Provider>,
+    </Provider>
   );
+
+  const view = render(content(props));
+
+  return {
+    ...view,
+    updateRecording: (next: RecordingSummary) =>
+      view.rerender(content({ ...props, recording: next })),
+  };
 }
 
 describe("RecordingPane UI interactions", () => {
+  it("loads saved activities without reporting or restarting processing", async () => {
+    const savedClicks = Promise.withResolvers<ClickEvent[]>();
+
+    bridge.listClicks.mockReturnValue(savedClicks.promise);
+    renderRecordingPane();
+
+    expect(screen.getByRole("progressbar", { name: "Loading activities..." })).toBeTruthy();
+    expect(screen.queryByText("Processing Activities...")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
+
+    await act(async () => savedClicks.resolve(sampleClicks));
+
+    expect(screen.getByRole("list", { name: "Activity" })).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(bridge.analyzeClicks).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "clicks only", clicks: sampleClicks, transcript: [] },
+    { name: "speech only", clicks: [], transcript: sampleTranscript },
+    { name: "clicks and speech", clicks: sampleClicks, transcript: sampleTranscript },
+  ])("hides partial activity until $name processing completes", async ({ clicks, transcript }) => {
+    bridge.listClicks.mockResolvedValue(clicks);
+    bridge.listTranscript.mockResolvedValue(transcript);
+    const view = renderRecordingPane({
+      recording: {
+        ...recording,
+        status: "processing",
+        transcriptStatus: transcript.length ? "processing" : "ready",
+      },
+    });
+
+    await waitFor(() => expect(bridge.listTranscript).toHaveBeenCalled());
+    expect(screen.getByRole("status").textContent).toBe("Processing Activities...");
+    expect(screen.getByRole("progressbar", { name: "Processing Activities..." })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Search transcript" })).toBeNull();
+
+    // Completing speech alone must not reveal partial results while click work remains.
+    view.updateRecording({ ...recording, status: "processing", transcriptStatus: "ready" });
+    expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
+    view.updateRecording(recording);
+    expect(screen.getByRole("progressbar", { name: "Loading activities..." })).toBeTruthy();
+
+    expect(await screen.findByRole("list", { name: "Activity" })).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(bridge.analyzeClicks).not.toHaveBeenCalled();
+  });
+
+  it("keeps the processing label beside the tabs when reviewing logs", async () => {
+    renderRecordingPane({ recording: { ...recording, status: "processing" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    const panel = await screen.findByRole("tabpanel", { name: "Logs" });
+    const heading = panel.querySelector(".activity-heading");
+
+    expect(heading?.contains(screen.getByRole("tablist"))).toBe(true);
+    expect(heading?.contains(screen.getByRole("status"))).toBe(true);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("shows a completed empty recording without waiting for disabled activity types", async () => {
+    bridge.listClicks.mockResolvedValue([]);
+    bridge.listTranscript.mockResolvedValue([]);
+    renderRecordingPane();
+
+    expect(await screen.findByText(messages.recording.noTimeline)).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(bridge.analyzeClicks).not.toHaveBeenCalled();
+  });
+
+  it("ends the spinner and exposes retry after click analysis fails", async () => {
+    const clicks = [{ ...sampleClicks[0], actionDescription: null }];
+
+    bridge.listClicks.mockResolvedValue(clicks);
+    bridge.analyzeClicks.mockRejectedValue(new Error("Analysis unavailable"));
+    renderRecordingPane();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Retry analysis" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Analysis unavailable");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByRole("list", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry analysis" })).toBeTruthy();
+
+    const retry = Promise.withResolvers<ClickAnalysisResult>();
+
+    bridge.analyzeClicks.mockReturnValueOnce(retry.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Retry analysis" }));
+    expect(screen.getByRole("progressbar", { name: "Processing Activities..." })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Activity" })).toBeNull();
+    await act(async () =>
+      retry.resolve({ clicks: sampleClicks, analyzedCount: 1, failedCount: 0 }),
+    );
+    expect(screen.getByRole("list", { name: "Activity" })).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
   it.each(["local", "api", "loading"] as const)(
     "keeps the empty state minimal when models are %s",
     (state) => {
@@ -513,6 +619,87 @@ describe("RecordingPane UI interactions", () => {
       view.container.querySelector<HTMLButtonElement>(".timeline-click-markers button")!,
     );
     expect(video.currentTime).toBe(sampleClicks[0].timestampMs / 1000);
+  });
+
+  it.each([2_424, 6_133])(
+    "seeks a marker at %i ms without snapping the scrubber",
+    async (timestampMs) => {
+      bridge.listClicks.mockResolvedValue([{ ...sampleClicks[0], timestampMs }]);
+      const view = renderRecordingPane({ recording: { ...recording, durationMs: 6_133 } });
+
+      await waitFor(() => {
+        expect(view.container.querySelector(".timeline-click-markers button")).not.toBeNull();
+      });
+
+      fireEvent.click(
+        view.container.querySelector<HTMLButtonElement>(".timeline-click-markers button")!,
+      );
+      const slider = screen.getByRole("slider", {
+        name: messages.recording.title,
+      }) as HTMLInputElement;
+
+      expect(view.container.querySelector("video")!.currentTime).toBe(timestampMs / 1_000);
+      expect(Number(slider.value)).toBe(timestampMs / 1_000);
+      expect(slider.validity.stepMismatch).toBe(false);
+    },
+  );
+
+  it("smoothly follows the media clock between time events and stops sampling when paused", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    const view = renderRecordingPane();
+
+    await waitFor(() => expect(view.container.querySelector("video")).not.toBeNull());
+
+    const video = view.container.querySelector("video")!;
+    const slider = screen.getByRole("slider", {
+      name: messages.recording.title,
+    }) as HTMLInputElement;
+
+    function advanceFrame(time: number): void {
+      video.currentTime = time;
+      const pending = [...frames.values()];
+
+      frames.clear();
+      act(() => pending.forEach((callback) => callback(0)));
+    }
+
+    // Complete the initial geometry measurement before starting playback.
+    advanceFrame(0);
+    for (const entry of view.container.querySelectorAll(".activity-entry")) {
+      entry.scrollIntoView = vi.fn();
+    }
+
+    fireEvent.play(video);
+    advanceFrame(0.016);
+    expect(Number(slider.value)).toBe(0.016);
+    advanceFrame(0.033);
+    expect(Number(slider.value)).toBe(0.033);
+
+    // A stalled media clock must not make the seek bar drift forward.
+    advanceFrame(0.033);
+    expect(Number(slider.value)).toBe(0.033);
+    video.currentTime = 0.04;
+    fireEvent.timeUpdate(video);
+    fireEvent.pause(video);
+    expect(Number(slider.value)).toBe(0.04);
+    expect(frames.size).toBe(0);
+
+    fireEvent.change(slider, { target: { value: "2.424" } });
+    fireEvent.play(video);
+    expect(Number(slider.value)).toBe(2.424);
+    advanceFrame(2.44);
+    expect(Number(slider.value)).toBe(2.44);
+
+    view.unmount();
+    expect(frames.size).toBe(0);
   });
 
   it("handles playback keyboard shortcuts with Space, ArrowLeft, and ArrowRight", async () => {

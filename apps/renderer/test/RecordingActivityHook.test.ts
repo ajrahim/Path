@@ -67,10 +67,31 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("recording activity lifecycle", () => {
+  it.each(["Saved description", null])(
+    "loads persisted activities after remounting without reanalyzing descriptions: %s",
+    async (actionDescription) => {
+      const clicks = [{ ...capturedClick("recording-a"), actionDescription }];
+
+      bridge.listClicks.mockResolvedValue(clicks);
+      const first = renderActivity();
+
+      await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+      first.unmount();
+      const reopened = renderActivity();
+
+      await waitFor(() => expect(reopened.result.current.isLoading).toBe(false));
+      expect(reopened.result.current.clicks).toEqual(clicks);
+      expect(reopened.result.current.transcript).toEqual([transcriptSegment("recording-a")]);
+      expect(reopened.result.current.analyzingClicks).toBe(false);
+      expect(bridge.listClicks).toHaveBeenCalledTimes(2);
+      expect(bridge.analyzeClicks).not.toHaveBeenCalled();
+    },
+  );
+
   it("loads ordered activity and retains selection when unrelated recording metadata changes", async () => {
     const { result, rerender } = renderActivity();
 
-    await waitFor(() => expect(result.current.clicks[0]?.actionDescription).toBe("Menu"));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.selectedActivityKey).toBe("transcript-dialogue-1");
 
@@ -93,7 +114,7 @@ describe("recording activity lifecycle", () => {
 
     expect(result.current.clicks[0].recordingId).toBe("recording-b");
     expect(result.current.transcript[0].recordingId).toBe("recording-b");
-    expect(bridge.analyzeClicks).toHaveBeenCalledExactlyOnceWith({ id: "recording-b" });
+    expect(bridge.analyzeClicks).not.toHaveBeenCalled();
   });
 
   it("does not resurrect a deleted click when analysis finishes later", async () => {
@@ -102,7 +123,11 @@ describe("recording activity lifecycle", () => {
     bridge.analyzeClicks.mockReturnValue(analysis.promise);
     const { result } = renderActivity();
 
-    await waitFor(() => expect(result.current.analyzingClicks).toBe(true));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    act(() => {
+      void result.current.retryAnalysis();
+    });
+    expect(result.current.analyzingClicks).toBe(true);
     await act(async () => {
       await result.current.removeClick(capturedClick("recording-a"));
     });
@@ -211,7 +236,7 @@ describe("recording activity lifecycle", () => {
   it("saves an edited click description for the owning recording", async () => {
     const { result } = renderActivity();
 
-    await waitFor(() => expect(result.current.analyzingClicks).toBe(false));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     let edit: Promise<"saved" | "failed" | "stale">;
 
@@ -242,6 +267,8 @@ describe("recording activity lifecycle", () => {
     bridge.analyzeClicks.mockRejectedValueOnce(new Error("Analyzer unavailable"));
     const { result } = renderActivity();
 
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(() => result.current.retryAnalysis());
     await waitFor(() => expect(result.current.error).toBe("Analyzer unavailable"));
     await act(() => result.current.retryAnalysis());
     await waitFor(() => expect(result.current.clicks[0]?.actionDescription).toBe("Menu"));
@@ -255,6 +282,8 @@ describe("recording activity lifecycle", () => {
     bridge.analyzeClicks.mockRejectedValue(new Error("Analyzer unavailable"));
     const { result } = renderActivity();
 
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(() => result.current.retryAnalysis());
     await waitFor(() => expect(result.current.error).toBe("Analyzer unavailable"));
 
     expect(result.current.analyzingClicks).toBe(false);
