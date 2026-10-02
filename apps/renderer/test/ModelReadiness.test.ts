@@ -37,6 +37,7 @@ const baseInput = {
 
 function createCliState(overrides: Partial<CliState>): CliState {
   return {
+    deployment: { selection: null, folder: null },
     mode: "cli",
     connected: ["claude"],
     selection: { tool: "claude", model: "sonnet", effort: null },

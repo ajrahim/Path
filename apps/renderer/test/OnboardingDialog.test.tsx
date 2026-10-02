@@ -53,6 +53,7 @@ const noKeys: AiProviderKeyStatus = {
 };
 
 const modelMode: CliState = {
+  deployment: { selection: null, folder: null },
   mode: "model",
   connected: [],
   selection: null,

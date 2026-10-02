@@ -338,6 +338,7 @@ if (!hasSingleInstanceLock) {
     }, diagnostics);
 
     const linkedGeneration = new GenerateLinkService({
+      deployment: cliTools,
       recording,
       recordings,
       projects: repositories.projects,

@@ -8,7 +8,7 @@ The header's Text picker has Text Model and CLI Tool tabs. CLI Tool selects an i
 
 Connections and the selected CLI/model/effort persist in desktop settings. The CLI picker uses the same searchable, collapsible list pattern as the model picker. Each CLI header shows connection status. Clicking a model activates CLI text generation immediately; the checked model determines the active tool. A separate collapsible reasoning list follows the selected model and saves effort changes immediately. The menu remains open so both choices can be made together. Selecting Text Model returns to the existing API/local text selection. Disconnecting the active CLI returns to Text Model. A failed CLI request is surfaced without silently using another provider.
 
-Context Folder is enabled when a connected CLI is selected. The native folder picker grants the folder for the current app session. Document updates can use that folder as reference context; users can remove it or choose another. The folder is retained across successful updates and reset with the recording. Image attachments still use the independent visual model for their descriptions.
+Context Folder is available in the desktop app and is remembered across recordings and app launches. CLI document updates can use the native-picker-selected folder as read-only reference context; users can remove it or choose another. When Text Model is selected, the folder is used only for deployment. Image attachments still use the independent visual model for their descriptions.
 
 ## Ownership and boundaries
 
@@ -19,6 +19,8 @@ Model catalogs come from Codex app-server, Claude's initialization response, Cop
 Children run without shell interpolation or visible windows, with time and output limits. Requests use temporary files or stdin and read-only tool configurations. Temporary request folders are removed after completion; active children are stopped on app shutdown. Context-folder requests must match a grant returned by the native picker.
 
 ## Scope and compatibility
+
+The separate [document deployment row](CliDeployment.md) can launch a coding session in the selected Context Folder. Its model and reasoning choices do not alter this read-only document-generation path. Context Folder is remembered across app launches.
 
 Existing API/local selections, visual analysis, recordings, prompts, and themes retain their behavior. No new credential store, automatic sign-in, CLI installation, repository editing, or persistent agent conversation is included. Discovery supports native executables on PATH and common per-user Windows install locations; arbitrary custom executable paths are not configurable.
 

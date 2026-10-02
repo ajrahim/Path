@@ -19,6 +19,7 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Imported logs and element paths           | [Recording logs and elements](../specs/RecordingLogsAndElements.md) |
 | Chat image and text context               | [Guide chat context](../specs/GuideChatContext.md)                  |
 | CLI text generation and code context      | [CLI tools](../specs/CliTools.md)                                   |
+| Document deployment to coding CLIs        | [CLI deployment](../specs/CliDeployment.md)                         |
 | Settings sections and prompt library      | [Settings and prompts](../specs/SettingsAndPrompts.md)              |
 | Storage ownership, drafts, history        | [Local persistence](../specs/LocalPersistence.md)                   |
 | Reset to a fresh installation             | [Clear all data and settings](../specs/ResetAppData.md)             |

@@ -40,5 +40,10 @@
 }
 
 .clear-data-dialog .path-button-danger {
-  color: var(--danger);
+  background: #b83e4e;
+  color: #ffffff;
+}
+
+.clear-data-dialog .path-button-danger:hover:not(:disabled) {
+  background: #a13644;
 }

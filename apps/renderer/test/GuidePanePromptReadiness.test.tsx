@@ -65,6 +65,9 @@ vi.mock("../src/hooks/useInstructionFlows", () => ({ useInstructionFlows: () => 
 vi.mock("../src/hooks/useGuideDocument", () => ({ useGuideDocument: () => mocks.guide }));
 vi.mock("../src/components/InstructionFlowSelect", () => ({ InstructionFlowSelect: () => null }));
 vi.mock("../src/components/InstructionFlowEditor", () => ({ InstructionFlowEditor: () => null }));
+vi.mock("../src/components/GuideDeployRow", () => ({
+  GuideDeployRow: () => <div role="group" aria-label="CLI deployment" />,
+}));
 vi.mock("../src/components/GuideChatInput", () => ({
   GuideChatInput: (props: {
     disabled: boolean;
@@ -106,6 +109,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.flows.loaded = true;
   mocks.flows.isBusy = false;
+  mocks.flows.selectedFlow.id = "custom-review";
+  mocks.flows.selectedFlow.name = "Review";
   mocks.flows.selectedFlow.instructions = "Current saved instructions";
   mocks.guide.markdown = "";
   mocks.guide.error = null;
@@ -116,6 +121,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("GuidePane prompt readiness", () => {
+  it("hides CLI deployment only for the Help Guide flow", () => {
+    const view = render(pane());
+
+    expect(view.getByRole("group", { name: "CLI deployment" })).toBeTruthy();
+
+    mocks.flows.selectedFlow.id = "help-guide";
+    mocks.flows.selectedFlow.name = "Help Guide";
+    view.rerender(pane());
+    expect(view.queryByRole("group", { name: "CLI deployment" })).toBeNull();
+
+    mocks.flows.selectedFlow.id = "spec-document";
+    mocks.flows.selectedFlow.name = "Spec Document";
+    view.rerender(pane());
+    expect(view.getByRole("group", { name: "CLI deployment" })).toBeTruthy();
+  });
+
   it.each([
     { reason: "initial prompts are loading", loaded: false, isBusy: false },
     { reason: "the selected prompt is being saved", loaded: true, isBusy: true },

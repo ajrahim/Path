@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { stat, writeFile } from "node:fs/promises";
 import {
   cliConnectSchema,
+  cliDeployInputSchema,
   cliSelectionSchema,
   cliModeSchema,
   cliModelsInputSchema,
@@ -146,7 +147,6 @@ export function registerIpcHandlers({
     cliTools.setMode(cliModeSchema.parse(input).mode),
   );
   ipcMain.handle(IPC_CHANNELS.cliChooseFolder, async (event) => {
-    if (cliTools.get().mode !== "cli") throw new Error("Select CLI Tool first");
     const owner = BrowserWindow.fromWebContents(event.sender);
     const options = { properties: ["openDirectory"] as Array<"openDirectory"> };
     const result = owner
@@ -156,6 +156,16 @@ export function registerIpcHandlers({
     if (result.canceled || !result.filePaths[0]) return null;
 
     return cliTools.allowFolder(result.filePaths[0]);
+  });
+  ipcMain.handle(IPC_CHANNELS.cliClearFolder, () => cliTools.clearFolder());
+  ipcMain.handle(IPC_CHANNELS.cliSelectDeployment, (_event, input: unknown) =>
+    cliTools.selectDeployment(cliSelectionSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.cliDeploy, async (_event, input: unknown) => {
+    const { markdown } = cliDeployInputSchema.parse(input);
+    const deployment = await cliTools.prepareDeployment();
+
+    await cliTools.deployPrepared(deployment, markdown);
   });
   ipcMain.handle(
     IPC_CHANNELS.appInfo,

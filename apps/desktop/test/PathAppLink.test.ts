@@ -9,6 +9,35 @@ function generateLink(fields: Record<string, string> = {}): string {
 }
 
 describe("Path app links", () => {
+  it("accepts CLI, model, reasoning, and context-folder overrides for deployment", () => {
+    expect(
+      parsePathAppLink(
+        generateLink({
+          auto: "true",
+          cli: "codex",
+          model: "gpt-6-sol",
+          reasoning: "high",
+          contextFolder: "C:\\Projects\\My App",
+        }),
+      ),
+    ).toMatchObject({
+      auto: true,
+      cli: "codex",
+      model: "gpt-6-sol",
+      reasoning: "high",
+      contextFolder: "C:\\Projects\\My App",
+    });
+  });
+
+  it.each([
+    { cli: "custom-command" },
+    { reasoning: "x".repeat(31) },
+    { model: "x".repeat(201) },
+    { contextFolder: "../project" },
+    { contextFolder: "\\\\server\\share" },
+  ])("rejects invalid deployment fields: %j", (fields) => {
+    expect(() => parsePathAppLink(generateLink(fields))).toThrow(PathAppLinkError);
+  });
   it.each(["pathai://status", "pathai://status/"])("checks app status from %s", (url) => {
     expect(parsePathAppLink(url)).toEqual({ route: "status" });
   });

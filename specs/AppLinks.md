@@ -14,16 +14,16 @@ The primary Electron instance receives cold-launch arguments, second-instance ar
 
 Keys use the application's camelCase convention and are case-sensitive. Old spellings such as `video_path`, `document_type`, `log`, and `elemets` are not aliases.
 
-| Key            | Value and behavior                                                                                                                                                                                                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `videoPath`    | Required absolute path to a readable, nonempty local video file. Encode it as a query value, not as a `file://` URL. Path copies it into the recording's managed directory; the original is unchanged.                                                                           |
-| `title`        | Optional recording title, at most 120 characters. Defaults to the source filename without its extension.                                                                                                                                                                         |
-| `type`         | Optional string, at most 120 characters, reserved for future use. Accepted but neither persisted nor used to change behavior.                                                                                                                                                    |
-| `documentType` | `spec`, `help`, or a prompt name from Settings, matched without case sensitivity. `spec` and `help` use the current instructions of those defaults, including edits. If omitted, uses the currently selected prompt. The link does not change the application's selected prompt. |
-| `folder`       | Optional Projects folder name, at most 80 characters. Reuses an existing case-insensitive match or creates it, then places the recording there. Multiple matching folders reject the request before media import. This is a library folder, not a filesystem path.               |
-| `auto`         | `true` or `false`; defaults to `false`. Both values import and process the video, transcribe its audio when present, and import supplied logs/elements. `true` then generates a document using the selected Text model or CLI tool.                                              |
-| `logPath`      | Optional absolute path to a local timestamped log file, using the existing Logs importer and configured size limit.                                                                                                                                                              |
-| `elementsPath` | Optional absolute path to a local timestamped elements file, using the existing Elements importer and configured size limit.                                                                                                                                                     |
+| Key            | Value and behavior                                                                                                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `videoPath`    | Required absolute path to a readable, nonempty local video file. Encode it as a query value, not as a `file://` URL. Path copies it into the recording's managed directory; the original is unchanged.                                                                                 |
+| `title`        | Optional recording title, at most 120 characters. Defaults to the source filename without its extension.                                                                                                                                                                               |
+| `type`         | Optional string, at most 120 characters, reserved for future use. Accepted but neither persisted nor used to change behavior.                                                                                                                                                          |
+| `documentType` | `spec`, `help`, or a prompt name from Settings, matched without case sensitivity. `spec` and `help` use the current instructions of those defaults, including edits. If omitted, uses the currently selected prompt. The link does not change the application's selected prompt.       |
+| `folder`       | Optional Projects folder name, at most 80 characters. Reuses an existing case-insensitive match or creates it, then places the recording there. Multiple matching folders reject the request before media import. This is a library folder, not a filesystem path.                     |
+| `auto`         | `true` or `false`; defaults to `false`. Both values import and process the video, transcribe its audio when present, and import supplied logs/elements. `true` then generates and saves a document using the selected Text model or CLI tool, and deploys it to the chosen coding CLI. |
+| `logPath`      | Optional absolute path to a local timestamped log file, using the existing Logs importer and configured size limit.                                                                                                                                                                    |
+| `elementsPath` | Optional absolute path to a local timestamped elements file, using the existing Elements importer and configured size limit.                                                                                                                                                           |
 
 For nullable fields (`title`, `type`, `documentType`, `folder`, `logPath`, and `elementsPath`), omission, an empty value, or the literal `null` means no supplied value. This does not apply to required `videoPath` or to `auto`, which only accepts `true` or `false` when present.
 
@@ -44,6 +44,23 @@ const link = `pathai://generate?${query.toString()}`;
 ```
 
 Omit optional file keys when no corresponding file exists. A minimal link is `pathai://generate?videoPath=C%3A%2FVideos%2Fdemo.mp4`.
+
+## Deployment choices
+
+`auto=true` runs the full workflow and then opens an interactive CLI terminal. `auto=false` only imports and processes the video and supplied timeline files; it neither generates a document nor deploys. Deployment uses the separate choices below the document chat and the Context Folder. It does not change the AI used to generate documentation.
+
+| Key             | Value and behavior                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli`           | Optional `codex`, `claude`, `copilot`, or `muse`. Must already be connected in Settings. Defaults to the saved deployment CLI.                                      |
+| `model`         | Optional exact model ID reported by that CLI. Defaults to the saved deployment model only when the CLI matches. Supply a model when choosing another CLI.           |
+| `reasoning`     | Optional supported reasoning effort reported for that model. Defaults to the saved effort only when both CLI and model match; otherwise uses the CLI default.       |
+| `contextFolder` | Optional absolute local project directory, separate from the library `folder` field. Defaults to the Context Folder selected in Path. Must exist before deployment. |
+
+These nullable fields use the same omission/empty/`null` semantics as other optional fields. Choices are validated and captured before an automatic workflow starts. Invalid/disconnected tools, unavailable model/effort combinations, or missing project folders stop the request before media import. Overrides apply to that request and do not replace saved preferences. Deployment launches only after activities, supplied Logs/Elements, and the stored AI document are ready. Any earlier failure prevents launch. Launch failure retains the recording and generated revision for manual retry.
+
+For example, add `cli: "codex"`, `model: "YOUR_CLI_MODEL_ID"`, `reasoning: "high"`, and `contextFolder: "C:/Projects/MyApp"` to the `URLSearchParams` example above. Replace the model placeholder with an ID from the connected CLI and use one of its supported reasoning levels. These are protocol URL query fields; Path does not expose an HTTP POST endpoint.
+
+Windows deployment opens PowerShell with the selected CLI, model, and reasoning. The terminal remains interactive and retains the CLI's normal approval and authentication behavior. A completion notification means the workflow handed the document to a terminal; it does not claim the coding agent finished implementing or publishing it. See [CLI deployment](CliDeployment.md).
 
 ## Processing and timing
 

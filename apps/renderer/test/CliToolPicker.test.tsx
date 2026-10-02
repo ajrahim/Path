@@ -10,6 +10,7 @@ afterEach(cleanup);
 function setup() {
   const cli: ReturnType<typeof useCliTools> = {
     state: {
+      deployment: { selection: null, folder: null },
       mode: "model",
       revision: 1,
       connected: ["claude"],
@@ -38,6 +39,9 @@ function setup() {
     refresh: vi.fn(async () => true),
     connect: vi.fn(async () => true),
     select: vi.fn(async () => true),
+    selectDeployment: vi.fn(async () => true),
+    chooseFolder: vi.fn(async () => {}),
+    clearFolder: vi.fn(async () => true),
     setMode: vi.fn(async () => true),
     openSettings: vi.fn(async () => {}),
   };

@@ -17,6 +17,7 @@
 @import "./components/ScreenshotImage.css";
 @import "./components/GuidePane.css";
 @import "./components/GuideChatInput.css";
+@import "./components/GuideDeployRow.css";
 @import "./components/GuideChatContext.css";
 @import "./components/GuideRevisionCompare.css";
 @import "./components/GuideVersionSelect.css";

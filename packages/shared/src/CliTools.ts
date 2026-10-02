@@ -35,7 +35,19 @@ export const cliPreferencesSchema = z.strictObject({
   selection: cliSelectionSchema.nullable(),
 });
 export type CliPreferences = z.infer<typeof cliPreferencesSchema>;
+export const cliDeploymentPreferencesSchema = z.strictObject({
+  selection: cliSelectionSchema.nullable(),
+  folder: z.string().min(1).max(4096).nullable(),
+});
+export type CliDeploymentPreferences = z.infer<typeof cliDeploymentPreferencesSchema>;
+export interface CliDeploymentOverrides {
+  cli?: CliToolId;
+  model?: string;
+  reasoning?: string;
+  contextFolder?: string;
+}
 export interface CliState extends CliPreferences {
+  deployment: CliDeploymentPreferences;
   revision: number;
   tools: CliToolStatus[];
 }

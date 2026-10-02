@@ -43,6 +43,9 @@ const desktopApi: DesktopApi = {
     select: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliSelect, input),
     setMode: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliSetMode, input),
     chooseFolder: () => ipcRenderer.invoke(IPC_CHANNELS.cliChooseFolder),
+    clearFolder: () => ipcRenderer.invoke(IPC_CHANNELS.cliClearFolder),
+    selectDeployment: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliSelectDeployment, input),
+    deploy: (input) => ipcRenderer.invoke(IPC_CHANNELS.cliDeploy, input),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
         listener(state);

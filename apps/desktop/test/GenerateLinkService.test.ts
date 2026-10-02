@@ -95,7 +95,19 @@ async function setup(overrides: Partial<PathGenerateLink> = {}) {
   });
 
   const openRecording = vi.fn<Dependencies["openRecording"]>();
+  const deployment = {
+    prepareDeployment: vi.fn<Dependencies["deployment"]["prepareDeployment"]>(async () => ({
+      executable: "codex.exe",
+      folder: directory,
+      selection: { tool: "codex", model: "model-a", effort: "high" },
+    })),
+    deployPrepared: vi.fn<Dependencies["deployment"]["deployPrepared"]>(async () => {
+      events.push("deploy");
+    }),
+  };
+
   const service = new GenerateLinkService({
+    deployment,
     recording,
     projects,
     documents,
@@ -111,6 +123,7 @@ async function setup(overrides: Partial<PathGenerateLink> = {}) {
   });
 
   return {
+    deployment,
     service,
     link,
     recording,
@@ -127,12 +140,64 @@ async function setup(overrides: Partial<PathGenerateLink> = {}) {
 }
 
 describe("GenerateLinkService", () => {
+  it("passes per-link deployment choices through and launches only after the document is committed", async () => {
+    const { service, link, deployment, events, documents } = await setup({
+      auto: true,
+      cli: "claude",
+      model: "sonnet",
+      reasoning: "high",
+      contextFolder: "C:/Project",
+    });
+
+    const generated = Promise.withResolvers<Awaited<ReturnType<typeof documents.generate>>>();
+
+    documents.generate.mockReturnValue(generated.promise);
+    const running = service.generate(link);
+
+    await vi.waitFor(() => expect(documents.generate).toHaveBeenCalledOnce());
+    expect(deployment.deployPrepared).not.toHaveBeenCalled();
+    generated.resolve({ markdown: "# Finished requirements", revision: { number: 1 } } as Awaited<
+      ReturnType<typeof documents.generate>
+    >);
+    await running;
+    expect(deployment.prepareDeployment).toHaveBeenCalledWith({
+      cli: "claude",
+      model: "sonnet",
+      reasoning: "high",
+      contextFolder: "C:/Project",
+    });
+    expect(deployment.deployPrepared).toHaveBeenCalledWith(
+      expect.any(Object),
+      "# Finished requirements",
+    );
+    expect(events.slice(-2)).toEqual(["deploy", "complete"]);
+  });
+
+  it("does not launch when generation fails and keeps the recording available", async () => {
+    const { service, link, documents, deployment, openRecording } = await setup({ auto: true });
+
+    documents.generate.mockRejectedValue(new Error("Generation failed"));
+    await expect(service.generate(link)).rejects.toThrow("Generation failed");
+    expect(deployment.deployPrepared).not.toHaveBeenCalled();
+    expect(openRecording).toHaveBeenCalledWith("recording");
+  });
+
+  it("validates deployment settings before importing an automatic request", async () => {
+    const { service, link, deployment, recording } = await setup({ auto: true });
+
+    deployment.prepareDeployment.mockRejectedValue(new Error("Choose a Context Folder"));
+    await expect(service.generate(link)).rejects.toThrow("Context Folder");
+    expect(recording.importVideo).not.toHaveBeenCalled();
+  });
+
   it("imports without document generation by default and reports each stage", async () => {
-    const { service, link, documents, events, openRecording } = await setup();
+    const { service, link, documents, events, openRecording, deployment } = await setup();
 
     await service.generate(link);
     expect(events).toEqual(["starting", "video", "processing", "complete"]);
     expect(documents.generate).not.toHaveBeenCalled();
+    expect(deployment.prepareDeployment).not.toHaveBeenCalled();
+    expect(deployment.deployPrepared).not.toHaveBeenCalled();
     expect(openRecording).toHaveBeenCalledWith("recording");
   });
 
@@ -160,6 +225,7 @@ describe("GenerateLinkService", () => {
       "log",
       "element",
       "document",
+      "deploy",
       "complete",
     ]);
     expect(documents.generate).toHaveBeenCalledWith({

@@ -8,12 +8,14 @@ import type { DesktopSettingsService } from "../settings/DesktopSettingsService"
 import type { InstructionFlowService } from "../settings/InstructionFlowService";
 import type { RemoteRepositories } from "../storage/DatabaseClient";
 import type { PathGenerateLink } from "./PathAppLink";
+import type { CliToolService } from "../ai/CliToolService";
 
 interface GenerateLinkDependencies {
   recording: Pick<RecordingController, "importVideo">;
   recordings: Pick<RemoteRepositories["recordings"], "get">;
   projects: Pick<RemoteRepositories["projects"], "list" | "moveToNamedProject">;
   documents: Pick<GuideDocumentService, "generate">;
+  deployment: Pick<CliToolService, "prepareDeployment" | "deployPrepared">;
   timelineImports: Pick<TimelineImportService, "importFile">;
   instructionFlows: Pick<InstructionFlowService, "get">;
   settings: Pick<DesktopSettingsService, "get">;
@@ -49,6 +51,17 @@ export class GenerateLinkService {
     if (matchingFolders.length > 1) {
       throw new Error("More than one Projects folder has this name. Rename one before importing.");
     }
+
+    // Snapshot and validate launch choices before starting the workflow; URL overrides
+    // apply only to this request, even if the user changes their selection while it runs.
+    const deployment = link.auto
+      ? await this.dependencies.deployment.prepareDeployment({
+          cli: link.cli,
+          model: link.model,
+          reasoning: link.reasoning,
+          contextFolder: link.contextFolder,
+        })
+      : null;
 
     this.dependencies.notify("starting", link.title);
     let recordingId: string | null = null;
@@ -96,7 +109,11 @@ export class GenerateLinkService {
           );
         }
 
-        await documents.generate({ id: recordingId, instructions });
+        const generated = await documents.generate({ id: recordingId, instructions });
+
+        if (deployment) {
+          await this.dependencies.deployment.deployPrepared(deployment, generated.markdown);
+        }
       }
 
       this.dependencies.notify("complete", link.title, recordingId);

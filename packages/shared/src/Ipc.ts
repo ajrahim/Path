@@ -64,6 +64,9 @@ export const IPC_CHANNELS = {
   cliSelect: "cli:select",
   cliSetMode: "cli:set-mode",
   cliChooseFolder: "cli:choose-folder",
+  cliClearFolder: "cli:clear-folder",
+  cliSelectDeployment: "cli:select-deployment",
+  cliDeploy: "cli:deploy",
   cliChanged: "cli:changed",
 
   settingsGet: "settings:get",
@@ -232,6 +235,8 @@ export const recordingIdInputSchema = z.strictObject({ id: z.string().uuid() });
 
 const MAX_MARKDOWN_LENGTH = 10_000_000;
 const markdownSchema = z.string().max(MAX_MARKDOWN_LENGTH);
+
+export const cliDeployInputSchema = z.strictObject({ markdown: markdownSchema.min(1) });
 const draftVersionSchema = z.number().int().min(0);
 const revisionNumberSchema = z.number().int().min(1);
 
@@ -400,6 +405,9 @@ export interface DesktopApi {
     select(input: CliSelection): Promise<CliState>;
     setMode(input: { mode: "model" | "cli" }): Promise<CliState>;
     chooseFolder(): Promise<string | null>;
+    clearFolder(): Promise<CliState>;
+    selectDeployment(input: CliSelection): Promise<CliState>;
+    deploy(input: { markdown: string }): Promise<void>;
     onChanged(listener: (state: CliState) => void): () => void;
   };
   settings: {

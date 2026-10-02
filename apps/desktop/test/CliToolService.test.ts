@@ -20,11 +20,11 @@ beforeEach(() => {
 });
 
 async function setup() {
-  let saved: unknown;
+  const saved = new Map<string, unknown>();
   const repository = {
-    get: vi.fn(async () => saved),
-    set: vi.fn(async (_key: string, value: unknown) => {
-      saved = structuredClone(value);
+    get: vi.fn(async (key: string) => saved.get(key)),
+    set: vi.fn(async (key: string, value: unknown) => {
+      saved.set(key, structuredClone(value));
     }),
   };
 
@@ -35,6 +35,59 @@ async function setup() {
 
   return { service, repository, changed };
 }
+
+it("keeps deployment separate from document AI and restores the selected folder and model", async () => {
+  const { service, repository } = await setup();
+
+  await service.connect("codex", true);
+  await service.selectDeployment({ tool: "codex", model: "a", effort: "high" });
+  await service.allowFolder("C:/Project");
+  expect(service.get().mode).toBe("model");
+  expect(service.get().selection).toBeNull();
+  const restored = new CliToolService(repository as never, "work");
+
+  await restored.initialize();
+  expect(restored.get().deployment).toEqual(service.get().deployment);
+  expect(await restored.prepareDeployment()).toEqual({
+    executable: "installed-cli",
+    folder: "C:/Project",
+    selection: { tool: "codex", model: "a", effort: "high" },
+  });
+  await restored.clearFolder();
+  await expect(restored.prepareDeployment()).rejects.toThrow("Context Folder");
+});
+
+it("validates per-request CLI overrides without replacing saved preferences", async () => {
+  const { service } = await setup();
+
+  await service.connect("codex", true);
+  await service.connect("claude", true);
+  await service.selectDeployment({ tool: "codex", model: "a", effort: "high" });
+  await service.allowFolder("C:/Saved");
+  const original = service.get().deployment;
+  const request = await service.prepareDeployment({
+    cli: "claude",
+    model: "a",
+    reasoning: "low",
+    contextFolder: "C:/Request",
+  });
+
+  expect(request).toMatchObject({
+    folder: "C:/Request",
+    selection: { tool: "claude", model: "a", effort: "low" },
+  });
+  expect(service.get().deployment).toEqual(original);
+  await expect(service.prepareDeployment({ cli: "claude" })).rejects.toThrow("model");
+  await expect(service.prepareDeployment({ reasoning: "unsupported" })).rejects.toThrow(
+    "reasoning",
+  );
+  await expect(service.prepareDeployment({ model: "not-listed" })).rejects.toThrow("model");
+  await expect(service.prepareDeployment({ contextFolder: "relative/folder" })).rejects.toThrow(
+    "local",
+  );
+  await service.connect("codex", false);
+  await expect(service.prepareDeployment()).rejects.toThrow("Connect");
+});
 
 it("persists CLI selection separately, restores it, and returns to text mode on disconnect", async () => {
   const { service, repository } = await setup();

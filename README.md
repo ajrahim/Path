@@ -76,9 +76,11 @@ The `generate` query uses case-sensitive camelCase keys:
 | `type`         | No       | String up to 120 characters, reserved for future use. Currently neither stored nor used to change behavior.                                                                                                               |
 | `documentType` | No       | `spec`, `help`, or a prompt name from Settings, matched case-insensitively; up to 120 characters. Defaults to the selected prompt. Edited default instructions are honored; the link does not change the selected prompt. |
 | `folder`       | No       | Projects folder name, up to 80 characters, not a filesystem directory. Reuses a case-insensitive match or creates the folder. Ambiguous duplicate names are rejected. Omit to leave the recording ungrouped.              |
-| `auto`         | No       | Exactly `true` or `false`; defaults to `false`. Both process the video and supplied imports. `true` then generates a document using the selected Text model or CLI tool.                                                  |
+| `auto`         | No       | Exactly `true` or `false`; defaults to `false`. Both process the video and supplied imports. `true` then generates and saves a document, then deploys it to the selected coding CLI.                                      |
 | `logPath`      | No       | Absolute path to a timestamped log file supported by the Logs importer. The configured import size limit applies.                                                                                                         |
 | `elementsPath` | No       | Absolute path to a timestamped elements file supported by the Elements importer. The same size limit applies.                                                                                                             |
+
+Deployment can also be configured per link with `cli`, `model`, `reasoning`, and `contextFolder`. These override the separate deployment row below chat without changing the documentation AI. The selected CLI must be connected; Context Folder must point to an existing local project. See [deployment query fields](specs/AppLinks.md#deployment-choices). There is no Auto toggle in the UI; **Deploy** launches the current document manually.
 
 For optional fields other than `auto`, omission, an empty value, or the literal `null` means no supplied value. Do not pass `null` for `videoPath` or `auto`. Unknown or repeated keys are rejected; `video_path`, `document_type`, `log`, and `elemets` are not aliases. Remote URLs, network shares, device paths, credentials, ports, and fragments are unsupported. File paths are limited to 4,096 characters and the complete link to 16,384 characters.
 
@@ -104,7 +106,7 @@ const query = new URLSearchParams({
 const link = `pathai://generate?${query.toString()}`;
 ```
 
-Generation requests run sequentially. Path processes the video and its speech, imports any supplied logs and elements, and then generates a document if `auto=true`. Successful generation is stored in document version history. Automatic generation stops if activity processing fails or supplied imports have no rows aligned with the video; the imported recording remains available for review after a later import or generation failure. Finish an active screen recording before importing a video.
+Generation requests run sequentially. Path processes the video and its speech, imports any supplied logs and elements, and then generates, saves, and deploys a document if `auto=true`. Successful generation is stored in document version history. Automatic generation stops if activity processing fails or supplied imports have no rows aligned with the video; the imported recording remains available for review after a later import or generation failure. Finish an active screen recording before importing a video.
 
 Imported video timing uses its creation timestamp when available, otherwise its modification time minus duration as an approximation. Review and adjust the Logs/Elements offset if timestamps do not line up. A plain video cannot reconstruct mouse clicks or click screenshots without capture telemetry.
 

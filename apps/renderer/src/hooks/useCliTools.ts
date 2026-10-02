@@ -86,9 +86,41 @@ export function useCliTools() {
     return api ? run(() => api.setMode({ mode })) : false;
   }
 
+  async function selectDeployment(selection: CliSelection) {
+    const api = getDesktopApi()?.cli;
+
+    return api ? run(() => api.selectDeployment(selection)) : false;
+  }
+
+  async function chooseFolder() {
+    const api = getDesktopApi()?.cli;
+
+    if (!api) return;
+    await api.chooseFolder();
+    apply(await api.get());
+  }
+
+  async function clearFolder() {
+    const api = getDesktopApi()?.cli;
+
+    return api ? run(() => api.clearFolder()) : false;
+  }
+
   async function openSettings() {
     await getDesktopApi()?.app.openSettings({ section: "cli" });
   }
 
-  return { state, busy, error, refresh, connect, select, setMode, openSettings };
+  return {
+    state,
+    busy,
+    error,
+    refresh,
+    connect,
+    select,
+    setMode,
+    selectDeployment,
+    chooseFolder,
+    clearFolder,
+    openSettings,
+  };
 }

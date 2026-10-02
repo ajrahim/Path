@@ -159,19 +159,37 @@ it("returns focus on Escape and limits context to four items", () => {
   expect((trigger as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("only enables a folder for CLI mode and sends the chosen folder with the update", async () => {
+it("sends the chosen project folder with CLI document updates", async () => {
   const state = {
     revision: 1,
     mode: "cli",
     connected: ["codex"],
     selection: { tool: "codex", model: "a", effort: null },
     tools: [],
+    deployment: { selection: null, folder: null as string | null },
   };
 
-  const chooseFolder = vi.fn(async () => "C:/Example/Project");
+  const chooseFolder = vi.fn(async () => {
+    state.deployment.folder = "C:/Example/Project";
+    state.revision++;
+
+    return state.deployment.folder;
+  });
+
+  const clearFolder = vi.fn(async () => {
+    state.deployment.folder = null;
+    state.revision++;
+
+    return state;
+  });
 
   window.desktop = {
-    cli: { get: async () => state, onChanged: () => () => {}, chooseFolder },
+    cli: {
+      get: async () => structuredClone(state),
+      onChanged: () => () => {},
+      chooseFolder,
+      clearFolder,
+    },
   } as never;
   const { view, input, send, onSend } = renderChatInput();
   const folder = view.getByRole("button", { name: "Context Folder" }) as HTMLButtonElement;
@@ -186,13 +204,13 @@ it("only enables a folder for CLI mode and sends the chosen folder with the upda
   );
   expect(chooseFolder).toHaveBeenCalledOnce();
   fireEvent.click(view.getByRole("button", { name: "Remove context folder" }));
-  expect(view.getByRole("button", { name: "Context Folder" })).toBeTruthy();
+  expect(await view.findByRole("button", { name: "Context Folder" })).toBeTruthy();
 });
 
-it("keeps the folder control disabled without a selected CLI", () => {
+it("keeps the folder control disabled outside the desktop app", () => {
   const { view } = renderChatInput();
   const button = view.getByRole("button", { name: "Context Folder" }) as HTMLButtonElement;
 
   expect(button.disabled).toBe(true);
-  expect(button.parentElement?.title).toBe("Connect a CLI in Settings");
+  expect(button.parentElement?.title).toBe(messages.guide.deploymentFolderHint);
 });

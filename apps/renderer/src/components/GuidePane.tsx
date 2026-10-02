@@ -13,6 +13,7 @@ import { useFormatter, useNow, useTranslations } from "next-intl";
 import type { GuideContextItem, RecordingSummary } from "@path/shared";
 import { Button } from "@/components/Button";
 import { GuideChatInput } from "./GuideChatInput";
+import { GuideDeployRow } from "./GuideDeployRow";
 import { GuideRevisionCompare } from "./GuideRevisionCompare";
 import { GuideVersionSelect } from "./GuideVersionSelect";
 import { InstructionFlowSelect } from "./InstructionFlowSelect";
@@ -279,6 +280,13 @@ export function GuidePane({
                   </Button>
                 </div>
               </div>
+              {flows.selectedFlow.id !== "help-guide" && (
+                <GuideDeployRow
+                  key={`deploy-${recording.id}`}
+                  markdown={guide.markdown}
+                  disabled={isBusy || !!preview}
+                />
+              )}
             </>
           ) : (
             <div className="guide-empty-state">

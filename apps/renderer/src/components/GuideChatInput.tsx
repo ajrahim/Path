@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FileText, Folder, LoaderCircle, Mic, Send, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCliTools } from "../hooks/useCliTools";
-import { getDesktopApi } from "../lib/Desktop";
 import { Button } from "./Button";
 import { GuideChatContext } from "./GuideChatContext";
 import { MAX_GUIDE_CONTEXT_ITEMS, type GuideContextItem } from "@path/shared";
@@ -68,16 +67,14 @@ export function GuideChatInput({
   const t = useTranslations("guide");
   const contextFolderHintId = useId();
   const cli = useCliTools();
-  const [contextFolder, setContextFolder] = useState<string | null>(null);
+  const contextFolder = cli.state?.deployment.folder ?? null;
   const [folderError, setFolderError] = useState(false);
   const [choosingFolder, setChoosingFolder] = useState(false);
-  const canUseFolder =
+  const canReadFolder =
     cli.state?.mode === "cli" &&
     Boolean(cli.state.selection && cli.state.connected.includes(cli.state.selection.tool));
 
-  const folderHint = canUseFolder
-    ? (contextFolder ?? t("chatContextFolder"))
-    : t("chatContextFolderHint");
+  const folderHint = contextFolder ?? t("deploymentFolderHint");
 
   const [context, setContext] = useState<GuideContextItem[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -108,7 +105,7 @@ export function GuideChatInput({
     setSending(true);
     setSendError(false);
     try {
-      const sent = await (canUseFolder && contextFolder
+      const sent = await (canReadFolder && contextFolder
         ? onSend(request, context, contextFolder)
         : onSend(request, context));
 
@@ -246,14 +243,12 @@ export function GuideChatInput({
               size="sm"
               variant="ghost"
               className="guide-chat-context-folder"
-              disabled={busy || !canUseFolder}
+              disabled={busy || !cli.state}
               onClick={async () => {
                 setChoosingFolder(true);
                 setFolderError(false);
                 try {
-                  const folder = await getDesktopApi()?.cli.chooseFolder();
-
-                  if (folder) setContextFolder(folder);
+                  await cli.chooseFolder();
                 } catch {
                   setFolderError(true);
                 } finally {
@@ -264,7 +259,7 @@ export function GuideChatInput({
             >
               <Folder aria-hidden="true" size={14} />
               <span>
-                {contextFolder && canUseFolder
+                {contextFolder
                   ? contextFolder.split(/[\\/]/).filter(Boolean).at(-1)
                   : t("chatContextFolder")}
               </span>
@@ -273,7 +268,7 @@ export function GuideChatInput({
               {folderHint}
             </span>
           </span>
-          {contextFolder && canUseFolder && (
+          {contextFolder && (
             <Button
               type="button"
               size="icon"
@@ -281,7 +276,7 @@ export function GuideChatInput({
               disabled={busy}
               aria-label={t("chatRemoveFolder")}
               title={t("chatRemoveFolder")}
-              onClick={() => setContextFolder(null)}
+              onClick={() => void cli.clearFolder()}
             >
               <X size={12} />
             </Button>

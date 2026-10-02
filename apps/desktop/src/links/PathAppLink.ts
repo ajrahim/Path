@@ -1,4 +1,5 @@
 import { posix, win32 } from "node:path";
+import { cliToolIds, type CliDeploymentOverrides, type CliToolId } from "@path/shared";
 
 const MAX_APP_LINK_LENGTH = 16_384;
 const MAX_LOCAL_PATH_LENGTH = 4096;
@@ -11,9 +12,13 @@ const GENERATE_FIELDS = new Set([
   "auto",
   "logPath",
   "elementsPath",
+  "cli",
+  "model",
+  "reasoning",
+  "contextFolder",
 ]);
 
-export interface PathGenerateLink {
+export interface PathGenerateLink extends CliDeploymentOverrides {
   route: "generate";
   videoPath: string;
   title: string;
@@ -96,6 +101,15 @@ export function parsePathAppLink(raw: string): PathAppLink {
     ? win32.parse(videoPath).name
     : posix.parse(videoPath).name;
 
+  const cli = nullableText(fields, "cli", 30);
+  const model = nullableText(fields, "model", 200);
+  const reasoning = nullableText(fields, "reasoning", 30);
+  const contextFolder = localPath(fields, "contextFolder");
+
+  if (cli && !cliToolIds.includes(cli as CliToolId)) {
+    throw new PathAppLinkError("cli must be codex, claude, copilot, or muse.");
+  }
+
   return {
     route: "generate",
     videoPath,
@@ -106,6 +120,10 @@ export function parsePathAppLink(raw: string): PathAppLink {
     auto: auto === "true",
     logPath: localPath(fields, "logPath"),
     elementsPath: localPath(fields, "elementsPath"),
+    ...(cli ? { cli: cli as CliToolId } : {}),
+    ...(model ? { model } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    ...(contextFolder ? { contextFolder } : {}),
   };
 }
 

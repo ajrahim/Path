@@ -243,17 +243,22 @@ export default function SettingsPage() {
                     onCommit={(maxFileSizeMb) => void updateTimelineImports({ maxFileSizeMb })}
                   />
                 )}
-              </div>
-              <div className="settings-reset">
-                <p>{t("settings.clearDataDescription")}</p>
-                <Button
-                  variant="danger"
-                  disabled={isBusy || !settings}
-                  onClick={() => setIsClearDataOpen(true)}
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                  {t("settings.clearData")}
-                </Button>
+                <div className="settings-reset">
+                  <div>
+                    <strong>{t("settings.resetTitle")}</strong>
+                    <p>{t("settings.clearDataDescription")}</p>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    aria-label={t("settings.clearData")}
+                    disabled={isBusy || !settings}
+                    onClick={() => setIsClearDataOpen(true)}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    {t("settings.clearDataAction")}
+                  </Button>
+                </div>
               </div>
             </section>
           )}
