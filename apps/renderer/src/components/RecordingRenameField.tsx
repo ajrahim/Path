@@ -14,7 +14,7 @@ export function RecordingRenameField({
 }) {
   const [draftTitle, setDraftTitle] = useState(recording.title);
   const savingRef = useRef(false);
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   async function save(): Promise<void> {
     const title = draftTitle.trim();
@@ -22,20 +22,20 @@ export function RecordingRenameField({
     if (!title || savingRef.current || pending) return;
 
     savingRef.current = true;
-    setSaving(true);
+    setIsSaving(true);
 
     try {
       await onSave(title);
     } finally {
       savingRef.current = false;
-      setSaving(false);
+      setIsSaving(false);
     }
   }
 
   return (
     <input
       className="rename-input"
-      disabled={saving || pending}
+      disabled={isSaving || pending}
       value={draftTitle}
       onClick={(event) => event.stopPropagation()}
       onChange={(event) => setDraftTitle(event.target.value)}

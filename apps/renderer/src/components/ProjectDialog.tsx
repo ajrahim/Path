@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Folder } from "lucide-react";
 import { useTranslations } from "next-intl";
-import type { ProjectChangeInput, RecordingProject } from "@path/shared";
+import {
+  MAX_PROJECT_NAME_LENGTH,
+  type ProjectChangeInput,
+  type RecordingProject,
+} from "@path/shared";
 import { Button } from "./Button";
 
 export type ProjectDialogAction =
@@ -28,9 +32,9 @@ export function ProjectDialog({
     action.kind === "move" ? (action.projectId ?? "") : "",
   );
 
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
-  const [error, setError] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -50,8 +54,8 @@ export function ProjectDialog({
     if (savingRef.current) return;
     if ((action.kind === "create" || action.kind === "rename") && !name.trim()) return;
     savingRef.current = true;
-    setSaving(true);
-    setError(false);
+    setIsSaving(true);
+    setHasError(false);
     try {
       if (action.kind === "create") {
         await change({ action: "create", name });
@@ -69,10 +73,10 @@ export function ProjectDialog({
 
       onClose();
     } catch {
-      setError(true);
+      setHasError(true);
     } finally {
       savingRef.current = false;
-      setSaving(false);
+      setIsSaving(false);
     }
   }
 
@@ -102,9 +106,9 @@ export function ProjectDialog({
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              maxLength={80}
+              maxLength={MAX_PROJECT_NAME_LENGTH}
               required
-              disabled={saving}
+              disabled={isSaving}
               placeholder={t("namePlaceholder")}
             />
           </label>
@@ -114,7 +118,7 @@ export function ProjectDialog({
             <select
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
-              disabled={saving}
+              disabled={isSaving}
             >
               <option value="">{t("ungrouped")}</option>
               {projects.map((project) => (
@@ -127,22 +131,28 @@ export function ProjectDialog({
         ) : (
           <p>{t("removeDescription", { name: action.project.name })}</p>
         )}
-        {error && (
+        {hasError && (
           <p className="project-error" role="alert">
             {t("changeError")}
           </p>
         )}
         <footer>
-          <Button data-cancel type="button" variant="secondary" disabled={saving} onClick={onClose}>
+          <Button
+            data-cancel
+            type="button"
+            variant="secondary"
+            disabled={isSaving}
+            onClick={onClose}
+          >
             {t("cancel")}
           </Button>
           <Button
             type="submit"
             disabled={
-              saving || ((action.kind === "create" || action.kind === "rename") && !name.trim())
+              isSaving || ((action.kind === "create" || action.kind === "rename") && !name.trim())
             }
           >
-            {saving ? t("saving") : t(`${action.kind}Action`)}
+            {isSaving ? t("saving") : t(`${action.kind}Action`)}
           </Button>
         </footer>
       </form>

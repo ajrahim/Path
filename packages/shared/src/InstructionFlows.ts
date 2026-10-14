@@ -53,9 +53,17 @@ export const BUILT_IN_FLOWS: InstructionFlow[] = [
   },
 ];
 
+export const MAX_INSTRUCTION_FLOW_NAME_LENGTH = 80;
+export const MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH = 10_000;
+
 const instructionFlowIdSchema = z.string().trim().min(1).max(200);
-const instructionFlowNameSchema = z.string().trim().min(1).max(80);
-const instructionFlowInstructionsSchema = z.string().trim().min(1).max(10_000);
+const instructionFlowNameSchema = z.string().trim().min(1).max(MAX_INSTRUCTION_FLOW_NAME_LENGTH);
+const instructionFlowInstructionsSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH);
+
 const instructionFlowIconSchema = z.enum(instructionFlowIcons);
 const customInstructionFlowSchema = z.strictObject({
   id: instructionFlowIdSchema.refine((id) => id.startsWith("custom-")),

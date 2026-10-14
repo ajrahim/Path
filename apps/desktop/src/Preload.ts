@@ -86,6 +86,11 @@ const desktopApi: DesktopApi = {
     },
   },
   guides: {
+    getCollection: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGetCollection, input),
+    setGenerationMode: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSetGenerationMode, input),
+    suggestWorkflows: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSuggestWorkflows, input),
+    saveWorkflowPlan: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesSaveWorkflowPlan, input),
+    generateCollection: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGenerateCollection, input),
     generate: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesGenerate, input),
     update: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesUpdate, input),
     exportMarkdown: (input) => ipcRenderer.invoke(IPC_CHANNELS.guidesExportMarkdown, input),

@@ -16,6 +16,8 @@
 @import "./components/ActivityActionMenu.css";
 @import "./components/ScreenshotImage.css";
 @import "./components/GuidePane.css";
+@import "./components/GuideDocumentModeSwitch.css";
+@import "./components/GuideDocumentStructure.css";
 @import "./components/GuideChatInput.css";
 @import "./components/GuideDeployRow.css";
 @import "./components/GuideChatContext.css";

@@ -11,7 +11,7 @@ export function CliToolPicker({ cli }: { cli: ReturnType<typeof useCliTools> }) 
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Partial<Record<CliToolId, boolean>>>({});
-  const [effortOpen, setEffortOpen] = useState(true);
+  const [isEffortOpen, setIsEffortOpen] = useState(true);
   const search = query.trim().toLowerCase();
   const selection = cli.state?.mode === "cli" ? cli.state.selection : null;
   const tools = cli.state?.tools ?? [];
@@ -106,7 +106,7 @@ export function CliToolPicker({ cli }: { cli: ReturnType<typeof useCliTools> }) 
                           aria-checked={checked}
                           className="local-model-option"
                           title={model.description || model.id}
-                          disabled={cli.busy}
+                          disabled={cli.isBusy}
                           onClick={() =>
                             void cli.select({
                               tool: tool.id,
@@ -139,14 +139,14 @@ export function CliToolPicker({ cli }: { cli: ReturnType<typeof useCliTools> }) 
           <button
             type="button"
             className="local-api-provider-toggle"
-            aria-expanded={effortOpen}
+            aria-expanded={isEffortOpen}
             aria-controls={`${listId}-efforts`}
-            onClick={() => setEffortOpen((value) => !value)}
+            onClick={() => setIsEffortOpen((value) => !value)}
           >
             <ChevronRight size={15} aria-hidden="true" />
             <span>{t("effort")}</span>
           </button>
-          {effortOpen && (
+          {isEffortOpen && (
             <div
               id={`${listId}-efforts`}
               className="local-api-provider-models"
@@ -161,7 +161,7 @@ export function CliToolPicker({ cli }: { cli: ReturnType<typeof useCliTools> }) 
                     role="menuitemradio"
                     aria-checked={selection.effort === effort}
                     className="local-model-option"
-                    disabled={cli.busy || !ready}
+                    disabled={cli.isBusy || !ready}
                     onClick={() => void cli.select({ ...selection, effort })}
                   >
                     <span>

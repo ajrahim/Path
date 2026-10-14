@@ -19,17 +19,17 @@ export function InstructionFlowIconSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
-  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+  useOutsidePointerDown(isOpen, [rootRef], () => setIsOpen(false));
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
-  }, [open]);
+  }, [isOpen]);
 
   function close(): void {
-    setOpen(false);
+    setIsOpen(false);
     triggerRef.current?.focus();
   }
 
@@ -38,10 +38,10 @@ export function InstructionFlowIconSelect({
       className="prompt-icon-select"
       ref={rootRef}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
       onKeyDown={(event) => {
-        if (open && event.key === "Escape") {
+        if (isOpen && event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
           close();
@@ -55,21 +55,21 @@ export function InstructionFlowIconSelect({
         aria-label={t("promptIcon")}
         title={t("promptIcon")}
         aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? menuId : undefined}
         disabled={disabled}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setIsOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            setOpen(true);
+            setIsOpen(true);
           }
         }}
       >
         <InstructionFlowGlyph icon={icon} size={17} aria-hidden="true" />
         <ChevronDown size={12} aria-hidden="true" />
       </button>
-      {open && (
+      {isOpen && (
         <div
           id={menuId}
           ref={menuRef}

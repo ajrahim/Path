@@ -13,10 +13,10 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
   const cli = useCliTools();
   const { refresh } = cli;
   const helpId = useId();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [launching, setLaunching] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
   const pending = useRef(false);
   const mounted = useRef(true);
   const selection = cli.state?.deployment.selection;
@@ -24,7 +24,7 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
   const tools = cli.state?.tools.filter((tool) => tool.connected && tool.status === "ready") ?? [];
   const tool = tools.find((tool) => tool.id === selection?.tool);
   const model = tool?.models.find((model) => model.id === selection?.model);
-  const busy = disabled || launching || cli.busy;
+  const isBusy = disabled || isLaunching || cli.isBusy;
   const ready = Boolean(model && folder && markdown.trim());
 
   useEffect(() => {
@@ -39,22 +39,22 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
   async function deploy(): Promise<void> {
     const api = getDesktopApi()?.cli;
 
-    if (!api || !ready || busy || pending.current) return;
+    if (!api || !ready || isBusy || pending.current) return;
     pending.current = true;
-    setLaunching(true);
+    setIsLaunching(true);
     setMessage(null);
-    setFailed(false);
+    setHasFailed(false);
     try {
       await api.deploy({ markdown });
       if (mounted.current) setMessage(t("deploymentOpened"));
     } catch (error) {
       if (mounted.current) {
-        setFailed(true);
+        setHasFailed(true);
         setMessage(getErrorMessage(error, t("deploymentFailed")));
       }
     } finally {
       pending.current = false;
-      if (mounted.current) setLaunching(false);
+      if (mounted.current) setIsLaunching(false);
     }
   }
 
@@ -64,27 +64,27 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
         <div className="guide-deploy-label">{t("deploymentLabel")}</div>
         <span
           className="guide-deploy-help"
-          onMouseEnter={() => setHelpOpen(true)}
-          onMouseLeave={() => setHelpOpen(false)}
+          onMouseEnter={() => setIsHelpOpen(true)}
+          onMouseLeave={() => setIsHelpOpen(false)}
         >
           <button
             type="button"
             className="guide-deploy-info"
             aria-label={t("deploymentInfoLabel")}
-            aria-describedby={helpOpen ? helpId : undefined}
-            onFocus={() => setHelpOpen(true)}
-            onBlur={() => setHelpOpen(false)}
-            onClick={() => setHelpOpen(true)}
+            aria-describedby={isHelpOpen ? helpId : undefined}
+            onFocus={() => setIsHelpOpen(true)}
+            onBlur={() => setIsHelpOpen(false)}
+            onClick={() => setIsHelpOpen(true)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.stopPropagation();
-                setHelpOpen(false);
+                setIsHelpOpen(false);
               }
             }}
           >
             <Info size={12} aria-hidden="true" />
           </button>
-          {helpOpen && (
+          {isHelpOpen && (
             <span id={helpId} role="tooltip" className="guide-deploy-tooltip">
               {t("deploymentInfo")}
             </span>
@@ -95,15 +95,15 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
             className="guide-deploy-button"
             size="sm"
             variant="secondary"
-            disabled={busy || !ready}
+            disabled={isBusy || !ready}
             onClick={() => void deploy()}
           >
-            {launching ? (
+            {isLaunching ? (
               <LoaderCircle size={11} className="guide-chat-spinner" aria-hidden="true" />
             ) : (
               <Rocket size={11} aria-hidden="true" />
             )}
-            {t(launching ? "deploying" : "deploy")}
+            {t(isLaunching ? "deploying" : "deploy")}
           </Button>
         </span>
       </div>
@@ -114,7 +114,7 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
             value={tool?.id ?? ""}
             text={tool ? cliToolNames[tool.id] : t("deploymentCli")}
             icon={<Terminal size={12} aria-hidden="true" />}
-            disabled={busy}
+            disabled={isBusy}
             options={[
               ...tools.map((item) => ({ value: item.id, label: cliToolNames[item.id] })),
               { value: "settings", label: t("deploymentConnect"), action: true },
@@ -139,7 +139,7 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
             value={model?.id ?? ""}
             text={model?.name ?? t("deploymentModel")}
             icon={<Bot size={12} aria-hidden="true" />}
-            disabled={busy || !tool}
+            disabled={isBusy || !tool}
             options={tool?.models.map((item) => ({ value: item.id, label: item.name })) ?? []}
             onSelect={(value) => {
               if (tool) {
@@ -152,7 +152,7 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
             value={selection?.effort ?? ""}
             text={selection?.effort ?? t("deploymentReasoning")}
             icon={<Brain size={12} aria-hidden="true" />}
-            disabled={busy || !model?.efforts.length}
+            disabled={isBusy || !model?.efforts.length}
             options={[
               { value: "", label: t("deploymentReasoning") },
               ...(model?.efforts.map((effort) => ({ value: effort, label: effort })) ?? []),
@@ -164,7 +164,7 @@ export function GuideDeployRow({ markdown, disabled }: { markdown: string; disab
         </div>
       </div>
       {(message || cli.error) && (
-        <div className="guide-deploy-message" role={failed || cli.error ? "alert" : "status"}>
+        <div className="guide-deploy-message" role={hasFailed || cli.error ? "alert" : "status"}>
           {cli.error ?? message}
         </div>
       )}

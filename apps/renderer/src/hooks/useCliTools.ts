@@ -5,7 +5,7 @@ import { getErrorMessage } from "../lib/ErrorMessage";
 
 export function useCliTools() {
   const [state, setState] = useState<CliState | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true),
     pending = useRef(false);
@@ -41,7 +41,7 @@ export function useCliTools() {
     async (action: () => Promise<CliState>): Promise<boolean> => {
       if (pending.current) return false;
       pending.current = true;
-      setBusy(true);
+      setIsBusy(true);
       setError(null);
       try {
         apply(await action());
@@ -53,7 +53,7 @@ export function useCliTools() {
         return false;
       } finally {
         pending.current = false;
-        if (mounted.current) setBusy(false);
+        if (mounted.current) setIsBusy(false);
       }
     },
     [apply],
@@ -112,7 +112,7 @@ export function useCliTools() {
 
   return {
     state,
-    busy,
+    isBusy,
     error,
     refresh,
     connect,

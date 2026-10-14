@@ -34,15 +34,15 @@ export function GuideVersionSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const initialFocus = useRef<"selected" | "last">("selected");
   const label =
     shownNumber === null ? t("versionCurrent") : t("versionName", { number: shownNumber });
 
-  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+  useOutsidePointerDown(isOpen, [rootRef], () => setIsOpen(false));
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
 
     // ArrowUp enters from the end; other openings focus the version in the editor.
     const items = menuRef.current?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']");
@@ -52,10 +52,10 @@ export function GuideVersionSelect({
 
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: "nearest" });
-  }, [open]);
+  }, [isOpen]);
 
   function close(): void {
-    setOpen(false);
+    setIsOpen(false);
     triggerRef.current?.focus();
   }
 
@@ -81,7 +81,7 @@ export function GuideVersionSelect({
       ref={rootRef}
       className="guide-version-picker"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
     >
       <button
@@ -90,25 +90,25 @@ export function GuideVersionSelect({
         className="guide-version-trigger"
         aria-label={`${t("versionLabel")}: ${label}`}
         aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? menuId : undefined}
         disabled={disabled}
         onClick={() => {
           initialFocus.current = "selected";
-          setOpen((current) => !current);
+          setIsOpen((current) => !current);
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             initialFocus.current = event.key === "ArrowUp" ? "last" : "selected";
-            setOpen(true);
+            setIsOpen(true);
           }
         }}
       >
         <span>{label}</span>
         <ChevronDown className="guide-version-chevron" aria-hidden="true" size={14} />
       </button>
-      {open && (
+      {isOpen && (
         <div
           ref={menuRef}
           id={menuId}

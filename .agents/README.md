@@ -20,6 +20,9 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Chat image and text context               | [Guide chat context](../specs/GuideChatContext.md)                  |
 | CLI text generation and code context      | [CLI tools](../specs/CliTools.md)                                   |
 | Document deployment to coding CLIs        | [CLI deployment](../specs/CliDeployment.md)                         |
+| Combined or split workflow documents      | [Document structure](../specs/DocumentStructure.md)                 |
+| Editable suggested workflow tabs          | [Editable document splits](../specs/EditableDocumentSplits.md)      |
+| Workflow tab menus and compact controls   | [Document tab actions](../specs/DocumentTabActions.md)              |
 | Settings sections and prompt library      | [Settings and prompts](../specs/SettingsAndPrompts.md)              |
 | Storage ownership, drafts, history        | [Local persistence](../specs/LocalPersistence.md)                   |
 | Reset to a fresh installation             | [Clear all data and settings](../specs/ResetAppData.md)             |

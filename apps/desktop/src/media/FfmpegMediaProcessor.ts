@@ -17,6 +17,10 @@ export interface MediaProcessor {
 
 const MEDIA_PROBE_TIMEOUT_MS = 30_000;
 const MAX_PROBE_OUTPUT_CHARACTERS = 64_000;
+const MAX_ARTIFACT_ATTEMPTS = 2;
+const ARTIFACT_RETRY_DELAY_MS = 500;
+/** Anything smaller cannot be a playable media file or image. */
+const MIN_ARTIFACT_BYTES = 100;
 
 export class FfmpegMediaProcessor implements MediaProcessor {
   constructor(private readonly executablePath: string) {}
@@ -155,19 +159,19 @@ export class FfmpegMediaProcessor implements MediaProcessor {
     );
 
     // Promote a complete artifact only; an undersized output gets one bounded retry.
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_ARTIFACT_ATTEMPTS; attempt += 1) {
       await this.run(inputPath, temporaryPath, outputArguments);
       const output = await stat(temporaryPath);
 
-      if (output.size >= 100) {
+      if (output.size >= MIN_ARTIFACT_BYTES) {
         await rm(outputPath, { force: true });
         await rename(temporaryPath, outputPath);
 
         return;
       }
 
-      if (attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      if (attempt < MAX_ARTIFACT_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, ARTIFACT_RETRY_DELAY_MS));
       }
     }
 

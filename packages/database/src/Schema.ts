@@ -13,7 +13,9 @@ import {
 import type {
   CaptureMode,
   CaptureRegion,
+  DocumentGenerationMode,
   DocumentRevisionKind,
+  DocumentWorkflow,
   MediaPause,
   MouseButton,
   RecordingStatus,
@@ -117,7 +119,7 @@ export const clickEvents = sqliteTable(
 );
 
 /**
- * One document per recording. The saved revision is the last explicit save; the draft version
+ * Documents belong to a recording. The saved revision is the last explicit save; the draft version
  * advances on every draft change so a stale editor cannot overwrite newer unsaved text.
  */
 export const documents = sqliteTable(
@@ -126,8 +128,9 @@ export const documents = sqliteTable(
     id: text("id").primaryKey(),
     recordingId: text("recording_id")
       .notNull()
-      .unique()
       .references(() => recordings.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default("Document"),
+    position: integer("position").default(0),
     savedRevisionNumber: integer("saved_revision_number"),
     savedAt: text("saved_at"),
     draftVersion: integer("draft_version").notNull().default(0),
@@ -135,6 +138,7 @@ export const documents = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (table) => [
+    uniqueIndex("documents_recording_position_idx").on(table.recordingId, table.position),
     // A saved pointer must name a revision of this same document.
     foreignKey({
       columns: [table.id, table.savedRevisionNumber],
@@ -142,6 +146,19 @@ export const documents = sqliteTable(
     }),
   ],
 );
+
+/**
+ * One row per recording with generated documents. It holds the combine/split mode and the
+ * editable split plan; a null plan means split mode has not suggested workflows yet.
+ */
+export const documentCollections = sqliteTable("document_collections", {
+  recordingId: text("recording_id")
+    .primaryKey()
+    .references(() => recordings.id, { onDelete: "cascade" }),
+  mode: text("mode").$type<DocumentGenerationMode>().notNull().default("combine"),
+  workflowPlan: text("workflow_plan", { mode: "json" }).$type<DocumentWorkflow[] | null>(),
+  planVersion: integer("plan_version").notNull().default(0),
+});
 
 /** Append-only snapshots; embedded data-URL images are stored once in `document_images`. */
 export const documentRevisions = sqliteTable(

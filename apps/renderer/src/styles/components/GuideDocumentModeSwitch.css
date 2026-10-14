@@ -1,0 +1,69 @@
+.guide-mode-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-ink);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.guide-mode-switch:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.guide-mode-switch:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.guide-mode-switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.guide-mode-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.guide-mode-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--faint-ink);
+}
+
+.guide-mode-track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  content: "";
+  transition: transform 150ms ease;
+}
+
+.guide-mode-switch[aria-checked="true"] .guide-mode-track {
+  background: var(--primary);
+}
+
+.guide-mode-switch[aria-checked="true"] .guide-mode-track::after {
+  transform: translateX(12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-mode-track::after {
+    transition: none;
+  }
+}

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import BetterSqlite3 from "better-sqlite3";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { describe, expect, it } from "vitest";
 import { DatabaseSchemaMismatchError, openDatabase } from "../src";
 import {
@@ -16,6 +17,91 @@ function fileHash(path: string): string {
 }
 
 describe("database initialization", () => {
+  it("migrates baseline documents without losing saves, drafts, images, or history", () => {
+    const databasePath = join(temporaryDirectory(), "baseline.sqlite");
+    const baseline = new BetterSqlite3(databasePath);
+    const migration = readMigrationFiles({ migrationsFolder: MIGRATIONS_FOLDER })[0]!;
+    const markdown = "# Saved\n\n![Image](data:image/png;base64,AAAA)";
+
+    baseline.exec(readFileSync(join(MIGRATIONS_FOLDER, "0000_baseline.sql"), "utf8"));
+    baseline.exec(
+      "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric)",
+    );
+    baseline
+      .prepare("INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)")
+      .run(migration.hash, migration.folderMillis);
+    baseline
+      .prepare("INSERT INTO storage_roots VALUES (?, ?, ?)")
+      .run("root", "local-root", "2026-10-01");
+    baseline
+      .prepare(
+        "INSERT INTO recordings (id, storage_root_id, title, status, capture_mode, started_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "recording",
+        "root",
+        "Login",
+        "ready",
+        "display",
+        "2026-10-01",
+        "2026-10-01",
+        "2026-10-01",
+      );
+    baseline
+      .prepare(
+        "INSERT INTO documents (id, recording_id, draft_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("document", "recording", 1, "2026-10-01", "2026-10-01");
+    baseline
+      .prepare(
+        "INSERT INTO document_revisions (document_id, number, kind, content_hash, body, body_encoding, character_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "document",
+        1,
+        "saved",
+        createHash("sha256").update(markdown).digest("hex"),
+        markdown,
+        "plain",
+        markdown.length,
+        "2026-10-01",
+      );
+    baseline
+      .prepare("UPDATE documents SET saved_revision_number = 1, saved_at = ? WHERE id = ?")
+      .run("2026-10-01", "document");
+    baseline
+      .prepare("INSERT INTO document_drafts VALUES (?, ?, ?)")
+      .run("document", "# Unsaved", "2026-10-01");
+    baseline
+      .prepare("INSERT INTO document_images VALUES (?, ?, ?)")
+      .run("document", "image-hash", "data:image/png;base64,AAAA");
+    baseline.close();
+
+    const migrated = openTestDatabase(databasePath);
+
+    try {
+      expect(migrated.documents.getCollection("recording")).toMatchObject({
+        mode: "combine",
+        documents: [{ id: "document", title: "Document" }],
+      });
+      expect(migrated.documents.getSnapshot("recording", "document")).toMatchObject({
+        saved: { markdown },
+        draft: { markdown: "# Unsaved" },
+        draftVersion: 1,
+        latestRevisionNumber: 1,
+      });
+      expect(migrated.documents.getRevision("recording", 1, "document").markdown).toBe(markdown);
+      expect(
+        migrated.connection.db.$client
+          .prepare("SELECT count(*) AS count FROM document_images")
+          .get(),
+      ).toEqual({ count: 1 });
+      expect(migrated.connection.db.$client.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      migrated.connection.close();
+    }
+  });
+
   it("creates the file, parent directories, and durable settings on first launch", () => {
     const databasePath = join(temporaryDirectory(), "nested", "profile", "database.sqlite");
     const database = openTestDatabase(databasePath);

@@ -12,7 +12,11 @@ import {
   Square,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { isActiveRecordingStatus, type CaptureMode } from "@path/shared";
+import {
+  isActiveRecordingStatus,
+  MINIMUM_RECORDING_DURATION_MS,
+  type CaptureMode,
+} from "@path/shared";
 import { Button } from "@/components/Button";
 import { getDesktopApi } from "@/lib/Desktop";
 import { formatDefaultRecordingTitle, formatDuration } from "@/lib/Format";
@@ -25,7 +29,7 @@ export default function RecorderPage() {
   const t = useTranslations("recording");
   const locale = useLocale();
   const { snapshot, loadSources, start: startCapture, stop, resume } = useRecording();
-  const [expanded, setExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [mode, setMode] = useState<PopoverMode>("full-screen");
   const [sourceId, setSourceId] = useState("");
   const [includeMicrophone, setIncludeMicrophone] = useState(false);
@@ -42,7 +46,7 @@ export default function RecorderPage() {
   const source = sources.find((item) => item.id === sourceId) ?? sources[0] ?? null;
   const active = isActiveRecordingStatus(snapshot.status);
 
-  const optionsVisible = !active && expanded;
+  const optionsVisible = !active && isExpanded;
 
   useEffect(() => {
     // The native window must shrink with the controls to avoid an invisible hit area.
@@ -96,7 +100,11 @@ export default function RecorderPage() {
               </Button>
             )}
             {(snapshot.status === "recording" || snapshot.status === "paused") && (
-              <Button size="sm" disabled={snapshot.elapsedMs < 2_000} onClick={() => void stop()}>
+              <Button
+                size="sm"
+                disabled={snapshot.elapsedMs < MINIMUM_RECORDING_DURATION_MS}
+                onClick={() => void stop()}
+              >
                 <Square size={13} />
                 {t("stop")}
               </Button>
@@ -157,8 +165,8 @@ export default function RecorderPage() {
               size="icon"
               variant="ghost"
               title={t("chooseSource")}
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((value) => !value)}
             >
               <ChevronDown size={17} />
             </Button>

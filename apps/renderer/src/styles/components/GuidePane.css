@@ -508,6 +508,7 @@ html[data-theme="dark"] .guide-panel {
   position: relative;
   display: block;
   min-height: 0;
+  min-width: 0;
   padding-bottom: 12px;
   border-bottom: 0;
   background: var(--surface-raised);
@@ -518,7 +519,15 @@ html[data-theme="dark"] .guide-panel {
   align-items: center;
   justify-content: flex-start;
   min-height: 54px;
+  min-width: 0;
   gap: 8px;
+}
+
+.guide-generate-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
 }
 
 .guide-title-row .guide-flow-select {

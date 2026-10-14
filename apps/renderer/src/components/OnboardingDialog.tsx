@@ -450,7 +450,7 @@ function RecordStep({
 }) {
   const t = useTranslations("onboarding");
   const [directory, setDirectory] = useState<string | null>(null);
-  const [busy, setBusy] = useState(true);
+  const [isBusy, setIsBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
 
@@ -466,7 +466,7 @@ function RecordStep({
         if (request === requestRef.current) setError(getErrorMessage(cause, t("folderError")));
       })
       .finally(() => {
-        if (request === requestRef.current) setBusy(false);
+        if (request === requestRef.current) setIsBusy(false);
       });
 
     return () => {
@@ -483,11 +483,11 @@ function RecordStep({
       return;
     }
 
-    if (busy) return;
+    if (isBusy) return;
 
     const request = ++requestRef.current;
 
-    setBusy(true);
+    setIsBusy(true);
     setError(null);
     try {
       const snapshot = await settings.chooseRecordingsDirectory();
@@ -496,7 +496,7 @@ function RecordStep({
     } catch (cause) {
       if (request === requestRef.current) setError(getErrorMessage(cause, t("folderError")));
     } finally {
-      if (request === requestRef.current) setBusy(false);
+      if (request === requestRef.current) setIsBusy(false);
     }
   }
 
@@ -514,8 +514,8 @@ function RecordStep({
           <strong>{t("recordFolder")}</strong>
           <span title={directory ?? undefined}>{directory ?? t("chooseFolderHint")}</span>
         </span>
-        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void chooseFolder()}>
-          {busy && <LoaderCircle size={14} aria-hidden="true" />}
+        <Button variant="secondary" size="sm" disabled={isBusy} onClick={() => void chooseFolder()}>
+          {isBusy && <LoaderCircle size={14} aria-hidden="true" />}
           {t("changeFolder")}
         </Button>
       </div>

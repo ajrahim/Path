@@ -162,6 +162,8 @@ export interface RecordingRuntimeState {
  */
 export const MINIMUM_RECORDING_DURATION_MS = 2_000;
 
+export const MAX_PROJECT_NAME_LENGTH = 80;
+
 /** Preparing, capturing, paused, and transitional states all own an unfinished session. */
 export function isActiveRecordingStatus(status: RecordingRuntimeStatus): boolean {
   return (
@@ -381,9 +383,70 @@ export interface CommittedGuideRevision {
   revision: DocumentRevisionSummary;
 }
 
+export const MAX_GENERATED_DOCUMENTS = 24;
+
+/** Workflow tab titles are shown in the document structure and stored as document titles. */
+export const MAX_WORKFLOW_TITLE_LENGTH = 120;
+
+/** Titles compare case-insensitively so a rename or new split cannot collide with another tab. */
+export function hasDuplicateWorkflowTitle(
+  workflows: readonly Pick<DocumentWorkflow, "id" | "title">[],
+  title: string,
+  excludeId?: string | null,
+): boolean {
+  const normalized = title.trim().toLowerCase();
+
+  return workflows.some(
+    (workflow) => workflow.id !== excludeId && workflow.title.trim().toLowerCase() === normalized,
+  );
+}
+
+export function isWorkflowTitleLengthValid(title: string): boolean {
+  const length = title.trim().length;
+
+  return length > 0 && length <= MAX_WORKFLOW_TITLE_LENGTH;
+}
+
+/** One document for the whole recording, or one document per planned workflow. */
+export type DocumentGenerationMode = "combine" | "split";
+
+export interface GuideDocumentSummary {
+  id: string;
+  title: string;
+}
+
+/**
+ * One planned split tab. `documentId` names the generated document once it exists; a workflow
+ * without one has no document yet.
+ */
+export interface DocumentWorkflow {
+  id: string;
+  title: string;
+  scope: string;
+  documentId?: string;
+}
+
+/**
+ * A recording's document set. `workflows` is the editable split plan with its concurrency
+ * token, or null when split mode has no plan yet.
+ */
+export interface GuideDocumentCollection {
+  recordingId: string;
+  mode: DocumentGenerationMode;
+  documents: GuideDocumentSummary[];
+  workflows: DocumentWorkflow[] | null;
+  planVersion: number;
+}
+
+export interface CommittedGuideCollection extends GuideDocumentCollection {
+  generated: (CommittedGuideRevision & { documentId: string })[];
+}
+
 /** Broadcast after a committed document change so every window can refresh its view. */
 export interface GuideDocumentChange {
   recordingId: string;
+  documentId?: string;
+  collectionChanged?: boolean;
   draftVersion: number;
   savedRevisionNumber: number | null;
   latestRevisionNumber: number | null;

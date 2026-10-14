@@ -3,10 +3,36 @@ import {
   buildDocumentActivity,
   buildDocumentPrompt,
   buildDocumentUpdatePrompt,
+  buildSplitDocumentPrompt,
+  buildWorkflowDocumentPrompt,
   normalizeDocumentMarkdown,
 } from "../src/ai/DocumentPrompt";
 
 describe("document generation prompt", () => {
+  it("plans content-selected tabs and gives each complete document its own evidence scope", () => {
+    const activity = "[1.0s] Speech: Sign in\n[3.0s] Speech: Create a new account";
+    const plan = buildSplitDocumentPrompt(
+      "Recording",
+      activity,
+      "Create specs with acceptance criteria.",
+    );
+
+    const document = buildWorkflowDocumentPrompt(
+      "Recording",
+      activity,
+      "Create specs with acceptance criteria.",
+      { title: "Login", scope: "Sign-in at 1s" },
+    );
+
+    expect(plan).toContain("document count yourself");
+    expect(plan).toContain("existing UI tabs are not constraints");
+    expect(plan).toContain(activity);
+    expect(document).toContain("workflow only: Login");
+    expect(document).toContain("Workflow scope: Sign-in at 1s");
+    expect(document).toContain("Do not return an outline or placeholder");
+    expect(document).toContain("Create specs with acceptance criteria.");
+  });
+
   it("defaults to a help guide for existing callers", () => {
     expect(buildDocumentPrompt("Recording", "Clicked Save", " ")).toContain(
       "help guide with a clear title and numbered steps",

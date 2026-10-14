@@ -68,8 +68,8 @@ export function GuideChatInput({
   const contextFolderHintId = useId();
   const cli = useCliTools();
   const contextFolder = cli.state?.deployment.folder ?? null;
-  const [folderError, setFolderError] = useState(false);
-  const [choosingFolder, setChoosingFolder] = useState(false);
+  const [hasFolderError, setHasFolderError] = useState(false);
+  const [isChoosingFolder, setIsChoosingFolder] = useState(false);
   const canReadFolder =
     cli.state?.mode === "cli" &&
     Boolean(cli.state.selection && cli.state.connected.includes(cli.state.selection.tool));
@@ -77,14 +77,14 @@ export function GuideChatInput({
   const folderHint = contextFolder ?? t("deploymentFolderHint");
 
   const [context, setContext] = useState<GuideContextItem[]>([]);
-  const [processing, setProcessing] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [hasSendError, setHasSendError] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [listening, setListening] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const dictationBaseRef = useRef("");
-  const busy = disabled || updating || processing || sending || choosingFolder;
+  const isBusy = disabled || updating || isProcessing || isSending || isChoosingFolder;
   const supported = getSpeechRecognition() !== null;
 
   useEffect(() => {
@@ -94,16 +94,16 @@ export function GuideChatInput({
   async function send(): Promise<void> {
     const request = prompt.trim();
 
-    if (!request || busy) return;
+    if (!request || isBusy) return;
 
-    if (listening) {
+    if (isListening) {
       recognitionRef.current?.stop();
       recognitionRef.current = null;
-      setListening(false);
+      setIsListening(false);
     }
 
-    setSending(true);
-    setSendError(false);
+    setIsSending(true);
+    setHasSendError(false);
     try {
       const sent = await (canReadFolder && contextFolder
         ? onSend(request, context, contextFolder)
@@ -114,17 +114,17 @@ export function GuideChatInput({
         setContext([]);
       }
     } catch {
-      setSendError(true);
+      setHasSendError(true);
     } finally {
-      setSending(false);
+      setIsSending(false);
     }
   }
 
   function toggleDictation(): void {
-    if (busy || listening) {
+    if (isBusy || isListening) {
       recognitionRef.current?.stop();
       recognitionRef.current = null;
-      setListening(false);
+      setIsListening(false);
 
       return;
     }
@@ -154,12 +154,12 @@ export function GuideChatInput({
 
     recognition.onend = () => {
       recognitionRef.current = null;
-      setListening(false);
+      setIsListening(false);
     };
 
     recognition.onerror = () => {
       recognitionRef.current = null;
-      setListening(false);
+      setIsListening(false);
     };
 
     try {
@@ -169,17 +169,17 @@ export function GuideChatInput({
     }
 
     recognitionRef.current = recognition;
-    setListening(true);
+    setIsListening(true);
   }
 
   return (
     <div className="guide-chat">
-      {folderError && (
+      {hasFolderError && (
         <p className="guide-chat-error" role="alert">
           {t("chatChooseFolderFailed")}
         </p>
       )}
-      {sendError && (
+      {hasSendError && (
         <p className="guide-chat-error" role="alert">
           {t("chatContextSendFailed")}
         </p>
@@ -201,7 +201,7 @@ export function GuideChatInput({
                 </span>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={isBusy}
                   aria-label={t("chatRemoveContext", {
                     name: item.kind === "image" ? item.name : t("chatTextContext"),
                   })}
@@ -220,7 +220,7 @@ export function GuideChatInput({
           className="guide-chat-input"
           value={prompt}
           rows={2}
-          disabled={busy}
+          disabled={isBusy}
           aria-label={t("chatPlaceholder")}
           placeholder={t("chatPlaceholder")}
           onChange={(event) => setPrompt(event.target.value)}
@@ -233,9 +233,9 @@ export function GuideChatInput({
         />
         <div className="guide-chat-bar">
           <GuideChatContext
-            disabled={busy || context.length >= MAX_GUIDE_CONTEXT_ITEMS}
+            disabled={isBusy || context.length >= MAX_GUIDE_CONTEXT_ITEMS}
             onAdd={(item) => setContext((current) => [...current, item])}
-            onProcessingChange={setProcessing}
+            onProcessingChange={setIsProcessing}
           />
           <span className="guide-chat-context-folder-wrap" title={folderHint}>
             <Button
@@ -243,16 +243,16 @@ export function GuideChatInput({
               size="sm"
               variant="ghost"
               className="guide-chat-context-folder"
-              disabled={busy || !cli.state}
+              disabled={isBusy || !cli.state}
               onClick={async () => {
-                setChoosingFolder(true);
-                setFolderError(false);
+                setIsChoosingFolder(true);
+                setHasFolderError(false);
                 try {
                   await cli.chooseFolder();
                 } catch {
-                  setFolderError(true);
+                  setHasFolderError(true);
                 } finally {
-                  setChoosingFolder(false);
+                  setIsChoosingFolder(false);
                 }
               }}
               aria-describedby={contextFolderHintId}
@@ -273,7 +273,7 @@ export function GuideChatInput({
               type="button"
               size="icon"
               variant="ghost"
-              disabled={busy}
+              disabled={isBusy}
               aria-label={t("chatRemoveFolder")}
               title={t("chatRemoveFolder")}
               onClick={() => void cli.clearFolder()}
@@ -286,15 +286,15 @@ export function GuideChatInput({
             type="button"
             size="icon"
             variant="ghost"
-            className={`guide-chat-audio${listening ? " is-listening" : ""}`}
+            className={`guide-chat-audio${isListening ? " is-listening" : ""}`}
             title={
-              supported ? t(listening ? "chatStopAudio" : "chatAudio") : t("chatAudioUnsupported")
+              supported ? t(isListening ? "chatStopAudio" : "chatAudio") : t("chatAudioUnsupported")
             }
             aria-label={
-              supported ? t(listening ? "chatStopAudio" : "chatAudio") : t("chatAudioUnsupported")
+              supported ? t(isListening ? "chatStopAudio" : "chatAudio") : t("chatAudioUnsupported")
             }
-            aria-pressed={listening}
-            disabled={busy || !supported}
+            aria-pressed={isListening}
+            disabled={isBusy || !supported}
             onClick={toggleDictation}
           >
             <Mic aria-hidden="true" size={15} />
@@ -304,7 +304,7 @@ export function GuideChatInput({
             size="icon"
             title={updating ? t("chatThinking") : t("chatSend")}
             aria-label={updating ? t("chatThinking") : t("chatSend")}
-            disabled={busy || !prompt.trim()}
+            disabled={isBusy || !prompt.trim()}
             onClick={() => void send()}
           >
             {updating ? (

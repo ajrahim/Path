@@ -1,6 +1,10 @@
 import { useEffect, useId, useRef } from "react";
 import { Save, Trash2, X } from "lucide-react";
 import { useTranslations } from "next-intl";
+import {
+  MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH,
+  MAX_INSTRUCTION_FLOW_NAME_LENGTH,
+} from "@path/shared";
 import type { useInstructionFlows } from "../hooks/useInstructionFlows";
 import { Button } from "./Button";
 import { InstructionFlowGlyph } from "./InstructionFlowGlyph";
@@ -133,7 +137,7 @@ export function InstructionFlowEditor({
                 disabled={flows.isBusy}
                 onChange={(event) => flows.renameDraft(event.target.value)}
                 required
-                maxLength={80}
+                maxLength={MAX_INSTRUCTION_FLOW_NAME_LENGTH}
                 placeholder={t("guide.flowNamePlaceholder")}
               />
               <InstructionFlowIconSelect
@@ -155,7 +159,7 @@ export function InstructionFlowEditor({
               value={editor.instructions}
               spellCheck={false}
               required
-              maxLength={10_000}
+              maxLength={MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH}
               disabled={flows.isBusy}
               onChange={(event) => flows.reviseInstructions(event.target.value)}
               placeholder={t("guide.instructionsPlaceholder")}

@@ -17,7 +17,7 @@ export function RecordingDeleteDialog({
   const t = useTranslations();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const deletingRef = useRef(false);
-  const [deleting, setDeleting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export function RecordingDeleteDialog({
     if (deletingRef.current) return;
 
     deletingRef.current = true;
-    setDeleting(true);
+    setIsDeleting(true);
     setError(null);
 
     try {
@@ -46,7 +46,7 @@ export function RecordingDeleteDialog({
       setError(getErrorMessage(caught, t("history.deleteError")));
     } finally {
       deletingRef.current = false;
-      setDeleting(false);
+      setIsDeleting(false);
     }
   }
 
@@ -77,12 +77,12 @@ export function RecordingDeleteDialog({
         </p>
       )}
       <footer>
-        <Button data-cancel-delete variant="secondary" disabled={deleting} onClick={close}>
+        <Button data-cancel-delete variant="secondary" disabled={isDeleting} onClick={close}>
           {t("actions.cancel")}
         </Button>
-        <Button variant="danger" disabled={deleting} onClick={() => void confirm()}>
+        <Button variant="danger" disabled={isDeleting} onClick={() => void confirm()}>
           <Trash2 aria-hidden="true" size={15} />
-          {deleting ? t("history.deleting") : t("actions.delete")}
+          {isDeleting ? t("history.deleting") : t("actions.delete")}
         </Button>
       </footer>
     </dialog>

@@ -2,8 +2,13 @@
 
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CommittedGuideRevision, GuideContextItem } from "@path/shared";
+import type {
+  CommittedGuideRevision,
+  GuideContextItem,
+  GuideDocumentCollection,
+} from "@path/shared";
 import { DRAFT_AUTOSAVE_DELAY_MS, useGuideDocument } from "../src/hooks/useGuideDocument";
+import { useGuideCollection } from "../src/hooks/useGuideCollection";
 import { createGuideDocumentStore, type GuideDocumentStore } from "./GuideDocumentStoreFixture";
 
 const mocks = vi.hoisted(() => ({
@@ -53,7 +58,201 @@ function committed(markdown: string, number = 1): CommittedGuideRevision {
   };
 }
 
+async function loadedCollection() {
+  let collection: GuideDocumentCollection = {
+    recordingId: recording.id,
+    mode: "split",
+    planVersion: 4,
+    documents: [],
+    workflows: ["Login", "Registration", "Password"].map((title) => ({
+      id: title.toLowerCase(),
+      documentId: `${title.toLowerCase()}-document`,
+      title,
+      scope: `${title} evidence`,
+    })),
+  };
+
+  vi.mocked(mocks.store.guides.getCollection).mockImplementation(async () => collection);
+  vi.mocked(mocks.store.guides.saveWorkflowPlan).mockImplementation(async (input) => {
+    collection = {
+      ...collection,
+      planVersion: input.expectedPlanVersion + 1,
+      workflows: input.workflows.map((workflow) => ({
+        ...workflow,
+        documentId: collection.workflows?.find((candidate) => candidate.id === workflow.id)
+          ?.documentId,
+      })),
+    };
+
+    return collection;
+  });
+  const view = renderHook(() => useGuideCollection(recording.id));
+
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+
+  return view;
+}
+
 describe("guide document workflow", () => {
+  it("persists workflow order while retaining selection, identities, scopes, and document links", async () => {
+    const view = await loadedCollection();
+    const original = [...view.result.current.workflows!];
+
+    await act(() => view.result.current.moveWorkflow("login", "password", true));
+    expect(mocks.store.guides.saveWorkflowPlan).toHaveBeenCalledWith({
+      id: recording.id,
+      expectedPlanVersion: 4,
+      workflows: [original[1], original[2], original[0]].map((workflow) => ({
+        id: workflow!.id,
+        title: workflow!.title,
+        scope: workflow!.scope,
+      })),
+    });
+    expect(view.result.current.workflows).toEqual([original[1], original[2], original[0]]);
+    expect(view.result.current.activeDocumentId).toBe("login");
+    expect(view.result.current.activeDocument?.id).toBe("login-document");
+    expect(view.result.current.planVersion).toBe(5);
+    expect(mocks.store.guides.getDocument).not.toHaveBeenCalled();
+    expect(mocks.store.guides.saveDocument).not.toHaveBeenCalled();
+    view.unmount();
+    const reopened = renderHook(() => useGuideCollection(recording.id));
+
+    await waitFor(() => expect(reopened.result.current.loading).toBe(false));
+    expect(reopened.result.current.workflows?.map((workflow) => workflow.id)).toEqual([
+      "registration",
+      "password",
+      "login",
+    ]);
+  });
+
+  it("leaves the workflow plan intact after a reorder failure or invalid/no-op target", async () => {
+    const view = await loadedCollection();
+    const original = view.result.current.workflows;
+
+    await act(() => view.result.current.moveWorkflow("login", "missing", false));
+    await act(() => view.result.current.moveWorkflow("missing", "login", false));
+    await act(() => view.result.current.moveWorkflow("login", "login", false));
+    await act(() => view.result.current.moveWorkflow("login", "registration", false));
+    expect(mocks.store.guides.saveWorkflowPlan).not.toHaveBeenCalled();
+    vi.mocked(mocks.store.guides.saveWorkflowPlan).mockRejectedValueOnce(new Error("Save failed"));
+    await act(() => view.result.current.moveWorkflow("password", "login", false));
+    expect(view.result.current.workflows).toEqual(original);
+    expect(view.result.current.planVersion).toBe(4);
+    expect(view.result.current.activeDocumentId).toBe("login");
+    expect(view.result.current.error).toBe("Save failed");
+    await act(() => view.result.current.moveWorkflow("password", "login", false));
+    expect(view.result.current.workflows?.map((workflow) => workflow.id)).toEqual([
+      "password",
+      "login",
+      "registration",
+    ]);
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it("suggests a missing plan when reopening Split mode, but never refills an empty plan", async () => {
+    vi.mocked(mocks.store.guides.getCollection).mockResolvedValue({
+      recordingId: recording.id,
+      mode: "split",
+      documents: [],
+      workflows: null,
+      planVersion: 0,
+    });
+    const view = renderHook(() => useGuideCollection(recording.id, "Spec instructions"));
+
+    await waitFor(() => expect(view.result.current.workflows).toHaveLength(1));
+    expect(mocks.store.guides.suggestWorkflows).toHaveBeenCalledTimes(1);
+    expect(mocks.store.guides.suggestWorkflows).toHaveBeenCalledWith({
+      id: recording.id,
+      instructions: "Spec instructions",
+      expectedPlanVersion: 0,
+    });
+    view.unmount();
+    vi.mocked(mocks.store.guides.suggestWorkflows).mockClear();
+    vi.mocked(mocks.store.guides.getCollection).mockResolvedValue({
+      recordingId: recording.id,
+      mode: "split",
+      documents: [],
+      workflows: [],
+      planVersion: 2,
+    });
+    const empty = renderHook(() => useGuideCollection(recording.id, "Spec instructions"));
+
+    await waitFor(() => expect(empty.result.current.loading).toBe(false));
+    expect(empty.result.current.workflows).toEqual([]);
+    expect(mocks.store.guides.suggestWorkflows).not.toHaveBeenCalled();
+  });
+
+  it("never loads or writes a sibling document for an ungenerated workflow", async () => {
+    mocks.store.state.draft = "# Sibling document";
+    const view = renderHook(() => useGuideDocument(recording, null));
+
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.markdown).toBe("");
+    expect(mocks.store.guides.getDocument).not.toHaveBeenCalled();
+    act(() => view.result.current.editMarkdown("Incorrect fallback"));
+    view.unmount();
+    await waitFor(() => expect(mocks.store.guides.saveDraft).not.toHaveBeenCalled());
+    expect(mocks.store.state.draft).toBe("# Sibling document");
+  });
+
+  it("scopes updates, saves, history, restores, and export names to the active document", async () => {
+    const document = { id: "login-document", title: "Login" };
+    const view = renderHook(() => useGuideDocument(recording, document));
+
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    await act(() => view.result.current.updateGuide("Spec", "Add validation"));
+    expect(mocks.store.guides.update).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: document.id }),
+    );
+    await act(() => view.result.current.saveDocument());
+    expect(mocks.store.guides.saveDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: document.id }),
+    );
+    await act(() => view.result.current.previewRevision(1));
+    expect(mocks.store.guides.getRevision).toHaveBeenCalledWith({
+      id: recording.id,
+      documentId: document.id,
+      number: 1,
+    });
+    await act(() => view.result.current.restoreRevision(1));
+    expect(mocks.store.guides.restoreRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: document.id }),
+    );
+    await act(() => view.result.current.exportMarkdown());
+    expect(mocks.store.guides.exportMarkdown).toHaveBeenCalledWith({
+      suggestedName: "Login",
+      markdown: "# Updated",
+    });
+  });
+
+  it("ignores a pending mode save after the user switches recordings", async () => {
+    const pending =
+      Promise.withResolvers<Awaited<ReturnType<typeof mocks.store.guides.setGenerationMode>>>();
+
+    vi.mocked(mocks.store.guides.setGenerationMode).mockReturnValueOnce(pending.promise);
+    const view = renderHook((id) => useGuideCollection(id), { initialProps: recording.id });
+
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    let request: Promise<void>;
+
+    act(() => {
+      request = view.result.current.setMode("split");
+    });
+    view.rerender("another-recording");
+    await act(async () => {
+      pending.resolve({
+        recordingId: recording.id,
+        mode: "split",
+        documents: [],
+        workflows: null,
+        planVersion: 0,
+      });
+      await request;
+    });
+    expect(view.result.current.mode).toBe("combine");
+    expect(view.result.current.pending).toBe(false);
+  });
+
   it("generates from the selected recording and instructions", async () => {
     const { result } = await loadedHook();
 
@@ -68,6 +267,28 @@ describe("guide document workflow", () => {
     // Generation is durable history but is not an explicit save.
     expect(result.current.isDirty).toBe(true);
     await waitFor(() => expect(result.current.revisions.map((r) => r.kind)).toEqual(["generated"]));
+  });
+
+  it("requests content-based Split generation without a tab plan and adopts the discovered collection", async () => {
+    const { result } = await loadedHook();
+    const onGenerated = vi.fn();
+
+    await act(() =>
+      result.current.generateGuide("Create specifications", { mode: "split", onGenerated }),
+    );
+    expect(mocks.store.guides.generateCollection).toHaveBeenCalledWith({
+      id: recording.id,
+      instructions: "Create specifications",
+      mode: "split",
+    });
+    expect(onGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "split",
+        workflows: [expect.objectContaining({ title: "Recorded review" })],
+        generated: [expect.objectContaining({ markdown: "# Generated" })],
+      }),
+    );
+    expect(result.current.generating).toBe(false);
   });
 
   it("discards generation from a previous recording without changing the new pending state", async () => {

@@ -12,6 +12,11 @@ import {
   projectChangeInputSchema,
   exportMarkdownInputSchema,
   generateGuideInputSchema,
+  generateGuideCollectionInputSchema,
+  suggestDocumentWorkflowsInputSchema,
+  saveDocumentWorkflowPlanInputSchema,
+  guideDocumentInputSchema,
+  setDocumentGenerationModeInputSchema,
   saveGuideDocumentInputSchema,
   saveGuideDraftInputSchema,
   discardGuideDraftInputSchema,
@@ -285,6 +290,21 @@ export function registerIpcHandlers({
   ipcMain.handle(IPC_CHANNELS.guidesGenerate, (_event, input: unknown) =>
     documents.generate(generateGuideInputSchema.parse(input)),
   );
+  ipcMain.handle(IPC_CHANNELS.guidesGetCollection, (_event, input: unknown) =>
+    documents.getCollection(recordingIdInputSchema.parse(input).id),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesSetGenerationMode, (_event, input: unknown) =>
+    documents.setGenerationMode(setDocumentGenerationModeInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesSuggestWorkflows, (_event, input: unknown) =>
+    documents.suggestWorkflows(suggestDocumentWorkflowsInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesSaveWorkflowPlan, (_event, input: unknown) =>
+    documents.saveWorkflowPlan(saveDocumentWorkflowPlanInputSchema.parse(input)),
+  );
+  ipcMain.handle(IPC_CHANNELS.guidesGenerateCollection, (_event, input: unknown) =>
+    documents.generateCollection(generateGuideCollectionInputSchema.parse(input)),
+  );
   ipcMain.handle(IPC_CHANNELS.guidesUpdate, (_event, input: unknown) =>
     documents.update(updateGuideInputSchema.parse(input)),
   );
@@ -307,9 +327,9 @@ export function registerIpcHandlers({
     return true;
   });
   ipcMain.handle(IPC_CHANNELS.guidesGetDocument, (_event, input: unknown) => {
-    const { id } = recordingIdInputSchema.parse(input);
+    const { id, documentId } = guideDocumentInputSchema.parse(input);
 
-    return documents.getDocument(id);
+    return documents.getDocument(id, documentId);
   });
   ipcMain.handle(IPC_CHANNELS.guidesSaveDocument, (_event, input: unknown) =>
     documents.save(saveGuideDocumentInputSchema.parse(input)),

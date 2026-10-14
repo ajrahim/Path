@@ -1,8 +1,12 @@
 import type {
+  CommittedGuideCollection,
+  DesktopApi,
+  DocumentGenerationMode,
   DocumentRevisionSummary,
   GuideContextItem,
   GuideDocumentChange,
   GuideDocumentSnapshot,
+  GuideDocumentSummary,
   RecordingSummary,
 } from "@path/shared";
 import { useEffect, useReducer, useRef, type RefObject } from "react";
@@ -14,6 +18,7 @@ import { getErrorMessage } from "@/lib/ErrorMessage";
 
 /** Unsaved text is written as a recovery draft once typing pauses for this long. */
 export const DRAFT_AUTOSAVE_DELAY_MS = 1_000;
+const COPIED_CONFIRMATION_MS = 2_000;
 const REVISION_PAGE_SIZE = 50;
 
 /**
@@ -187,6 +192,8 @@ function reduceDocument(state: DocumentState, action: DocumentAction): DocumentS
 interface DocumentSession {
   active: boolean;
   recordingId: string | undefined;
+  documentId: string | undefined;
+  isEmptyDocument: boolean;
   markdown: string;
   /** Increments on every editor change; asynchronous results check it before applying. */
   revision: number;
@@ -213,6 +220,11 @@ interface DocumentSession {
   focusFrame?: number;
 }
 
+interface GenerateCollectionOptions {
+  mode: DocumentGenerationMode;
+  onGenerated(collection: CommittedGuideCollection): void;
+}
+
 interface GuideDocument extends DocumentState {
   isDirty: boolean;
   markdownInputRef: RefObject<HTMLTextAreaElement | null>;
@@ -223,7 +235,7 @@ interface GuideDocument extends DocumentState {
   exportMarkdown(): Promise<void>;
   saveDocument(): Promise<boolean>;
   discardChanges(): Promise<boolean>;
-  generateGuide(instructions: string): Promise<void>;
+  generateGuide(instructions: string, collection?: GenerateCollectionOptions): Promise<void>;
   updateGuide(
     instructions: string,
     updatePrompt: string,
@@ -249,17 +261,22 @@ function persistedDraftStatus(session: DocumentSession): DraftStatus {
  */
 export function useGuideDocument(
   recording: Pick<RecordingSummary, "id" | "title"> | null,
+  activeDocument?: GuideDocumentSummary | null,
 ): GuideDocument {
   const t = useTranslations();
   const [state, dispatch] = useReducer(reduceDocument, EMPTY_DOCUMENT);
   const sessionRef = useRef<DocumentSession | null>(null);
   const markdownInputRef = useRef<HTMLTextAreaElement>(null);
   const recordingId = recording?.id;
+  const documentId = activeDocument?.id;
+  const isEmptyDocument = activeDocument === null;
 
   useEffect(() => {
     const session: DocumentSession = {
       active: true,
       recordingId,
+      documentId,
+      isEmptyDocument,
       markdown: "",
       revision: 0,
       copying: 0,
@@ -268,7 +285,7 @@ export function useGuideDocument(
       exporting: false,
       saving: false,
       restoring: false,
-      isLoaded: false,
+      isLoaded: isEmptyDocument,
       savedRevisionNumber: null,
       draftVersion: 0,
       latestRevisionNumber: null,
@@ -286,11 +303,11 @@ export function useGuideDocument(
     const desktop = getDesktopApi();
     const disposers: (() => void)[] = [];
 
-    if (recordingId && desktop) {
+    if (recordingId && desktop && !isEmptyDocument) {
       dispatch({ type: "loading", loading: true });
 
       desktop.guides
-        .getDocument({ id: recordingId })
+        .getDocument({ id: recordingId, ...documentScope(session) })
         .then((snapshot) => {
           // Text inserted while the document loaded (such as a screenshot) is kept.
           if (session.active) applySnapshot(session, snapshot, session.revision !== 0);
@@ -332,7 +349,7 @@ export function useGuideDocument(
     };
     // The translators and recording identity define this effect; markdown edits stay in the session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordingId]);
+  }, [recordingId, documentId, isEmptyDocument]);
 
   function applySnapshot(
     session: DocumentSession,
@@ -373,6 +390,7 @@ export function useGuideDocument(
     const desktop = getDesktopApi();
 
     if (!desktop || change.recordingId !== session.recordingId || session.localWrites > 0) return;
+    if (change.documentId && change.documentId !== session.documentId) return;
 
     const isKnown =
       change.draftVersion === session.draftVersion &&
@@ -389,7 +407,7 @@ export function useGuideDocument(
     if (!isClean || change.savedRevisionNumber === session.savedRevisionNumber) return;
 
     desktop.guides
-      .getDocument({ id: change.recordingId })
+      .getDocument({ id: change.recordingId, ...documentScope(session) })
       .then((snapshot) => {
         if (session.active && session.markdown === session.persistedMarkdown) {
           applySnapshot(session, snapshot);
@@ -406,6 +424,7 @@ export function useGuideDocument(
     try {
       const page = await desktop.guides.listRevisions({
         id: session.recordingId,
+        ...documentScope(session),
         limit: REVISION_PAGE_SIZE,
       });
 
@@ -432,6 +451,7 @@ export function useGuideDocument(
     try {
       const page = await desktop.guides.listRevisions({
         id: session.recordingId,
+        ...documentScope(session),
         beforeNumber: oldest.number,
         limit: REVISION_PAGE_SIZE,
       });
@@ -486,6 +506,8 @@ export function useGuideDocument(
   }
 
   async function writeDraft(session: DocumentSession): Promise<boolean> {
+    if (session.isEmptyDocument) return true;
+
     const desktop = getDesktopApi();
     const markdown = session.markdown;
 
@@ -500,6 +522,7 @@ export function useGuideDocument(
     try {
       const result = await desktop.guides.saveDraft({
         id: session.recordingId,
+        ...documentScope(session),
         markdown,
         expectedDraftVersion: session.draftVersion,
       });
@@ -536,7 +559,7 @@ export function useGuideDocument(
   function editMarkdown(markdown: string): void {
     const session = sessionRef.current;
 
-    if (!session?.active || state.preview) return;
+    if (!session?.active || session.isEmptyDocument || state.preview) return;
 
     commitMarkdown(session, markdown);
     scheduleDraft(session);
@@ -549,6 +572,8 @@ export function useGuideDocument(
   }
 
   function insertSnippet(session: DocumentSession, snippet: string): void {
+    if (session.isEmptyDocument) return;
+
     const input = markdownInputRef.current;
 
     if (!input) {
@@ -659,7 +684,10 @@ export function useGuideDocument(
       if (!session.active || session.copying !== operation || session.revision !== revision) return;
 
       dispatch({ type: "copied", copied: true });
-      session.copiedTimer = setTimeout(() => dispatch({ type: "copied", copied: false }), 2_000);
+      session.copiedTimer = setTimeout(
+        () => dispatch({ type: "copied", copied: false }),
+        COPIED_CONFIRMATION_MS,
+      );
     } catch (error) {
       if (session.active && session.copying === operation && session.revision === revision) {
         dispatch({ type: "error", error: getErrorMessage(error, t("guide.copyFailed")) });
@@ -681,9 +709,12 @@ export function useGuideDocument(
       const desktop = getDesktopApi();
 
       if (desktop) {
-        await desktop.guides.exportMarkdown({ suggestedName: recording.title, markdown });
+        await desktop.guides.exportMarkdown({
+          suggestedName: activeDocument?.title ?? recording.title,
+          markdown,
+        });
       } else {
-        downloadMarkdown(recording.title, markdown);
+        downloadMarkdown(activeDocument?.title ?? recording.title, markdown);
       }
     } catch (error) {
       if (session.active) {
@@ -719,6 +750,7 @@ export function useGuideDocument(
       const markdown = session.markdown;
       const result = await desktop.guides.saveDocument({
         id: recording.id,
+        ...documentScope(session),
         markdown,
         expectedSavedRevisionNumber: session.savedRevisionNumber,
         draftVersion: session.draftVersion,
@@ -785,6 +817,7 @@ export function useGuideDocument(
     try {
       let result = await desktop.guides.discardDraft({
         id: session.recordingId,
+        ...documentScope(session),
         expectedDraftVersion: session.draftVersion,
       });
 
@@ -792,6 +825,7 @@ export function useGuideDocument(
       if (result.status === "conflict") {
         result = await desktop.guides.discardDraft({
           id: session.recordingId,
+          ...documentScope(session),
           expectedDraftVersion: result.draftVersion,
         });
       }
@@ -812,7 +846,10 @@ export function useGuideDocument(
     }
   }
 
-  async function generateGuide(instructions: string): Promise<void> {
+  async function generateGuide(
+    instructions: string,
+    collectionOptions?: GenerateCollectionOptions,
+  ): Promise<void> {
     const session = sessionRef.current;
     const desktop = getDesktopApi();
 
@@ -835,13 +872,25 @@ export function useGuideDocument(
     dispatch({ type: "pending", operation: "generating", pending: true });
 
     try {
-      const generated = await desktop.guides.generate({
-        id: recording.id,
-        instructions,
-        ...(replacedMarkdown.trim() ? { replacedMarkdown } : {}),
-      });
+      if (collectionOptions) {
+        await generateCollection(
+          desktop,
+          session,
+          recording.id,
+          revision,
+          instructions,
+          collectionOptions,
+        );
+      } else {
+        const generated = await desktop.guides.generate({
+          id: recording.id,
+          ...documentScope(session),
+          instructions,
+          ...(replacedMarkdown.trim() ? { replacedMarkdown } : {}),
+        });
 
-      adoptCommittedRevision(session, revision, generated.markdown, generated.revision.number);
+        adoptCommittedRevision(session, revision, generated.markdown, generated.revision.number);
+      }
     } catch (error) {
       if (session.active && session.revision === revision) {
         dispatch({
@@ -854,6 +903,42 @@ export function useGuideDocument(
       session.generating = false;
       if (session.active) dispatch({ type: "pending", operation: "generating", pending: false });
     }
+  }
+
+  /** The committed collection is adopted only if the editor text did not change meanwhile. */
+  async function generateCollection(
+    desktop: DesktopApi,
+    session: DocumentSession,
+    recordingId: string,
+    requestedAtRevision: number,
+    instructions: string,
+    options: GenerateCollectionOptions,
+  ): Promise<void> {
+    const replacedMarkdown = session.markdown;
+
+    if (!(await flushDraft(session))) throw new Error(t("guide.draftFailed"));
+
+    const generated = await desktop.guides.generateCollection({
+      id: recordingId,
+      ...documentScope(session),
+      instructions,
+      mode: options.mode,
+      ...(replacedMarkdown.trim() ? { replacedMarkdown } : {}),
+    });
+
+    if (!session.active || session.revision !== requestedAtRevision) return;
+
+    options.onGenerated(generated);
+
+    // The open document was replaced by the first generated one, so reload its new text.
+    if (generated.documents[0]?.id !== session.documentId) return;
+
+    const snapshot = await desktop.guides.getDocument({
+      id: recordingId,
+      ...documentScope(session),
+    });
+
+    if (session.active) applySnapshot(session, snapshot);
   }
 
   async function updateGuide(
@@ -888,6 +973,7 @@ export function useGuideDocument(
     try {
       const updated = await desktop.guides.update({
         id: recording.id,
+        ...documentScope(session),
         instructions,
         currentMarkdown,
         updatePrompt: request,
@@ -951,7 +1037,11 @@ export function useGuideDocument(
     }
 
     try {
-      const revision = await desktop.guides.getRevision({ id: session.recordingId, number });
+      const revision = await desktop.guides.getRevision({
+        id: session.recordingId,
+        ...documentScope(session),
+        number,
+      });
 
       if (session.active) {
         dispatch({ type: "preview", preview: { number, markdown: revision.markdown } });
@@ -980,6 +1070,7 @@ export function useGuideDocument(
     try {
       const restored = await desktop.guides.restoreRevision({
         id: session.recordingId,
+        ...documentScope(session),
         number,
         ...(replacedMarkdown.trim() ? { replacedMarkdown } : {}),
       });
@@ -1017,6 +1108,10 @@ export function useGuideDocument(
     restoreRevision,
     loadOlderRevisions,
   };
+}
+
+function documentScope(session: DocumentSession): { documentId?: string } {
+  return session.documentId ? { documentId: session.documentId } : {};
 }
 
 function imageSnippet(source: string, name: string, fallbackAlt: string): string {

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { Check, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/router";
-import { Button } from "@/components/Button";
 import { GuidePane, type GuidePaneState } from "@/components/GuidePane";
+import { GuideDiscardDialog } from "@/components/GuideDiscardDialog";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { useRecordingHistory } from "@/hooks/useRecordingHistory";
 import { RecordingPane } from "@/components/RecordingPane";
@@ -30,16 +30,16 @@ export default function WorkspacePage() {
 
   // Selection and panel sizes belong to this window; recording data is shared within its store.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+  const [isSourceDialogOpen, setIsSourceDialogOpen] = useState(false);
   const [guideWidth, setGuideWidth] = useState(440);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [titleSaving, setTitleSaving] = useState(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [isTitleSaving, setIsTitleSaving] = useState(false);
   const isTitleSavingRef = useRef(false);
-  const [titleError, setTitleError] = useState(false);
+  const [hasTitleError, setHasTitleError] = useState(false);
   const [timelineTab, setTimelineTab] = useState<TimelineTab>("activity");
   const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
   const [pendingSelectionId, setPendingSelectionId] = useState<string | null>(null);
-  const [switchSaving, setSwitchSaving] = useState(false);
+  const [isSwitchSaving, setIsSwitchSaving] = useState(false);
   const guideStateRef = useRef<GuidePaneState | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const discardDialogRef = useRef<HTMLDialogElement>(null);
@@ -73,9 +73,9 @@ export default function WorkspacePage() {
 
   let titleStatus = t("navigation.saved");
 
-  if (titleSaving) titleStatus = t("navigation.saving");
+  if (isTitleSaving) titleStatus = t("navigation.saving");
 
-  if (titleError) titleStatus = t("navigation.titleSaveFailed");
+  if (hasTitleError) titleStatus = t("navigation.titleSaveFailed");
 
   useEffect(() => {
     void refresh();
@@ -167,9 +167,9 @@ export default function WorkspacePage() {
   }, []);
 
   async function saveAndSwitch(): Promise<void> {
-    if (!pendingSelectionId || switchSaving) return;
+    if (!pendingSelectionId || isSwitchSaving) return;
 
-    setSwitchSaving(true);
+    setIsSwitchSaving(true);
 
     try {
       const saved = await guideStateRef.current?.save();
@@ -180,14 +180,14 @@ export default function WorkspacePage() {
       setSelectedId(pendingSelectionId);
       setPendingSelectionId(null);
     } finally {
-      setSwitchSaving(false);
+      setIsSwitchSaving(false);
     }
   }
 
   async function discardAndSwitch(): Promise<void> {
-    if (!pendingSelectionId || switchSaving) return;
+    if (!pendingSelectionId || isSwitchSaving) return;
 
-    setSwitchSaving(true);
+    setIsSwitchSaving(true);
 
     try {
       // Discarding also removes the recovery draft, so the text does not return on reopen.
@@ -198,7 +198,7 @@ export default function WorkspacePage() {
       setSelectedId(pendingSelectionId);
       setPendingSelectionId(null);
     } finally {
-      setSwitchSaving(false);
+      setIsSwitchSaving(false);
     }
   }
 
@@ -254,16 +254,16 @@ export default function WorkspacePage() {
 
     // Blur can fire again before the disabled state renders, so lock the write immediately.
     isTitleSavingRef.current = true;
-    setTitleSaving(true);
-    setTitleError(false);
+    setIsTitleSaving(true);
+    setHasTitleError(false);
 
     try {
       await rename(selected.id, title);
     } catch {
-      setTitleError(true);
+      setHasTitleError(true);
     } finally {
       isTitleSavingRef.current = false;
-      setTitleSaving(false);
+      setIsTitleSaving(false);
     }
   }
 
@@ -278,12 +278,12 @@ export default function WorkspacePage() {
             type="button"
             className="sidebar-toggle"
             aria-label={t("navigation.toggleSidebar")}
-            title={t(sidebarVisible ? "navigation.hideSidebar" : "navigation.showSidebar")}
-            aria-expanded={sidebarVisible}
+            title={t(isSidebarVisible ? "navigation.hideSidebar" : "navigation.showSidebar")}
+            aria-expanded={isSidebarVisible}
             aria-controls="workspace-sidebar"
-            onClick={() => setSidebarVisible((visible) => !visible)}
+            onClick={() => setIsSidebarVisible((visible) => !visible)}
           >
-            {sidebarVisible ? (
+            {isSidebarVisible ? (
               <PanelLeftClose size={17} aria-hidden="true" />
             ) : (
               <PanelLeftOpen size={17} aria-hidden="true" />
@@ -295,8 +295,8 @@ export default function WorkspacePage() {
             <strong
               key={`${selected.id}-${selected.title}`}
               className="workspace-title-editable"
-              contentEditable={!titleSaving && !snapshot.mutationRequestIds[selected.id]}
-              aria-disabled={titleSaving || Boolean(snapshot.mutationRequestIds[selected.id])}
+              contentEditable={!isTitleSaving && !snapshot.mutationRequestIds[selected.id]}
+              aria-disabled={isTitleSaving || Boolean(snapshot.mutationRequestIds[selected.id])}
               suppressContentEditableWarning
               role="textbox"
               aria-label={t("navigation.editTitle")}
@@ -320,7 +320,7 @@ export default function WorkspacePage() {
             <strong>{t("navigation.workspaceTitle")}</strong>
           )}
           {selected && (
-            <span className={titleError ? "workspace-save-error" : undefined}>
+            <span className={hasTitleError ? "workspace-save-error" : undefined}>
               <Check size={12} />
               {titleStatus}
             </span>
@@ -330,15 +330,15 @@ export default function WorkspacePage() {
           <LocalModelSelect disabled={recordingActive} />
         </div>
       </header>
-      <div className={`workspace-grid${sidebarVisible ? "" : " workspace-sidebar-hidden"}`}>
-        <div id="workspace-sidebar" className="workspace-sidebar" hidden={!sidebarVisible}>
+      <div className={`workspace-grid${isSidebarVisible ? "" : " workspace-sidebar-hidden"}`}>
+        <div id="workspace-sidebar" className="workspace-sidebar" hidden={!isSidebarVisible}>
           <HistorySidebar
             selectedId={activeSelectedId}
             onSelect={requestSelect}
             onDeleted={(id) => {
               if (id === activeSelectedId) setSelectedId(null);
             }}
-            onNewRecording={() => setSourceDialogOpen(true)}
+            onNewRecording={() => setIsSourceDialogOpen(true)}
             onOpenSettings={() => openSettings()}
           />
         </div>
@@ -354,7 +354,7 @@ export default function WorkspacePage() {
           }
         >
           {showWelcome ? (
-            <WorkspaceWelcome onNewRecording={() => setSourceDialogOpen(true)} />
+            <WorkspaceWelcome onNewRecording={() => setIsSourceDialogOpen(true)} />
           ) : (
             <>
               <RecordingPane
@@ -363,7 +363,7 @@ export default function WorkspacePage() {
                 timelineTab={timelineTab}
                 timelineImports={timelineImports}
                 onTimelineTabChange={setTimelineTab}
-                onNewRecording={() => setSourceDialogOpen(true)}
+                onNewRecording={() => setIsSourceDialogOpen(true)}
                 onOpenSettings={() => openSettings()}
               />
               <div
@@ -386,9 +386,9 @@ export default function WorkspacePage() {
         </div>
       </div>
       <SourceDialog
-        key={sourceDialogOpen ? "open" : "closed"}
-        open={sourceDialogOpen}
-        onClose={() => setSourceDialogOpen(false)}
+        key={isSourceDialogOpen ? "open" : "closed"}
+        open={isSourceDialogOpen}
+        onClose={() => setIsSourceDialogOpen(false)}
         onStarted={(recordingId) => {
           if (recordingId) requestSelect(recordingId);
 
@@ -400,40 +400,20 @@ export default function WorkspacePage() {
           onClose={onboarding.complete}
           onStartRecording={() => {
             onboarding.complete();
-            setSourceDialogOpen(true);
+            setIsSourceDialogOpen(true);
           }}
           onOpenSettings={openSettings}
         />
       )}
-      <dialog
-        ref={discardDialogRef}
-        className="recording-delete-dialog"
-        aria-labelledby="guide-discard-title"
-        aria-describedby="guide-discard-description"
-        onCancel={(event) => {
-          event.preventDefault();
-          if (!switchSaving) setPendingSelectionId(null);
-        }}
-      >
-        <h2 id="guide-discard-title">{t("guide.discardTitle")}</h2>
-        <p id="guide-discard-description">{t("guide.discardDescription")}</p>
-        <footer>
-          <Button
-            data-cancel-switch
-            variant="secondary"
-            disabled={switchSaving}
-            onClick={() => setPendingSelectionId(null)}
-          >
-            {t("actions.cancel")}
-          </Button>
-          <Button variant="ghost" disabled={switchSaving} onClick={() => void discardAndSwitch()}>
-            {t("guide.discard")}
-          </Button>
-          <Button disabled={switchSaving} onClick={() => void saveAndSwitch()}>
-            {switchSaving ? t("guide.saving") : t("guide.saveAndSwitch")}
-          </Button>
-        </footer>
-      </dialog>
+      <GuideDiscardDialog
+        dialogRef={discardDialogRef}
+        isBusy={isSwitchSaving}
+        title={t("guide.discardTitle")}
+        description={t("guide.discardDescription")}
+        onCancel={() => setPendingSelectionId(null)}
+        onDiscard={() => void discardAndSwitch()}
+        onSave={() => void saveAndSwitch()}
+      />
     </div>
   );
 }

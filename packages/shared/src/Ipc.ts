@@ -1,14 +1,21 @@
 import type { CliState, CliSelection, CliToolId } from "./CliTools";
 import { guideContextItemSchema, MAX_GUIDE_CONTEXT_ITEMS } from "./GuideContext";
 import { z } from "zod";
-import type { InstructionFlowState, SaveInstructionFlowInput } from "./InstructionFlows";
+import {
+  MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH,
+  type InstructionFlowState,
+  type SaveInstructionFlowInput,
+} from "./InstructionFlows";
 
 import {
   aiEfforts,
   aiProviders,
+  MAX_GENERATED_DOCUMENTS,
+  MAX_PROJECT_NAME_LENGTH,
   MAX_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
   MAX_TIMELINE_IMPORT_OFFSET_MS,
   MAX_TIMELINE_IMPORT_PAGE_ROWS,
+  MAX_WORKFLOW_TITLE_LENGTH,
   MIN_TIMELINE_IMPORT_MAX_FILE_SIZE_MB,
   timelineImportKinds,
 } from "./Contracts";
@@ -28,6 +35,8 @@ import type {
   RegionSelectionContext,
   StartRecordingInput,
   CommittedGuideRevision,
+  CommittedGuideCollection,
+  GuideDocumentCollection,
   DesktopSettings,
   DocumentRevision,
   DocumentRevisionPage,
@@ -87,6 +96,11 @@ export const IPC_CHANNELS = {
   instructionFlowsChanged: "instruction-flows:changed",
 
   guidesGenerate: "guides:generate",
+  guidesGenerateCollection: "guides:generate-collection",
+  guidesGetCollection: "guides:get-collection",
+  guidesSetGenerationMode: "guides:set-generation-mode",
+  guidesSuggestWorkflows: "guides:suggest-workflows",
+  guidesSaveWorkflowPlan: "guides:save-workflow-plan",
   guidesUpdate: "guides:update",
   guidesExportMarkdown: "guides:export-markdown",
   guidesGetDocument: "guides:get-document",
@@ -216,11 +230,14 @@ export const updateAiModelSelectionInputSchema = z.strictObject({
 });
 
 export const projectChangeInputSchema = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("create"), name: z.string().trim().min(1).max(80) }),
+  z.strictObject({
+    action: z.literal("create"),
+    name: z.string().trim().min(1).max(MAX_PROJECT_NAME_LENGTH),
+  }),
   z.strictObject({
     action: z.literal("rename"),
     id: z.string().uuid(),
-    name: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1).max(MAX_PROJECT_NAME_LENGTH),
   }),
   z.strictObject({ action: z.literal("remove"), id: z.string().uuid() }),
   z.strictObject({
@@ -239,15 +256,97 @@ const markdownSchema = z.string().max(MAX_MARKDOWN_LENGTH);
 export const cliDeployInputSchema = z.strictObject({ markdown: markdownSchema.min(1) });
 const draftVersionSchema = z.number().int().min(0);
 const revisionNumberSchema = z.number().int().min(1);
+const instructionsSchema = z.string().trim().max(MAX_INSTRUCTION_FLOW_INSTRUCTIONS_LENGTH);
 
-export const generateGuideInputSchema = recordingIdInputSchema.extend({
-  instructions: z.string().trim().max(10_000),
+export const guideDocumentInputSchema = recordingIdInputSchema.extend({
+  documentId: z.string().uuid().optional(),
+});
+
+const documentGenerationModeSchema = z.enum(["combine", "split"]);
+
+export const setDocumentGenerationModeInputSchema = recordingIdInputSchema.extend({
+  mode: documentGenerationModeSchema,
+});
+
+const MAX_WORKFLOW_SCOPE_LENGTH = 1000;
+
+const workflowTitleSchema = z.string().trim().min(1).max(MAX_WORKFLOW_TITLE_LENGTH);
+const workflowScopeSchema = z.string().trim().min(1).max(MAX_WORKFLOW_SCOPE_LENGTH);
+
+/** Titles compare case-insensitively so "Login" and "login" cannot become separate tabs. */
+function hasUniqueTitles(items: readonly { title: string }[]): boolean {
+  return new Set(items.map((item) => item.title.trim().toLowerCase())).size === items.length;
+}
+
+const documentWorkflowSchema = z.strictObject({
+  id: z.string().uuid(),
+  title: workflowTitleSchema,
+  scope: workflowScopeSchema,
+});
+
+const editableWorkflowPlanSchema = z
+  .array(documentWorkflowSchema)
+  .max(MAX_GENERATED_DOCUMENTS)
+  .refine(hasUniqueTitles, { message: "Workflow titles must be unique" })
+  .refine(
+    (workflows) => new Set(workflows.map((workflow) => workflow.id)).size === workflows.length,
+    { message: "Workflow identities must be unique" },
+  );
+
+export const saveDocumentWorkflowPlanInputSchema = recordingIdInputSchema.extend({
+  workflows: editableWorkflowPlanSchema,
+  expectedPlanVersion: draftVersionSchema,
+});
+
+export const suggestDocumentWorkflowsInputSchema = recordingIdInputSchema.extend({
+  instructions: instructionsSchema,
+  expectedPlanVersion: draftVersionSchema,
+});
+
+export const documentWorkflowPlanSchema = z
+  .strictObject({
+    documents: z
+      .array(
+        z.strictObject({
+          title: workflowTitleSchema,
+          scope: workflowScopeSchema,
+        }),
+      )
+      .min(1)
+      .max(MAX_GENERATED_DOCUMENTS),
+  })
+  .refine(({ documents }) => hasUniqueTitles(documents), {
+    message: "Workflow titles must be unique",
+  });
+
+export const generatedDocumentCollectionSchema = z
+  .strictObject({
+    documents: z
+      .array(
+        z.strictObject({
+          title: workflowTitleSchema,
+          markdown: markdownSchema.trim().min(1),
+        }),
+      )
+      .min(1)
+      .max(MAX_GENERATED_DOCUMENTS),
+  })
+  .refine(({ documents }) => hasUniqueTitles(documents), {
+    message: "Document titles must be unique",
+  });
+
+export const generateGuideInputSchema = guideDocumentInputSchema.extend({
+  instructions: instructionsSchema,
   /** Unsaved editor text this generation will replace; it is checkpointed into history. */
   replacedMarkdown: markdownSchema.optional(),
 });
 
-export const updateGuideInputSchema = recordingIdInputSchema.extend({
-  instructions: z.string().trim().max(10_000),
+export const generateGuideCollectionInputSchema = generateGuideInputSchema.extend({
+  mode: documentGenerationModeSchema,
+});
+
+export const updateGuideInputSchema = guideDocumentInputSchema.extend({
+  instructions: instructionsSchema,
   currentMarkdown: markdownSchema,
   updatePrompt: z.string().trim().min(1).max(10_000),
   context: z.array(guideContextItemSchema).max(MAX_GUIDE_CONTEXT_ITEMS).optional(),
@@ -316,28 +415,28 @@ export const timelineImportOffsetInputSchema = timelineImportInputSchema.extend(
   offsetMs: z.number().int().min(-MAX_TIMELINE_IMPORT_OFFSET_MS).max(MAX_TIMELINE_IMPORT_OFFSET_MS),
 });
 
-export const saveGuideDocumentInputSchema = recordingIdInputSchema.extend({
+export const saveGuideDocumentInputSchema = guideDocumentInputSchema.extend({
   markdown: markdownSchema,
   /** The saved revision this editor last loaded; a newer save elsewhere rejects this one. */
   expectedSavedRevisionNumber: revisionNumberSchema.nullable(),
   draftVersion: draftVersionSchema,
 });
 
-export const saveGuideDraftInputSchema = recordingIdInputSchema.extend({
+export const saveGuideDraftInputSchema = guideDocumentInputSchema.extend({
   markdown: markdownSchema,
   expectedDraftVersion: draftVersionSchema,
 });
 
-export const discardGuideDraftInputSchema = recordingIdInputSchema.extend({
+export const discardGuideDraftInputSchema = guideDocumentInputSchema.extend({
   expectedDraftVersion: draftVersionSchema,
 });
 
-export const listGuideRevisionsInputSchema = recordingIdInputSchema.extend({
+export const listGuideRevisionsInputSchema = guideDocumentInputSchema.extend({
   beforeNumber: revisionNumberSchema.optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 
-export const guideRevisionInputSchema = recordingIdInputSchema.extend({
+export const guideRevisionInputSchema = guideDocumentInputSchema.extend({
   number: revisionNumberSchema,
 });
 
@@ -354,7 +453,7 @@ export const appFlushCompleteInputSchema = z.strictObject({
 
 export const exportMarkdownInputSchema = z.strictObject({
   suggestedName: z.string().trim().min(1).max(120),
-  markdown: z.string().max(10_000_000),
+  markdown: markdownSchema,
 });
 
 export const selectRegionInputSchema = z.strictObject({
@@ -436,10 +535,23 @@ export interface DesktopApi {
   };
 
   guides: {
+    getCollection(input: RecordingIdInput): Promise<GuideDocumentCollection>;
+    setGenerationMode(
+      input: z.infer<typeof setDocumentGenerationModeInputSchema>,
+    ): Promise<GuideDocumentCollection>;
+    suggestWorkflows(
+      input: z.infer<typeof suggestDocumentWorkflowsInputSchema>,
+    ): Promise<GuideDocumentCollection>;
+    saveWorkflowPlan(
+      input: z.infer<typeof saveDocumentWorkflowPlanInputSchema>,
+    ): Promise<GuideDocumentCollection>;
+    generateCollection(
+      input: z.infer<typeof generateGuideCollectionInputSchema>,
+    ): Promise<CommittedGuideCollection>;
     generate(input: z.infer<typeof generateGuideInputSchema>): Promise<CommittedGuideRevision>;
     update(input: z.infer<typeof updateGuideInputSchema>): Promise<CommittedGuideRevision>;
     exportMarkdown(input: z.infer<typeof exportMarkdownInputSchema>): Promise<boolean>;
-    getDocument(input: RecordingIdInput): Promise<GuideDocumentSnapshot>;
+    getDocument(input: z.infer<typeof guideDocumentInputSchema>): Promise<GuideDocumentSnapshot>;
     saveDocument(
       input: z.infer<typeof saveGuideDocumentInputSchema>,
     ): Promise<SaveGuideDocumentResult>;

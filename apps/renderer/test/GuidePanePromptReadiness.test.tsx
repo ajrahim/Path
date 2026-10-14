@@ -113,6 +113,7 @@ beforeEach(() => {
   mocks.flows.selectedFlow.name = "Review";
   mocks.flows.selectedFlow.instructions = "Current saved instructions";
   mocks.guide.markdown = "";
+  mocks.guide.generating = false;
   mocks.guide.error = null;
   mocks.guide.canRetryGenerate = false;
   mocks.chat = null;
@@ -121,6 +122,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("GuidePane prompt readiness", () => {
+  it("names the icon-only Generate action and exposes its pending state", () => {
+    const view = render(pane());
+    const generate = view.getByRole("button", { name: "Generate" });
+
+    expect(generate.textContent).toBe("");
+    expect(generate.getAttribute("title")).toBe("Generate");
+    expect(generate.getAttribute("aria-busy")).toBe("false");
+    mocks.guide.generating = true;
+    view.rerender(pane());
+    const pending = view.getByRole("button", { name: "Generating…" }) as HTMLButtonElement;
+
+    expect(pending.disabled).toBe(true);
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    expect((view.getByRole("switch", { name: "Split" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("hides CLI deployment only for the Help Guide flow", () => {
     const view = render(pane());
 
@@ -197,7 +214,10 @@ describe("GuidePane prompt readiness", () => {
         (view.getByRole("button", { name: "Generate anyway" }) as HTMLButtonElement).disabled,
       ).toBe(false);
       fireEvent.click(view.getByRole("button", { name: "Generate anyway" }));
-      expect(mocks.guide.generateGuide).toHaveBeenCalledWith("Latest synchronized prompt");
+      expect(mocks.guide.generateGuide).toHaveBeenCalledWith(
+        "Latest synchronized prompt",
+        expect.objectContaining({ mode: "combine" }),
+      );
       expect(view.queryByRole("dialog")).toBeNull();
     },
   );
@@ -215,8 +235,16 @@ describe("GuidePane prompt readiness", () => {
     }
 
     expect(mocks.guide.generateGuide).toHaveBeenCalledTimes(2);
-    expect(mocks.guide.generateGuide).toHaveBeenNthCalledWith(1, "Current saved instructions");
-    expect(mocks.guide.generateGuide).toHaveBeenNthCalledWith(2, "Current saved instructions");
+    expect(mocks.guide.generateGuide).toHaveBeenNthCalledWith(
+      1,
+      "Current saved instructions",
+      expect.objectContaining({ mode: "combine" }),
+    );
+    expect(mocks.guide.generateGuide).toHaveBeenNthCalledWith(
+      2,
+      "Current saved instructions",
+      expect.objectContaining({ mode: "combine" }),
+    );
     expect(mocks.guide.updateGuide).toHaveBeenCalledWith(
       "Current saved instructions",
       "Add examples",

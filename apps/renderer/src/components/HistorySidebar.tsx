@@ -65,7 +65,7 @@ function HistoryItemThumbnail({
     recording.thumbnailPath,
   );
 
-  const [imageError, setImageError] = useState(false);
+  const [hasImageError, setHasImageError] = useState(false);
 
   if (recording.status === "recording") {
     return (
@@ -91,7 +91,7 @@ function HistoryItemThumbnail({
     );
   }
 
-  if (thumbnailUrl && !imageError) {
+  if (thumbnailUrl && !hasImageError) {
     return (
       <span className="history-thumbnail">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -100,7 +100,7 @@ function HistoryItemThumbnail({
           alt=""
           draggable={false}
           className="history-thumbnail-image"
-          onError={() => setImageError(true)}
+          onError={() => setHasImageError(true)}
         />
       </span>
     );
@@ -134,18 +134,18 @@ export function HistorySidebar({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase(locale));
   const [sortMode, setSortMode] = useState<SortMode>("newest");
-  const [sortOpen, setSortOpen] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameLocation, setRenameLocation] = useState("all");
   const [hasRenameError, setHasRenameError] = useState(false);
   const [isSavingRename, setIsSavingRename] = useState(false);
   const projectLibrary = useRecordingProjects();
   const [projectAction, setProjectAction] = useState<ProjectDialogAction | null>(null);
-  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [areProjectsExpanded, setAreProjectsExpanded] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [moveError, setMoveError] = useState(false);
+  const [hasMoveError, setHasMoveError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<RecordingSummary | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     target:
@@ -166,18 +166,18 @@ export function HistorySidebar({
   }, [refresh]);
 
   useEffect(() => {
-    if (!sortOpen) return;
+    if (!isSortOpen) return;
 
     function closeSortMenu(event: PointerEvent): void {
       if (event.target instanceof Element && event.target.closest(".sort-control")) {
         return;
       }
 
-      setSortOpen(false);
+      setIsSortOpen(false);
     }
 
     function closeSortMenuOnEscape(event: KeyboardEvent): void {
-      if (event.key === "Escape") setSortOpen(false);
+      if (event.key === "Escape") setIsSortOpen(false);
     }
 
     document.addEventListener("pointerdown", closeSortMenu);
@@ -187,7 +187,7 @@ export function HistorySidebar({
       document.removeEventListener("pointerdown", closeSortMenu);
       document.removeEventListener("keydown", closeSortMenuOnEscape);
     };
-  }, [sortOpen]);
+  }, [isSortOpen]);
 
   const visibleRecordings = sortRecordings(
     snapshot.recordings.filter((recording) =>
@@ -365,7 +365,7 @@ export function HistorySidebar({
           return;
         }
 
-        setMoveError(false);
+        setHasMoveError(false);
         void projectLibrary
           .change({ action: "move", recordingId: id, projectId })
           .then(() => {
@@ -379,7 +379,7 @@ export function HistorySidebar({
               });
             }
           })
-          .catch(() => setMoveError(true));
+          .catch(() => setHasMoveError(true));
       },
     };
   }
@@ -502,12 +502,12 @@ export function HistorySidebar({
               title={t("history.sort")}
               aria-label={t("history.sort")}
               aria-haspopup="menu"
-              aria-expanded={sortOpen}
-              onClick={() => setSortOpen((value) => !value)}
+              aria-expanded={isSortOpen}
+              onClick={() => setIsSortOpen((value) => !value)}
             >
               <ListFilter aria-hidden="true" size={15} />
             </button>
-            {sortOpen && (
+            {isSortOpen && (
               <div className="sort-dropdown" role="menu" aria-label={t("history.sort")}>
                 {(
                   [
@@ -523,7 +523,7 @@ export function HistorySidebar({
                     key={value}
                     onClick={() => {
                       setSortMode(value);
-                      setSortOpen(false);
+                      setIsSortOpen(false);
                     }}
                   >
                     <span>{label}</span>
@@ -551,7 +551,7 @@ export function HistorySidebar({
             </button>
           </div>
         )}
-        {moveError && (
+        {hasMoveError && (
           <p className="project-error" role="alert">
             {t("projects.changeError")}
           </p>
@@ -561,12 +561,12 @@ export function HistorySidebar({
             <button
               type="button"
               className="history-projects-disclosure"
-              aria-expanded={Boolean(deferredQuery) || projectsExpanded}
+              aria-expanded={Boolean(deferredQuery) || areProjectsExpanded}
               aria-controls="history-project-list"
-              onClick={() => setProjectsExpanded((expanded) => !expanded)}
+              onClick={() => setAreProjectsExpanded((expanded) => !expanded)}
             >
               {t("projects.title")}
-              {projectsExpanded || deferredQuery ? (
+              {areProjectsExpanded || deferredQuery ? (
                 <ChevronDown size={12} aria-hidden="true" />
               ) : (
                 <ChevronRight size={12} aria-hidden="true" />
@@ -579,14 +579,14 @@ export function HistorySidebar({
               title={t("projects.createAction")}
               disabled={projectLibrary.saving || projectLibrary.status !== "ready"}
               onClick={() => {
-                setProjectsExpanded(true);
+                setAreProjectsExpanded(true);
                 setProjectAction({ kind: "create" });
               }}
             >
               <Plus size={15} aria-hidden="true" />
             </button>
           </div>
-          <div id="history-project-list" hidden={!projectsExpanded && !deferredQuery}>
+          <div id="history-project-list" hidden={!areProjectsExpanded && !deferredQuery}>
             {projectLibrary.projects.map((project) => {
               const matchesName = project.name.toLocaleLowerCase(locale).includes(deferredQuery);
               const members = (

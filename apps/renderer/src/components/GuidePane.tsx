@@ -4,22 +4,28 @@ import {
   Copy,
   Download,
   GitCompare,
+  Hammer,
   History,
+  LoaderCircle,
   RotateCcw,
   Save,
   Sparkles,
 } from "lucide-react";
 import { useFormatter, useNow, useTranslations } from "next-intl";
-import type { GuideContextItem, RecordingSummary } from "@path/shared";
-import { Button } from "@/components/Button";
+import type { DocumentGenerationMode, GuideContextItem, RecordingSummary } from "@path/shared";
+import { Button } from "./Button";
 import { GuideChatInput } from "./GuideChatInput";
 import { GuideDeployRow } from "./GuideDeployRow";
+import { GuideDiscardDialog } from "./GuideDiscardDialog";
+import { GuideDocumentModeSwitch } from "./GuideDocumentModeSwitch";
+import { GuideDocumentStructure } from "./GuideDocumentStructure";
 import { GuideRevisionCompare } from "./GuideRevisionCompare";
 import { GuideVersionSelect } from "./GuideVersionSelect";
 import { InstructionFlowSelect } from "./InstructionFlowSelect";
 import { InstructionFlowEditor } from "./InstructionFlowEditor";
 import { useInstructionFlows } from "../hooks/useInstructionFlows";
 import { useGuideDocument } from "../hooks/useGuideDocument";
+import { useGuideCollection } from "../hooks/useGuideCollection";
 
 export interface GuidePaneState {
   isDirty: boolean;
@@ -27,6 +33,12 @@ export interface GuidePaneState {
   /** Drops unsaved text durably so its recovery draft does not return. */
   discard(): Promise<boolean>;
 }
+
+/** A tab, workflow, or mode switch waiting on the dirty editor's save-or-discard answer. */
+type PendingDocumentSwitch =
+  | { type: "select"; id: string }
+  | { type: "remove"; id: string }
+  | { type: "mode"; mode: DocumentGenerationMode };
 
 export function GuidePane({
   recording,
@@ -40,17 +52,39 @@ export function GuidePane({
   // "Last saved 5 minutes ago" stays current while the pane is open.
   const now = useNow({ updateInterval: 60_000 });
   const flows = useInstructionFlows();
-  const { markdownInputRef, isDirty, saveDocument, discardChanges, ...guide } =
-    useGuideDocument(recording);
+  const collection = useGuideCollection(
+    recording?.id,
+    flows.loaded && !flows.isBusy ? flows.selectedFlow.instructions : undefined,
+  );
 
-  const [overwriteOpen, setOverwriteOpen] = useState(false);
-  const [compareOpen, setCompareOpen] = useState(false);
+  const { markdownInputRef, isDirty, saveDocument, discardChanges, ...guide } = useGuideDocument(
+    recording,
+    collection.activeDocument,
+  );
+
+  const [isOverwriteOpen, setIsOverwriteOpen] = useState(false);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingDocumentSwitch | null>(null);
+
+  const [isSwitchSaving, setIsSwitchSaving] = useState(false);
+  const discardDialogRef = useRef<HTMLDialogElement>(null);
   const flowSelectRef = useRef<HTMLButtonElement>(null);
-  const error = guide.error ?? flows.error;
+  const error = guide.error ?? collection.error ?? flows.error;
   const promptsReady = flows.loaded && !flows.isBusy;
+  const isEmptySplit = collection.activeDocument === null;
+  const isEmptyPlan = collection.mode === "split" && !collection.workflows?.length;
+  const isSplitTabPanel = collection.mode === "split" && collection.activeDocumentId !== null;
 
   const preview = guide.preview;
-  const isBusy = guide.loading || guide.generating || guide.updating || guide.restoring;
+  const isBusy =
+    collection.loading ||
+    collection.pending ||
+    guide.loading ||
+    guide.generating ||
+    guide.updating ||
+    guide.restoring ||
+    isSwitchSaving;
+
   // The editor shows a previewed version, or the version its current text came from.
   const shownNumber = preview?.number ?? guide.currentRevisionNumber;
 
@@ -61,20 +95,108 @@ export function GuidePane({
     return () => onGuideStateChange?.(null);
   }, [isDirty, saveDocument, discardChanges, onGuideStateChange]);
 
-  function requestGenerate(): void {
-    if (!promptsReady) return;
-    // Generating replaces the draft, so an existing document needs explicit confirmation.
-    if (guide.markdown.trim()) {
-      setOverwriteOpen(true);
+  useEffect(() => {
+    if (!pendingAction) return;
+    const dialog = discardDialogRef.current;
+
+    dialog?.showModal();
+    dialog?.querySelector<HTMLButtonElement>("[data-cancel-switch]")?.focus();
+
+    return () => dialog?.close();
+  }, [pendingAction]);
+
+  function generateDocuments(): void {
+    if (!promptsReady || isBusy) return;
+    void guide.generateGuide(flows.selectedFlow.instructions, {
+      mode: collection.mode,
+      onGenerated: collection.adoptCollection,
+    });
+  }
+
+  function requestDocument(id: string): void {
+    if (isBusy || id === collection.activeDocumentId) return;
+    if (isDirty) {
+      setPendingAction({ type: "select", id });
+
+      return;
+    }
+
+    collection.selectDocument(id);
+  }
+
+  function requestMode(mode: DocumentGenerationMode): void {
+    // Re-selecting split with no plan retries the failed workflow suggestions.
+    const canRetrySuggestions = mode === "split" && collection.workflows === null;
+    const alreadyInMode = mode === collection.mode && !canRetrySuggestions;
+
+    if (isBusy || alreadyInMode) return;
+
+    const nextWorkflow =
+      collection.workflows?.find((workflow) => workflow.id === collection.activeDocumentId) ??
+      collection.workflows?.[0];
+
+    const nextDocumentId =
+      mode === "combine" ? collection.activeDocument?.id : nextWorkflow?.documentId;
+
+    if (isDirty && nextDocumentId !== collection.activeDocument?.id) {
+      setPendingAction({ type: "mode", mode });
     } else {
-      void guide.generateGuide(flows.selectedFlow.instructions);
+      void collection.setMode(mode, flows.selectedFlow.instructions);
+    }
+  }
+
+  function removeWorkflow(id: string): void {
+    if (isBusy) return;
+
+    if (id === collection.activeDocumentId && isDirty) setPendingAction({ type: "remove", id });
+    else void collection.removeWorkflow(id);
+  }
+
+  /** Returns whether the switch completed; a failed workflow removal keeps the dialog open. */
+  async function applyPendingAction(action: PendingDocumentSwitch): Promise<boolean> {
+    switch (action.type) {
+      case "select":
+        collection.selectDocument(action.id);
+
+        return true;
+      case "remove":
+        return collection.removeWorkflow(action.id);
+      case "mode":
+        await collection.setMode(action.mode, flows.selectedFlow.instructions);
+
+        return true;
+    }
+  }
+
+  async function switchDocument(shouldSave: boolean): Promise<void> {
+    if (!pendingAction || isSwitchSaving) return;
+
+    setIsSwitchSaving(true);
+    try {
+      const hasResolvedChanges = await (shouldSave ? saveDocument() : discardChanges());
+
+      if (!hasResolvedChanges || !(await applyPendingAction(pendingAction))) return;
+
+      setPendingAction(null);
+    } finally {
+      setIsSwitchSaving(false);
+    }
+  }
+
+  function requestGenerate(): void {
+    if (!promptsReady || isBusy) return;
+    // Generating replaces the draft, so an existing document needs explicit confirmation.
+    if (guide.markdown.trim() || collection.documents.length > 0) {
+      setIsOverwriteOpen(true);
+    } else {
+      generateDocuments();
     }
   }
 
   function confirmGenerate(): void {
     if (!promptsReady) return;
-    setOverwriteOpen(false);
-    void guide.generateGuide(flows.selectedFlow.instructions);
+    setIsOverwriteOpen(false);
+    generateDocuments();
   }
 
   async function updateGuide(
@@ -85,10 +207,6 @@ export function GuidePane({
     if (!promptsReady) return false;
 
     return guide.updateGuide(flows.selectedFlow.instructions, prompt, context, contextFolder);
-  }
-
-  function retryGenerate(): void {
-    if (promptsReady) void guide.generateGuide(flows.selectedFlow.instructions);
   }
 
   // Recovery drafts never read as saved: the time shown is the last explicit, committed save.
@@ -114,6 +232,29 @@ export function GuidePane({
     void guide.previewRevision(isCurrent ? null : number);
   }
 
+  function editorPlaceholder(): string {
+    if (collection.pending && collection.mode === "split" && collection.workflows === null) {
+      return t("guide.suggestingSplits");
+    }
+
+    if (isEmptySplit) return t(isEmptyPlan ? "guide.noSplits" : "guide.notGenerated");
+
+    return t("guide.markdownPlaceholder");
+  }
+
+  function overwriteTitleKey(): string {
+    return collection.documents.length > 1
+      ? "guide.overwriteCollectionTitle"
+      : "guide.overwriteTitle";
+  }
+
+  function overwriteDescriptionKey(): string {
+    if (collection.mode === "split") return "guide.overwriteSplitDescription";
+    if (collection.documents.length > 1) return "guide.overwriteCollectionDescription";
+
+    return "guide.overwriteDescription";
+  }
+
   const saveStatus = saveStatusText();
 
   return (
@@ -131,18 +272,49 @@ export function GuidePane({
               onSelect={flows.selectFlow}
             />
             <div className="guide-header-actions">
+              <GuideDocumentModeSwitch
+                mode={collection.mode}
+                disabled={!recording || isBusy || !promptsReady}
+                onModeChange={requestMode}
+              />
               <Button
-                size="sm"
-                disabled={!recording || guide.generating || guide.updating || !promptsReady}
+                size="icon"
+                className="guide-generate-button"
+                aria-label={guide.generating ? t("guide.generating") : t("guide.generate")}
+                title={guide.generating ? t("guide.generating") : t("guide.generate")}
+                aria-busy={guide.generating}
+                disabled={!recording || isBusy || !promptsReady}
                 onClick={requestGenerate}
               >
-                <Sparkles size={14} />
-                {guide.generating ? t("guide.generating") : t("guide.generate")}
+                {guide.generating ? (
+                  <LoaderCircle size={15} className="guide-chat-spinner" aria-hidden="true" />
+                ) : (
+                  <Hammer size={15} aria-hidden="true" />
+                )}
               </Button>
             </div>
           </div>
+          {collection.mode === "split" && (
+            <GuideDocumentStructure
+              key={`${recording?.id ?? ""}:${collection.mode}`}
+              mode={collection.mode}
+              workflows={collection.workflows ?? []}
+              activeDocumentId={collection.activeDocumentId}
+              disabled={!recording || isBusy || !promptsReady}
+              onSelect={requestDocument}
+              onAdd={collection.addWorkflow}
+              onRemove={removeWorkflow}
+              onRename={collection.renameWorkflow}
+              onReorder={collection.moveWorkflow}
+            />
+          )}
         </header>
         <div
+          id="guide-document-editor"
+          role={isSplitTabPanel ? "tabpanel" : undefined}
+          aria-labelledby={
+            isSplitTabPanel ? `guide-document-${collection.activeDocumentId}` : undefined
+          }
           className="editor-surface markdown-editor-surface"
           onDragOver={(event) => {
             if (
@@ -159,7 +331,7 @@ export function GuidePane({
               file.type.startsWith("image/"),
             );
 
-            if (images.length === 0 || preview) return;
+            if (images.length === 0 || preview || isBusy || isEmptySplit) return;
 
             event.preventDefault();
             void guide.insertImages(images);
@@ -171,7 +343,7 @@ export function GuidePane({
                 <div className="guide-preview-bar" role="status">
                   <span>{t("guide.previewing", { number: preview.number })}</span>
                   <div className="guide-preview-actions">
-                    <Button size="sm" variant="ghost" onClick={() => setCompareOpen(true)}>
+                    <Button size="sm" variant="ghost" onClick={() => setIsCompareOpen(true)}>
                       <GitCompare aria-hidden="true" size={13} />
                       {t("guide.compare")}
                     </Button>
@@ -200,27 +372,32 @@ export function GuidePane({
                 className={preview ? "guide-previewing" : undefined}
                 value={preview?.markdown ?? guide.markdown}
                 readOnly={preview !== null}
-                disabled={guide.loading}
+                disabled={
+                  guide.loading ||
+                  collection.loading ||
+                  collection.pending ||
+                  guide.generating ||
+                  isSwitchSaving ||
+                  isEmptySplit
+                }
                 onChange={(event) => guide.editMarkdown(event.target.value)}
                 onPaste={(event) => {
                   const images = [...event.clipboardData.files].filter((file) =>
                     file.type.startsWith("image/"),
                   );
 
-                  if (images.length === 0 || preview) return;
+                  if (images.length === 0 || preview || isEmptySplit) return;
 
                   event.preventDefault();
                   void guide.insertImages(images);
                 }}
                 aria-label={t("guide.editor")}
-                placeholder={t("guide.markdownPlaceholder")}
+                placeholder={editorPlaceholder()}
               />
               <GuideChatInput
-                key={recording?.id}
+                key={`${recording.id}-${collection.activeDocumentId ?? "empty"}`}
                 updating={guide.updating}
-                disabled={
-                  guide.loading || guide.generating || guide.restoring || !promptsReady || !!preview
-                }
+                disabled={isBusy || isEmptySplit || !promptsReady || !!preview}
                 onSend={updateGuide}
               />
               <div className="markdown-editor-footer">
@@ -282,7 +459,7 @@ export function GuidePane({
               </div>
               {flows.selectedFlow.id !== "help-guide" && (
                 <GuideDeployRow
-                  key={`deploy-${recording.id}`}
+                  key={`deploy-${recording.id}-${collection.activeDocumentId ?? "empty"}`}
                   markdown={guide.markdown}
                   disabled={isBusy || !!preview}
                 />
@@ -309,23 +486,34 @@ export function GuidePane({
                 <button
                   type="button"
                   className="markdown-error-retry"
-                  disabled={!promptsReady}
-                  onClick={retryGenerate}
+                  disabled={!promptsReady || isBusy}
+                  onClick={generateDocuments}
                 >
                   <RotateCcw aria-hidden="true" size={12} />
                   {t("guide.retry")}
+                </button>
+              )}
+              {collection.mode === "split" && collection.workflows === null && (
+                <button
+                  type="button"
+                  className="markdown-error-retry"
+                  disabled={!promptsReady || isBusy}
+                  onClick={() => requestMode("split")}
+                >
+                  <RotateCcw aria-hidden="true" size={12} />
+                  {t("guide.retrySuggestions")}
                 </button>
               )}
             </p>
           )}
         </div>
       </aside>
-      {overwriteOpen && (
+      {isOverwriteOpen && (
         <div
           className="modal-backdrop guide-instructions-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setOverwriteOpen(false);
+            if (event.target === event.currentTarget) setIsOverwriteOpen(false);
           }}
         >
           <div
@@ -337,12 +525,12 @@ export function GuidePane({
             <header className="prompt-editor-header">
               <Sparkles aria-hidden="true" size={20} />
               <div>
-                <h2 id="guide-overwrite-title">{t("guide.overwriteTitle")}</h2>
-                <p>{t("guide.overwriteDescription")}</p>
+                <h2 id="guide-overwrite-title">{t(overwriteTitleKey())}</h2>
+                <p>{t(overwriteDescriptionKey())}</p>
               </div>
             </header>
             <footer>
-              <Button variant="secondary" onClick={() => setOverwriteOpen(false)}>
+              <Button variant="secondary" onClick={() => setIsOverwriteOpen(false)}>
                 {t("actions.cancel")}
               </Button>
               <Button disabled={!promptsReady} onClick={confirmGenerate}>
@@ -353,15 +541,24 @@ export function GuidePane({
           </div>
         </div>
       )}
-      {compareOpen && preview && (
+      {isCompareOpen && preview && (
         <GuideRevisionCompare
           revisionNumber={preview.number}
           revisionMarkdown={preview.markdown}
           currentMarkdown={guide.markdown}
-          onClose={() => setCompareOpen(false)}
+          onClose={() => setIsCompareOpen(false)}
         />
       )}
       <InstructionFlowEditor flows={flows} />
+      <GuideDiscardDialog
+        dialogRef={discardDialogRef}
+        isBusy={isSwitchSaving}
+        title={t("guide.documentDiscardTitle")}
+        description={t("guide.documentDiscardDescription")}
+        onCancel={() => setPendingAction(null)}
+        onDiscard={() => void switchDocument(false)}
+        onSave={() => void switchDocument(true)}
+      />
     </>
   );
 }

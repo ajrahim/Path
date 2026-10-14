@@ -86,7 +86,7 @@ export function ActivityTimeline({
 }) {
   const t = useTranslations();
   const locale = useLocale();
-  const busy = processing || loading;
+  const isBusy = processing || loading;
 
   return (
     <section
@@ -94,11 +94,11 @@ export function ActivityTimeline({
       role="tabpanel"
       id={timelinePanelId("activity")}
       aria-labelledby={timelineTabId("activity")}
-      data-processing={busy}
+      data-processing={isBusy}
     >
       <header>
         <div className="activity-heading">{tabs}</div>
-        {!busy && canRetryAnalysis && (
+        {!isBusy && canRetryAnalysis && (
           <div className="activity-header-actions">
             <button
               type="button"
@@ -112,7 +112,7 @@ export function ActivityTimeline({
           </div>
         )}
       </header>
-      {!busy && (
+      {!isBusy && (
         <div className="activity-toolbar">
           <div className="search-control activity-search-control">
             <Search size={14} aria-hidden="true" />
@@ -135,7 +135,7 @@ export function ActivityTimeline({
           {error}
         </p>
       )}
-      {busy ? (
+      {isBusy ? (
         <div
           className="activity-processing"
           role="progressbar"

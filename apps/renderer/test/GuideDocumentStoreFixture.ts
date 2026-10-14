@@ -4,7 +4,10 @@ import type {
   DocumentRevision,
   DocumentRevisionKind,
   GuideDocumentChange,
+  GuideDocumentCollection,
   GuideDocumentSnapshot,
+  DocumentGenerationMode,
+  DocumentWorkflow,
 } from "@path/shared";
 
 /**
@@ -23,8 +26,24 @@ export function createGuideDocumentStore(recordingId: string) {
 
   const changeListeners = new Set<(change: GuideDocumentChange) => void>();
   const flushListeners = new Set<() => Promise<void>>();
+  let mode: DocumentGenerationMode = "combine";
+  let workflows: DocumentWorkflow[] | null = null;
+  let planVersion = 0;
 
-  function latest(): DocumentRevision | undefined {
+  function getCollection(): GuideDocumentCollection {
+    return {
+      recordingId,
+      mode,
+      workflows,
+      planVersion,
+      documents:
+        state.revisions.length || state.draft !== null
+          ? [{ id: "document-one", title: "Recorded review" }]
+          : [],
+    };
+  }
+
+  function getLatestRevision(): DocumentRevision | undefined {
     return state.revisions.at(-1);
   }
 
@@ -33,7 +52,7 @@ export function createGuideDocumentStore(recordingId: string) {
     markdown: string,
     restoredFromNumber: number | null = null,
   ): DocumentRevision {
-    const previous = latest();
+    const previous = getLatestRevision();
 
     if (previous?.markdown === markdown) return previous;
 
@@ -81,7 +100,7 @@ export function createGuideDocumentStore(recordingId: string) {
           : null,
       draft: state.draft === null ? null : { markdown: state.draft, updatedAt: "" },
       draftVersion: state.draftVersion,
-      latestRevisionNumber: latest()?.number ?? null,
+      latestRevisionNumber: getLatestRevision()?.number ?? null,
     };
   }
 
@@ -95,6 +114,52 @@ export function createGuideDocumentStore(recordingId: string) {
   }
 
   const guides: DesktopApi["guides"] = {
+    suggestWorkflows: vi.fn(async () => {
+      workflows ??= [
+        {
+          id: "document-one",
+          title: "Recorded review",
+          scope: "Recorded review",
+          documentId: state.revisions.length ? "document-one" : undefined,
+        },
+      ];
+      planVersion += 1;
+
+      return getCollection();
+    }),
+    saveWorkflowPlan: vi.fn(async (input) => {
+      workflows = input.workflows;
+      planVersion += 1;
+
+      return getCollection();
+    }),
+    getCollection: vi.fn(async () => getCollection()),
+    setGenerationMode: vi.fn(async (input) => {
+      mode = input.mode;
+
+      return getCollection();
+    }),
+    generateCollection: vi.fn(async (input) => {
+      mode = input.mode;
+      if (mode === "split") {
+        workflows = [
+          {
+            id: "document-one",
+            title: "Recorded review",
+            scope: "Recorded review",
+            documentId: "document-one",
+          },
+        ];
+        planVersion += 1;
+      }
+
+      const committed = commit("generated", "# Generated", input.replacedMarkdown);
+
+      state.draft = committed.markdown;
+      state.draftVersion += 1;
+
+      return { ...getCollection(), generated: [{ ...committed, documentId: "document-one" }] };
+    }),
     generate: vi.fn(async (input) => commit("generated", `# Generated`, input.replacedMarkdown)),
     update: vi.fn(async (input) => commit("ai-update", "# Updated", input.currentMarkdown)),
     exportMarkdown: vi.fn(async () => true),
@@ -200,7 +265,7 @@ export function createGuideDocumentStore(recordingId: string) {
           recordingId,
           draftVersion: state.draftVersion,
           savedRevisionNumber: state.savedRevisionNumber,
-          latestRevisionNumber: latest()?.number ?? null,
+          latestRevisionNumber: getLatestRevision()?.number ?? null,
         }),
       ),
   };

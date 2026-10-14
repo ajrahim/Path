@@ -28,13 +28,13 @@ export function InstructionFlowSelect({
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const initialFocus = useRef<"selected" | "last">("selected");
 
-  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+  useOutsidePointerDown(isOpen, [rootRef], () => setIsOpen(false));
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
 
     // ArrowUp enters from the end; other openings preserve the selected flow as the focus target.
     const items = menuRef.current?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']");
@@ -44,10 +44,10 @@ export function InstructionFlowSelect({
 
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ block: "nearest" });
-  }, [open]);
+  }, [isOpen]);
 
   function choose(id: string): void {
-    setOpen(false);
+    setIsOpen(false);
     triggerRef.current?.focus();
     onSelect(id);
   }
@@ -87,7 +87,7 @@ export function InstructionFlowSelect({
       className={`guide-flow-select${variant === "title" ? " guide-flow-select-title" : ""}`}
       ref={rootRef}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
     >
       <div className="guide-flow-control">
@@ -97,19 +97,19 @@ export function InstructionFlowSelect({
           className="guide-flow-trigger"
           aria-label={`${t("documentFlow")}: ${selectedFlow.name}`}
           aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? menuId : undefined}
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? menuId : undefined}
           title={selectedFlow.name}
           disabled={disabled}
           onClick={() => {
             initialFocus.current = "selected";
-            setOpen((current) => !current);
+            setIsOpen((current) => !current);
           }}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
               initialFocus.current = event.key === "ArrowUp" ? "last" : "selected";
-              setOpen(true);
+              setIsOpen(true);
             }
           }}
         >
@@ -130,7 +130,7 @@ export function InstructionFlowSelect({
             aria-label={t("editPrompt")}
             disabled={disabled}
             onClick={() => {
-              setOpen(false);
+              setIsOpen(false);
               onEdit();
             }}
           >
@@ -138,7 +138,7 @@ export function InstructionFlowSelect({
           </button>
         )}
       </div>
-      {open && (
+      {isOpen && (
         <div
           ref={menuRef}
           id={menuId}
@@ -166,7 +166,7 @@ export function InstructionFlowSelect({
 
               event.stopPropagation();
               triggerRef.current?.focus();
-              setOpen(false);
+              setIsOpen(false);
 
               return;
             } else if (

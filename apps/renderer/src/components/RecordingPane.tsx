@@ -63,13 +63,13 @@ export function RecordingPane({
   });
 
   const { refresh } = useRecordingHistory();
-  const [showHotspots, setShowHotspots] = useState(true);
+  const [shouldShowHotspots, setShouldShowHotspots] = useState(true);
   const [openScreenshot, setOpenScreenshot] = useState<{ click: ClickEvent; url: string } | null>(
     null,
   );
 
   const [viewerError, setViewerError] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [hoverScreenshot, setHoverScreenshot] = useState<{
     click: ClickEvent;
@@ -256,9 +256,9 @@ export function RecordingPane({
   async function retryProcessing(): Promise<void> {
     const desktop = getDesktopApi();
 
-    if (!recording || !desktop || retrying) return;
+    if (!recording || !desktop || isRetrying) return;
 
-    setRetrying(true);
+    setIsRetrying(true);
     setRetryError(null);
 
     try {
@@ -267,7 +267,7 @@ export function RecordingPane({
     } catch (error) {
       setRetryError(getErrorMessage(error, t("recording.retryFailed")));
     } finally {
-      setRetrying(false);
+      setIsRetrying(false);
     }
   }
 
@@ -323,9 +323,9 @@ export function RecordingPane({
         mediaUrl={mediaUrl}
         emptyLabel={emptyVideoLabel}
         failed={recordingStatus === "failed"}
-        retrying={retrying}
+        retrying={isRetrying}
         retryError={retryError}
-        showHotspots={showHotspots}
+        showHotspots={shouldShowHotspots}
         playing={playback.playing}
         currentTime={playback.currentTime}
         duration={playback.duration}
@@ -334,7 +334,7 @@ export function RecordingPane({
         activeClick={activeClick}
         videoRef={playback.videoRef}
         videoContentRect={playback.videoContentRect}
-        onToggleHotspots={() => setShowHotspots((value) => !value)}
+        onToggleHotspots={() => setShouldShowHotspots((value) => !value)}
         onTogglePlayback={playback.togglePlayback}
         onPlayingChange={playback.setPlaying}
         onTimeUpdate={playback.setCurrentTime}
@@ -413,12 +413,14 @@ export function RecordingPane({
           onSeek={(timestampMs) => playback.seek(timestampMs / 1_000)}
         />
       )}
-      {hoverScreenshot && <ScreenshotHoverCard {...hoverScreenshot} showHotspot={showHotspots} />}
+      {hoverScreenshot && (
+        <ScreenshotHoverCard {...hoverScreenshot} showHotspot={shouldShowHotspots} />
+      )}
       {openScreenshot && (
         <ScreenshotViewer
           click={openScreenshot.click}
           url={openScreenshot.url}
-          showHotspot={showHotspots}
+          showHotspot={shouldShowHotspots}
           error={viewerError}
           onInsert={() =>
             void insertScreenshotIntoGuide(openScreenshot.click, openScreenshot.url).then(() =>

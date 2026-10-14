@@ -26,7 +26,7 @@ export function GuideChatContext({
   const restoreFocus = useRef(false);
   const [open, setOpen] = useState<"menu" | "text" | null>(null);
   const [text, setText] = useState("");
-  const [error, setError] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -62,14 +62,14 @@ export function GuideChatContext({
 
   async function addImage(file: File) {
     setOpen(null);
-    setError(false);
+    setHasError(false);
     onProcessingChange(true);
     try {
       const item = await readGuideContextImage(file);
 
       if (mounted.current) onAdd(item);
     } catch {
-      if (mounted.current) setError(true);
+      if (mounted.current) setHasError(true);
     } finally {
       if (mounted.current) {
         restoreFocus.current = true;
@@ -91,7 +91,7 @@ export function GuideChatContext({
         aria-controls={open ? id : undefined}
         disabled={disabled}
         onClick={() => {
-          setError(false);
+          setHasError(false);
           setOpen(open ? null : "menu");
         }}
       >
@@ -176,7 +176,7 @@ export function GuideChatContext({
           )}
         </div>
       )}
-      {error && (
+      {hasError && (
         <p className="guide-chat-context-error" role="alert">
           {t("chatImageFailed")}
         </p>

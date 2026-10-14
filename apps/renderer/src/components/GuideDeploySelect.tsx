@@ -23,13 +23,13 @@ export function GuideDeploySelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const initialFocus = useRef<"selected" | "last">("selected");
 
-  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+  useOutsidePointerDown(isOpen, [rootRef], () => setIsOpen(false));
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
 
     const items = menuRef.current?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']");
     const selected = menuRef.current?.querySelector<HTMLButtonElement>("[aria-checked='true']");
@@ -37,10 +37,10 @@ export function GuideDeploySelect({
       initialFocus.current === "last" ? items?.[items.length - 1] : (selected ?? items?.[0]);
 
     target?.focus({ preventScroll: true });
-  }, [open]);
+  }, [isOpen]);
 
   function close(): void {
-    setOpen(false);
+    setIsOpen(false);
     triggerRef.current?.focus();
   }
 
@@ -49,7 +49,7 @@ export function GuideDeploySelect({
       ref={rootRef}
       className="guide-deploy-picker"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
     >
       <button
@@ -59,26 +59,26 @@ export function GuideDeploySelect({
         data-selected={value !== ""}
         aria-label={`${label}: ${text}`}
         aria-haspopup="menu"
-        aria-expanded={open && !disabled}
-        aria-controls={open && !disabled ? id : undefined}
+        aria-expanded={isOpen && !disabled}
+        aria-controls={isOpen && !disabled ? id : undefined}
         title={`${label}: ${text}`}
         disabled={disabled}
         onClick={() => {
           initialFocus.current = "selected";
-          setOpen((current) => !current);
+          setIsOpen((current) => !current);
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             initialFocus.current = event.key === "ArrowUp" ? "last" : "selected";
-            setOpen(true);
+            setIsOpen(true);
           }
         }}
       >
         {icon}
         <span>{text}</span>
       </button>
-      {open && !disabled && (
+      {isOpen && !disabled && (
         <div
           ref={menuRef}
           id={id}

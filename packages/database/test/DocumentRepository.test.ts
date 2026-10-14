@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestRecording, openTestDatabase } from "./TestDatabase";
@@ -7,6 +8,243 @@ import { createTestRecording, openTestDatabase } from "./TestDatabase";
 const IMAGE = `data:image/png;base64,${"iVBORw0KGgoAAAANSUhEUgAA".repeat(4_000)}==`;
 
 describe("DocumentRepository", () => {
+  it("persists reordered workflows across reopening without changing documents or their history", () => {
+    const database = openTestDatabase();
+    const recordingId = createTestRecording(database);
+    const generated = database.documents.commitCollection(recordingId, [
+      { title: "Login", markdown: "# Login" },
+      { title: "Registration", markdown: "# Registration" },
+      { title: "Password", markdown: "# Password" },
+    ]);
+
+    const plan = generated.documents.map(({ id, title }) => ({
+      id,
+      title,
+      scope: `${title} screen`,
+    }));
+
+    const snapshots = generated.documents.map(({ id }) =>
+      database.documents.getSnapshot(recordingId, id),
+    );
+
+    database.documents.saveWorkflowPlan(recordingId, plan, 0);
+    const reordered = [plan[2]!, plan[0]!, plan[1]!];
+    const saved = database.documents.saveWorkflowPlan(recordingId, reordered, 1);
+
+    expect(saved.workflows).toEqual(
+      reordered.map((workflow) => ({
+        ...workflow,
+        documentId: workflow.id,
+      })),
+    );
+    expect(saved.documents).toEqual(generated.documents);
+    database.connection.close();
+    const reopened = openTestDatabase(database.databasePath);
+
+    try {
+      expect(reopened.documents.getCollection(recordingId).workflows).toEqual(saved.workflows);
+      expect(reopened.documents.getCollection(recordingId).planVersion).toBe(2);
+      generated.documents.forEach(({ id }, index) => {
+        expect(reopened.documents.getSnapshot(recordingId, id)).toEqual(snapshots[index]);
+        expect(reopened.documents.getRevision(recordingId, 1, id).markdown).toBe(
+          snapshots[index]!.draft!.markdown,
+        );
+      });
+    } finally {
+      reopened.connection.close();
+    }
+  });
+
+  it("keeps combined generation separate and checkpoints an archived workflow before regeneration", () => {
+    const database = openTestDatabase();
+
+    try {
+      const recordingId = createTestRecording(database);
+      const split = database.documents.commitCollection(recordingId, [
+        { title: "Login", markdown: "# Login" },
+      ]);
+
+      const documentId = split.documents[0]!.id;
+
+      database.documents.saveWorkflowPlan(
+        recordingId,
+        [{ id: documentId, title: "Login", scope: "Login screen" }],
+        0,
+      );
+      const combined = database.documents.commitCollection(
+        recordingId,
+        [{ title: "Recording", markdown: "# Combined analysis" }],
+        undefined,
+        undefined,
+        "combine",
+      );
+
+      expect(combined.documents[0]!.id).not.toBe(documentId);
+      expect(database.documents.getSnapshot(recordingId, documentId).draft?.markdown).toBe(
+        "# Login",
+      );
+      database.documents.saveDraft(recordingId, "# Archived hand edits", 1, documentId);
+      database.documents.commitCollection(recordingId, [
+        { title: "Login", documentId, markdown: "# Regenerated Login" },
+      ]);
+      expect(database.documents.getRevision(recordingId, 2, documentId).markdown).toBe(
+        "# Archived hand edits",
+      );
+      expect(database.documents.getSnapshot(recordingId, documentId).draft?.markdown).toBe(
+        "# Regenerated Login",
+      );
+      expect(
+        database.documents.getSnapshot(recordingId, combined.documents[0]!.id).draft?.markdown,
+      ).toBe("# Combined analysis");
+    } finally {
+      database.connection.close();
+    }
+  });
+
+  it("persists an intentionally empty split plan without altering saved documents or history", () => {
+    const database = openTestDatabase();
+    const recordingId = createTestRecording(database);
+    const generated = database.documents.commitCollection(recordingId, [
+      { title: "Login", markdown: "# Login" },
+    ]);
+
+    const documentId = generated.documents[0]!.id;
+    const before = database.documents.getSnapshot(recordingId, documentId);
+
+    expect(database.documents.getCollection(recordingId).workflows).toBeNull();
+    database.documents.saveWorkflowPlan(
+      recordingId,
+      [{ id: documentId, title: "Login", scope: "Recorded login workflow" }],
+      0,
+    );
+    database.documents.saveWorkflowPlan(recordingId, [], 1);
+    expect(() => database.documents.saveWorkflowPlan(recordingId, [], 1)).toThrow("another window");
+    expect(database.documents.getSnapshot(recordingId, documentId)).toEqual(before);
+    database.connection.close();
+
+    const reopened = openTestDatabase(database.databasePath);
+
+    expect(reopened.documents.getCollection(recordingId)).toMatchObject({
+      workflows: [],
+      planVersion: 2,
+      documents: generated.documents,
+    });
+    expect(reopened.documents.getRevision(recordingId, 1, documentId).markdown).toBe("# Login");
+    reopened.connection.close();
+  });
+
+  it("rolls back the entire collection if a revision fails midway through the transaction", () => {
+    const database = openTestDatabase();
+
+    try {
+      const recordingId = createTestRecording(database);
+      const original = database.documents.commitCollection(recordingId, [
+        { title: "Original", markdown: "# Original" },
+      ]);
+
+      const documentId = original.documents[0]!.id;
+      const snapshot = database.documents.getSnapshot(recordingId, documentId);
+
+      database.connection.db
+        .run(sql`CREATE TRIGGER reject_incomplete_revision BEFORE INSERT ON document_revisions
+        WHEN NEW.body = '# Fail' BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END`);
+      const workflows = [
+        { id: randomUUID(), title: "Login", scope: "Recorded login" },
+        { id: randomUUID(), title: "Registration", scope: "Recorded registration" },
+      ];
+
+      expect(() =>
+        database.documents.commitCollection(
+          recordingId,
+          [
+            { title: "Login", markdown: "# Login", documentId: workflows[0]!.id },
+            { title: "Registration", markdown: "# Fail", documentId: workflows[1]!.id },
+          ],
+          undefined,
+          undefined,
+          "split",
+          { workflows, expectedPlanVersion: 0 },
+        ),
+      ).toThrow("simulated write failure");
+      expect(database.documents.getCollection(recordingId).documents).toEqual(original.documents);
+      expect(database.documents.getCollection(recordingId)).toMatchObject({
+        workflows: null,
+        planVersion: 0,
+      });
+      expect(database.documents.getSnapshot(recordingId, documentId)).toEqual(snapshot);
+      expect(
+        database.connection.db.get<{ count: number }>(sql`SELECT count(*) AS count FROM documents`)
+          .count,
+      ).toBe(1);
+    } finally {
+      database.connection.close();
+    }
+  });
+
+  it("rejects a document identity belonging to another recording", () => {
+    const database = openTestDatabase();
+
+    try {
+      const firstId = createTestRecording(database);
+      const secondId = createTestRecording(database);
+      const collection = database.documents.commitCollection(firstId, [
+        { title: "Login", markdown: "# Login" },
+      ]);
+
+      expect(() =>
+        database.documents.saveDraft(secondId, "Wrong recording", 0, collection.documents[0]!.id),
+      ).toThrow("Document not found");
+    } finally {
+      database.connection.close();
+    }
+  });
+
+  it("keeps a generated collection, its mode, and each document's history independent", () => {
+    const database = openTestDatabase();
+    const recordingId = createTestRecording(database);
+    const collection = database.documents.commitCollection(recordingId, [
+      { title: "Login", markdown: "# Login" },
+      { title: "Registration", markdown: "# Registration" },
+      { title: "Forgot Password", markdown: "# Forgot Password" },
+    ]);
+
+    const login = collection.documents[0]!;
+    const registration = collection.documents[1]!;
+
+    database.documents.setGenerationMode(recordingId, "split");
+    database.documents.save(recordingId, "# Saved login", null, 1, login.id);
+    database.documents.saveDraft(recordingId, "# Login draft", 2, login.id);
+    database.documents.commitRevision(
+      recordingId,
+      "ai-update",
+      "# Updated login",
+      undefined,
+      login.id,
+    );
+    expect(database.documents.getSnapshot(recordingId, registration.id)).toMatchObject({
+      saved: null,
+      draft: { markdown: "# Registration" },
+      latestRevisionNumber: 1,
+    });
+    expect(database.documents.getRevision(recordingId, 1, registration.id).markdown).toBe(
+      "# Registration",
+    );
+    database.connection.close();
+
+    const reopened = openTestDatabase(database.databasePath);
+
+    expect(reopened.documents.getCollection(recordingId)).toMatchObject({
+      mode: "split",
+      documents: collection.documents,
+    });
+    expect(reopened.documents.getSnapshot(recordingId, login.id)).toMatchObject({
+      saved: { markdown: "# Saved login" },
+      draft: { markdown: "# Login draft" },
+      latestRevisionNumber: 3,
+    });
+    reopened.connection.close();
+  });
+
   it("starts empty and keeps unsaved drafts separate from explicit saves", () => {
     const database = openTestDatabase();
     const recordingId = createTestRecording(database);

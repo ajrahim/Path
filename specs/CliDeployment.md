@@ -4,7 +4,7 @@ Status: Active
 
 ## Behavior
 
-The document pane places a **Deploy to CLI** section below the versions/Save/Export row. The compact `CLI | Model | Reasoning` selectors are always visible below the title, with the **Deploy** button beside the title. There is no Auto switch. The selector lists connected CLI tools and their reported models/efforts; deployment preferences are independent from the header's documentation AI choice. **Context Folder** chooses and remembers the local working directory. When documentation uses a CLI, that folder is also available for read-only document context.
+The document pane places a **Deploy to CLI** section below the versions/Save/Export row, contained in a rounded box with a lighter background, no border, and inset padding. The compact `CLI | Model | Reasoning` selectors are always visible below the title, with the **Deploy** button beside the title. There is no Auto switch. The selector lists connected CLI tools and their reported models/efforts; deployment preferences are independent from the header's documentation AI choice. **Context Folder** chooses and remembers the local working directory. When documentation uses a CLI, that folder is also available for read-only document context.
 
 Deploy sends the current editor text, including unsaved edits, to an interactive coding CLI in the selected folder. It is disabled while document work is busy, when previewing a previous version, or without a valid model, folder, and nonempty document. Selecting options or opening a recording never deploys. Duplicate clicks are blocked while launching; launch failures are shown without automatic retries.
 

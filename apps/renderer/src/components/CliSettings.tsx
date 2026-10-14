@@ -39,7 +39,7 @@ export function CliSettings() {
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={cli.busy || !status?.installed}
+                disabled={cli.isBusy || !status?.installed}
                 onClick={() => void cli.connect(id, !status?.connected)}
               >
                 {t(status?.connected ? "disconnect" : "connect")}
@@ -54,7 +54,7 @@ export function CliSettings() {
         </p>
       )}
       <p className="cli-sign-in-help">{t("signInHelp")}</p>
-      <Button size="sm" variant="ghost" disabled={cli.busy} onClick={() => void cli.refresh()}>
+      <Button size="sm" variant="ghost" disabled={cli.isBusy} onClick={() => void cli.refresh()}>
         {t("refresh")}
       </Button>
     </section>

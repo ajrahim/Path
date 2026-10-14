@@ -71,7 +71,7 @@ export function LocalModelSelect({
   } = useAiModels(catalog);
 
   const [expandedProvider, setExpandedProvider] = useState<AiProvider | null>(null);
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const selection = selections[purpose];
 
   async function refreshCatalog(): Promise<void> {
@@ -81,17 +81,17 @@ export function LocalModelSelect({
     if (status) setExpandedProvider((current) => (current && status[current] ? current : null));
   }
 
-  useOutsidePointerDown(open, [rootRef], () => setOpen(false));
+  useOutsidePointerDown(isOpen, [rootRef], () => setIsOpen(false));
 
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
 
     searchRef.current?.focus();
 
     function closeOnEscape(event: KeyboardEvent): void {
       if (event.key === "Escape") {
         event.preventDefault();
-        setOpen(false);
+        setIsOpen(false);
         triggerRefs.current[purpose]?.focus();
       }
     }
@@ -99,19 +99,19 @@ export function LocalModelSelect({
     document.addEventListener("keydown", closeOnEscape);
 
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open, purpose]);
+  }, [isOpen, purpose]);
 
   async function chooseModel(selection: AiModelSelection): Promise<void> {
     if (await selectModel(purpose, selection)) {
       if (purpose === "text" && cli.state?.mode === "cli" && !(await cli.setMode("model"))) return;
-      setOpen(false);
+      setIsOpen(false);
       triggerRefs.current[purpose]?.focus();
       onSelectionChange?.();
     }
   }
 
   function openSettingsKeys(): void {
-    setOpen(false);
+    setIsOpen(false);
     void openKeySettings();
   }
 
@@ -207,7 +207,7 @@ export function LocalModelSelect({
       className="local-model-select"
       ref={rootRef}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsOpen(false);
       }}
     >
       {MODEL_PURPOSES.map((modelPurpose) => {
@@ -222,7 +222,7 @@ export function LocalModelSelect({
         const modelName =
           (usingCli ? cliName : selections[modelPurpose]?.modelName) ?? t("chooseModel");
 
-        const expanded = open && purpose === modelPurpose;
+        const expanded = isOpen && purpose === modelPurpose;
         const Icon = modelPurpose === "visual" ? Eye : usingCli ? Terminal : FileText;
 
         return (
@@ -242,7 +242,7 @@ export function LocalModelSelect({
             disabled={disabled || isSaving}
             onClick={() => {
               if (expanded) {
-                setOpen(false);
+                setIsOpen(false);
 
                 return;
               }
@@ -255,7 +255,7 @@ export function LocalModelSelect({
 
               setQuery("");
               setExpandedProvider(null);
-              setOpen(true);
+              setIsOpen(true);
               // The chat picker shares these selections; refresh when either picker opens.
               void refreshCatalog();
             }}
@@ -270,7 +270,7 @@ export function LocalModelSelect({
           </button>
         );
       })}
-      {open && (
+      {isOpen && (
         <div
           className={`local-model-menu${purpose === "text" ? " local-model-menu-text" : ""}`}
           id={menuId}
@@ -283,7 +283,7 @@ export function LocalModelSelect({
               type="button"
               title={t("refreshAiModels")}
               aria-label={t("refreshAiModels")}
-              disabled={isLoading || isSaving || cli.busy}
+              disabled={isLoading || isSaving || cli.isBusy}
               onClick={() => {
                 void refreshCatalog();
                 if (purpose === "text") void cli.refresh();
@@ -303,7 +303,7 @@ export function LocalModelSelect({
                   aria-selected={textView === source}
                   aria-controls={`${menuId}-source-panel`}
                   tabIndex={textView === source ? 0 : -1}
-                  disabled={cli.busy}
+                  disabled={cli.isBusy}
                   onClick={() => {
                     setTextView(source);
                     if (source === "cli") void cli.refresh();

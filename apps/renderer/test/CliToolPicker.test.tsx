@@ -34,7 +34,7 @@ function setup() {
         { id: "muse", installed: false, connected: false, status: "not-installed", models: [] },
       ],
     },
-    busy: false,
+    isBusy: false,
     error: null,
     refresh: vi.fn(async () => true),
     connect: vi.fn(async () => true),
