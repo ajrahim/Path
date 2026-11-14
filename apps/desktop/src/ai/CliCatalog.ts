@@ -22,9 +22,9 @@ export async function openCliRpc(
         ? {
             protocolVersion: 1,
             clientCapabilities: {},
-            clientInfo: { name: "path", version: "0.3.0" },
+            clientInfo: { name: "path", version: "1.0.0" },
           }
-        : { clientInfo: { name: "path", version: "0.3.0" } },
+        : { clientInfo: { name: "path", version: "1.0.0" } },
     );
     rpc.send({ jsonrpc: "2.0", method: "initialized" });
 
