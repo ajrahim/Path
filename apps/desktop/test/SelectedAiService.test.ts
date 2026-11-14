@@ -26,7 +26,7 @@ afterEach(() => {
 describe("SelectedAiService", () => {
   it("uses the selected local model for text generation", async () => {
     const ollama = {
-      generateText: vi.fn().mockResolvedValue("# Guide"),
+      generateText: vi.fn().mockResolvedValue({ text: "# Guide", isTruncated: false }),
       analyze: vi.fn(),
       listModels: vi.fn(),
     };
@@ -681,7 +681,10 @@ describe("SelectedAiService", () => {
   });
 
   it("passes effort through to the local model for text generation", async () => {
-    const ollama = { generateText: vi.fn().mockResolvedValue("# Guide") };
+    const ollama = {
+      generateText: vi.fn().mockResolvedValue({ text: "# Guide", isTruncated: false }),
+    };
+
     const service = new SelectedAiService(
       {
         get: () =>
@@ -724,6 +727,241 @@ describe("SelectedAiService", () => {
 
     await expect(service.generateText("Fail once")).rejects.toThrow("Invalid key");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe("document output limits", () => {
+    type Reply = (text: string, isTruncated: boolean) => unknown;
+
+    const chatCompletionReply: Reply = (text, isTruncated) => ({
+      choices: [{ message: { content: text }, finish_reason: isTruncated ? "length" : "stop" }],
+    });
+
+    const providers: {
+      provider: "anthropic" | "openai" | "openrouter" | "google";
+      modelId: string;
+      reply: Reply;
+    }[] = [
+      {
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-5",
+        reply: (text, isTruncated) => ({
+          content: [{ type: "text", text }],
+          stop_reason: isTruncated ? "max_tokens" : "end_turn",
+        }),
+      },
+      {
+        provider: "openai",
+        modelId: "gpt-4o",
+        reply: chatCompletionReply,
+      },
+      {
+        provider: "openrouter",
+        modelId: "meta-llama/llama-4",
+        reply: chatCompletionReply,
+      },
+      {
+        provider: "google",
+        modelId: "gemini-2.0-flash",
+        reply: (text, isTruncated) => ({
+          candidates: [
+            { content: { parts: [{ text }] }, finishReason: isTruncated ? "MAX_TOKENS" : "STOP" },
+          ],
+        }),
+      },
+    ];
+
+    function apiService(selection: AiModelSelection): SelectedAiService {
+      return new SelectedAiService(
+        { get: () => settingsWithModel(selection) } as never,
+        { get: vi.fn().mockResolvedValue("secret") } as never,
+        {} as never,
+      );
+    }
+
+    function stubReplies(...replies: unknown[]) {
+      const fetchMock = vi.fn();
+
+      for (const reply of replies) {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(reply), { status: 200 }));
+      }
+
+      vi.stubGlobal("fetch", fetchMock);
+
+      return fetchMock;
+    }
+
+    function sentBody(fetchMock: ReturnType<typeof vi.fn>, request: number) {
+      return JSON.parse(String((fetchMock.mock.calls[request]?.[1] as RequestInit).body));
+    }
+
+    /** The prompt text as each provider's request body carries it. */
+    function sentPrompt(fetchMock: ReturnType<typeof vi.fn>, request: number): string {
+      const body = sentBody(fetchMock, request);
+      const content = body.messages?.[0].content ?? body.contents[0].parts;
+
+      return typeof content === "string" ? content : content[0].text;
+    }
+
+    it.each(providers)(
+      "continues a $provider response cut off at the output limit",
+      async ({ provider, modelId, reply }) => {
+        vi.useFakeTimers();
+        const fetchMock = stubReplies(
+          reply("# Spec\n\n## Goals\nThe first half", true),
+          reply(" and the second half.", false),
+        );
+
+        const service = apiService({ source: "api", provider, modelId, modelName: modelId });
+        const generated = service.generateText("Write the spec");
+
+        // Requests to one provider are paced; Gemini waits longest.
+        await vi.advanceTimersByTimeAsync(13_000);
+        await expect(generated).resolves.toBe(
+          "# Spec\n\n## Goals\nThe first half and the second half.",
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(sentPrompt(fetchMock, 0)).toBe("Write the spec");
+
+        const continuation = sentPrompt(fetchMock, 1);
+
+        expect(continuation).toContain("Write the spec");
+        expect(continuation).toContain("# Spec\n\n## Goals\nThe first half");
+        expect(continuation).toContain("Continue from the exact point where the response stops");
+      },
+    );
+
+    it("continues a local response cut off at the output limit", async () => {
+      const ollama = {
+        generateText: vi
+          .fn()
+          .mockResolvedValueOnce({ text: "# Guide\n1. Open", isTruncated: true })
+          .mockResolvedValueOnce({ text: " the menu.", isTruncated: false }),
+      };
+
+      const service = new SelectedAiService(
+        {
+          get: () =>
+            settingsWithModel({ source: "local", modelId: "gemma4:latest", modelName: "Gemma" }),
+        } as never,
+        {} as never,
+        ollama as never,
+      );
+
+      await expect(service.generateText("Write a guide")).resolves.toBe(
+        "# Guide\n1. Open the menu.",
+      );
+      expect(ollama.generateText).toHaveBeenCalledTimes(2);
+      expect(ollama.generateText.mock.calls[1]![0]).toContain("# Guide\n1. Open");
+    });
+
+    it("rejects a response that spent its whole output limit before writing", async () => {
+      const fetchMock = stubReplies(chatCompletionReply("", true));
+      const service = apiService({
+        source: "api",
+        provider: "openai",
+        modelId: "gpt-5",
+        modelName: "GPT-5",
+        effort: "high",
+      });
+
+      await expect(service.generateText("Write the spec")).rejects.toThrow(
+        "reached its output limit before writing a response",
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops continuing a response that never finishes", async () => {
+      vi.useFakeTimers();
+      const fetchMock = stubReplies(
+        chatCompletionReply("one", true),
+        chatCompletionReply(" two", true),
+        chatCompletionReply(" three", true),
+      );
+
+      const service = apiService({
+        source: "api",
+        provider: "openai",
+        modelId: "gpt-4o",
+        modelName: "GPT-4o",
+      });
+
+      const generated = service.generateText("Write the spec");
+      const rejection = expect(generated).rejects.toThrow("exceeded the selected AI model's");
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejection;
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("requests the document output limit from standard models", async () => {
+      const openAi = stubReplies(chatCompletionReply("# Guide", false));
+
+      await apiService({
+        source: "api",
+        provider: "openai",
+        modelId: "gpt-4o",
+        modelName: "GPT-4o",
+      }).generateText("Write a guide");
+
+      expect(sentBody(openAi, 0).max_tokens).toBe(8_192);
+      expect(sentBody(openAi, 0)).not.toHaveProperty("max_completion_tokens");
+
+      const anthropic = stubReplies(providers[0]!.reply("# Guide", false));
+
+      await apiService({
+        source: "api",
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-5",
+        modelName: "Claude",
+      }).generateText("Write a guide");
+
+      expect(sentBody(anthropic, 0).max_tokens).toBe(8_192);
+    });
+
+    it.each([
+      { effort: "high" as const, limit: 8_192 + 24_576 },
+      { effort: undefined, limit: 8_192 + 8_192 },
+    ])(
+      "leaves OpenAI reasoning models room to reason at $effort effort",
+      async ({ effort, limit }) => {
+        const fetchMock = stubReplies(chatCompletionReply("# Guide", false));
+
+        await apiService({
+          source: "api",
+          provider: "openai",
+          modelId: "gpt-5",
+          modelName: "GPT-5",
+          ...(effort ? { effort } : {}),
+        }).generateText("Write a guide");
+
+        // Reasoning models reject max_tokens and count reasoning against the limit.
+        expect(sentBody(fetchMock, 0).max_completion_tokens).toBe(limit);
+        expect(sentBody(fetchMock, 0)).not.toHaveProperty("max_tokens");
+      },
+    );
+
+    it.each([
+      { modelId: "gemini-2.5-flash", effort: "high" as const, limit: 8_192 + 24_576 },
+      { modelId: "gemini-2.5-flash", effort: undefined, limit: 8_192 },
+      { modelId: "gemini-2.5-pro", effort: undefined, limit: 8_192 + 8_192 },
+      { modelId: "gemini-3-pro", effort: undefined, limit: 8_192 + 1_024 },
+      { modelId: "gemini-2.0-flash", effort: "high" as const, limit: 8_192 },
+    ])(
+      "adds Gemini thinking to the output limit for $modelId at $effort effort",
+      async ({ modelId, effort, limit }) => {
+        const fetchMock = stubReplies(providers[3]!.reply("# Guide", false));
+
+        await apiService({
+          source: "api",
+          provider: "google",
+          modelId,
+          modelName: modelId,
+          ...(effort ? { effort } : {}),
+        }).generateText("Write a guide");
+
+        expect(sentBody(fetchMock, 0).generationConfig.maxOutputTokens).toBe(limit);
+      },
+    );
   });
 });
 

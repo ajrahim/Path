@@ -23,15 +23,30 @@ import {
 
 interface ApiTextResponse {
   text: string;
+  /** The provider stopped at the output limit rather than at the end of its answer. */
+  isTruncated: boolean;
+}
+
+/** Output and time allowed for one provider request. */
+interface ApiRequestLimits {
+  maxTokens: number;
+  timeoutMs: number;
 }
 
 const API_REQUEST_INTERVAL_MS = 750;
 const GOOGLE_REQUEST_INTERVAL_MS = 13_000;
-const API_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_API_REQUEST_ATTEMPTS = 3;
 const MAX_RETRY_DELAY_MS = 120_000;
-const MAX_CLICK_ANALYSIS_TOKENS = 128;
-const MAX_DOCUMENT_TOKENS = 2_048;
+
+const CLICK_ANALYSIS_LIMITS: ApiRequestLimits = { maxTokens: 128, timeoutMs: 120_000 };
+const CONTEXT_DESCRIPTION_LIMITS: ApiRequestLimits = { maxTokens: 2_048, timeoutMs: 120_000 };
+
+// A full specification needs several thousand tokens, which a non-streaming request can take
+// minutes to return.
+const DOCUMENT_LIMITS: ApiRequestLimits = { maxTokens: 8_192, timeoutMs: 300_000 };
+
+/** Requests made to finish one document that keeps reaching the output limit. */
+const MAX_DOCUMENT_CONTINUATIONS = 2;
 
 export class AiRateLimitError extends Error {
   readonly retryAfterMs: number;
@@ -102,7 +117,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
     const result = await this.requestApi(
       selection,
       prepared.prompt,
-      MAX_CLICK_ANALYSIS_TOKENS,
+      CLICK_ANALYSIS_LIMITS,
       prepared.imageBase64,
     );
 
@@ -113,14 +128,36 @@ export class SelectedAiService implements ClickActionAnalyzer {
     if (this.cliTools?.get().mode === "cli") return this.cliTools.generate(prompt, contextFolder);
     if (contextFolder) throw new Error("Select CLI Tool to use a context folder");
     const selection = this.settings.get().aiModelSelections.text;
+    let text = "";
 
-    if (selection.source === "local") {
-      return this.ollama.generateText(prompt, selection.modelId, selection.effort);
+    // Output cut off at the token limit is continued, never returned as a finished answer.
+    for (let request = 0; request <= MAX_DOCUMENT_CONTINUATIONS; request += 1) {
+      const requestPrompt = request === 0 ? prompt : buildContinuationPrompt(prompt, text);
+      const response =
+        selection.source === "local"
+          ? await this.ollama.generateText(requestPrompt, selection.modelId, selection.effort)
+          : await this.requestApi(
+              selection,
+              requestPrompt,
+              DOCUMENT_LIMITS,
+              undefined,
+              selection.effort,
+            );
+
+      text += response.text;
+
+      if (!response.isTruncated) return text;
+
+      if (!response.text.trim()) {
+        throw new Error(
+          "The selected AI model reached its output limit before writing a response. Lower the reasoning effort or choose another model.",
+        );
+      }
     }
 
-    return (
-      await this.requestApi(selection, prompt, MAX_DOCUMENT_TOKENS, undefined, selection.effort)
-    ).text;
+    throw new Error(
+      "The response exceeded the selected AI model's output limit. Split the recording into separate documents or choose another model.",
+    );
   }
 
   async describeContext(context: GuideContextItem[]): Promise<string> {
@@ -140,7 +177,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
       const description =
         selection.source === "local"
           ? await this.ollama.describeImage(prompt, image, selection.modelId)
-          : (await this.requestApi(selection, prompt, MAX_DOCUMENT_TOKENS, image)).text;
+          : (await this.requestApi(selection, prompt, CONTEXT_DESCRIPTION_LIMITS, image)).text;
 
       if (!description.trim()) {
         throw new Error("The selected visual model returned no image context");
@@ -155,7 +192,7 @@ export class SelectedAiService implements ClickActionAnalyzer {
   private async requestApi(
     selection: Extract<AiModelSelection, { source: "api" }>,
     prompt: string,
-    maxTokens: number,
+    limits: ApiRequestLimits,
     imageBase64?: string,
     effort?: AiEffort,
   ): Promise<ApiTextResponse> {
@@ -166,13 +203,13 @@ export class SelectedAiService implements ClickActionAnalyzer {
     return this.enqueueApiRequest(selection.provider, () => {
       switch (selection.provider) {
         case "anthropic":
-          return requestAnthropic(key, selection.modelId, prompt, maxTokens, imageBase64);
+          return requestAnthropic(key, selection.modelId, prompt, limits, imageBase64);
         case "openai":
-          return requestOpenAi(key, selection.modelId, prompt, maxTokens, imageBase64, effort);
+          return requestOpenAi(key, selection.modelId, prompt, limits, imageBase64, effort);
         case "google":
-          return requestGoogle(key, selection.modelId, prompt, maxTokens, imageBase64, effort);
+          return requestGoogle(key, selection.modelId, prompt, limits, imageBase64, effort);
         case "openrouter":
-          return requestOpenRouter(key, selection.modelId, prompt, maxTokens, imageBase64);
+          return requestOpenRouter(key, selection.modelId, prompt, limits, imageBase64);
       }
     });
   }
@@ -204,11 +241,21 @@ export class SelectedAiService implements ClickActionAnalyzer {
   }
 }
 
+/** The partial answer is sent back so any model can resume it from a single prompt. */
+function buildContinuationPrompt(prompt: string, partialResponse: string): string {
+  return [
+    prompt,
+    "Your response to the request above reached the output limit and was cut off. The response so far:",
+    partialResponse,
+    "Continue from the exact point where the response stops. Do not repeat or summarize any of it and add no preamble; your output is appended directly to the text above.",
+  ].join("\n\n");
+}
+
 async function requestAnthropic(
   key: string,
   model: string,
   prompt: string,
-  maxTokens: number,
+  limits: ApiRequestLimits,
   image?: string,
 ): Promise<ApiTextResponse> {
   const content: unknown[] = [];
@@ -221,20 +268,24 @@ async function requestAnthropic(
   }
 
   content.push({ type: "text", text: prompt });
-  const body = await requestJson("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": key,
+  const body = await requestJson(
+    "https://api.anthropic.com/v1/messages",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": key,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: limits.maxTokens,
+        temperature: 0,
+        messages: [{ role: "user", content }],
+      }),
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      temperature: 0,
-      messages: [{ role: "user", content }],
-    }),
-  });
+    limits.timeoutMs,
+  );
 
   const blocks = record(body)?.content;
   const text = Array.isArray(blocks)
@@ -244,14 +295,14 @@ async function requestAnthropic(
         .join("\n")
     : "";
 
-  return { text };
+  return { text, isTruncated: record(body)?.stop_reason === "max_tokens" };
 }
 
 async function requestOpenAi(
   key: string,
   model: string,
   prompt: string,
-  maxTokens: number,
+  limits: ApiRequestLimits,
   image?: string,
   effort?: AiEffort,
 ): Promise<ApiTextResponse> {
@@ -263,30 +314,49 @@ async function requestOpenAi(
     : prompt;
 
   // Reasoning models reject non-default temperature; unset effort keeps the provider default.
+  // They also reject max_tokens: their limit is max_completion_tokens, which counts reasoning.
   const reasoning = apiModelSupportsEffort("openai", model);
-  const body = await requestJson("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      ...(reasoning ? {} : { temperature: 0 }),
-      ...(reasoning && effort ? { reasoning_effort: effort } : {}),
-      messages: [{ role: "user", content }],
-    }),
-  });
+  const outputLimit = reasoning
+    ? {
+        max_completion_tokens:
+          limits.maxTokens + REASONING_TOKEN_BUDGETS[effort ?? DEFAULT_OPENAI_REASONING_EFFORT],
+      }
+    : { max_tokens: limits.maxTokens, temperature: 0 };
 
+  const body = await requestJson(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        ...outputLimit,
+        ...(reasoning && effort ? { reasoning_effort: effort } : {}),
+        messages: [{ role: "user", content }],
+      }),
+    },
+    limits.timeoutMs,
+  );
+
+  return readChatCompletion(body);
+}
+
+/** OpenAI and OpenRouter share the chat completions response shape. */
+function readChatCompletion(body: unknown): ApiTextResponse {
   const choices = record(body)?.choices;
   const first = Array.isArray(choices) ? record(choices[0]) : null;
 
-  return { text: String(record(first?.message)?.content ?? "") };
+  return {
+    text: String(record(first?.message)?.content ?? ""),
+    isTruncated: first?.finish_reason === "length",
+  };
 }
 
 async function requestOpenRouter(
   key: string,
   model: string,
   prompt: string,
-  maxTokens: number,
+  limits: ApiRequestLimits,
   image?: string,
 ): Promise<ApiTextResponse> {
   const content = image
@@ -296,28 +366,29 @@ async function requestOpenRouter(
       ]
     : prompt;
 
-  const body = await requestJson("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      temperature: 0,
-      messages: [{ role: "user", content }],
-    }),
-  });
+  const body = await requestJson(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        max_tokens: limits.maxTokens,
+        temperature: 0,
+        messages: [{ role: "user", content }],
+      }),
+    },
+    limits.timeoutMs,
+  );
 
-  const choices = record(body)?.choices;
-  const first = Array.isArray(choices) ? record(choices[0]) : null;
-
-  return { text: String(record(first?.message)?.content ?? "") };
+  return readChatCompletion(body);
 }
 
 async function requestGoogle(
   key: string,
   model: string,
   prompt: string,
-  maxTokens: number,
+  limits: ApiRequestLimits,
   image?: string,
   effort?: AiEffort,
 ): Promise<ApiTextResponse> {
@@ -337,11 +408,13 @@ async function requestGoogle(
         contents: [{ role: "user", parts }],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: maxTokens,
+          // Gemini counts thinking tokens against maxOutputTokens.
+          maxOutputTokens: limits.maxTokens + googleThinkingTokens(model, effort),
           ...googleThinkingConfig(model, effort),
         },
       }),
     },
+    limits.timeoutMs,
   );
 
   const candidates = record(body)?.candidates;
@@ -354,42 +427,71 @@ async function requestGoogle(
         .join("\n")
     : "";
 
-  return { text };
+  return { text, isTruncated: candidate?.finishReason === "MAX_TOKENS" };
 }
 
-// Gemini 2.5 thinking budgets in tokens; unset effort keeps thinking disabled for speed.
-const GOOGLE_THINKING_BUDGETS: Record<AiEffort, number> = {
+/**
+ * Reasoning tokens per effort. Gemini 2.5 takes these as its thinking budget; every reasoning
+ * request also adds them to its output limit, because providers count hidden reasoning against
+ * that limit and would otherwise leave no room for the answer.
+ */
+const REASONING_TOKEN_BUDGETS: Record<AiEffort, number> = {
   low: 1024,
   medium: 8192,
   high: 24576,
 };
 
+/** OpenAI reasoning models and Gemini 2.5 Pro reason at about this level when effort is unset. */
+const DEFAULT_OPENAI_REASONING_EFFORT: AiEffort = "medium";
+const DEFAULT_GEMINI_PRO_THINKING_EFFORT: AiEffort = "medium";
+const DEFAULT_GEMINI_THINKING_LEVEL: AiEffort = "low";
+
+const GEMINI_2_5_PRO = /^gemini-2\.5-pro/;
+const GEMINI_2_5_FLASH = /^gemini-2\.5-(?:flash|flash-lite)/;
+const GEMINI_THINKING_LEVEL_MODELS = /^gemini-(?:3|[4-9])/;
+
 function googleThinkingConfig(model: string, effort?: AiEffort): Record<string, unknown> {
-  if (/^gemini-2\.5-pro/.test(model)) {
+  if (GEMINI_2_5_PRO.test(model)) {
     // Pro cannot disable thinking; unset effort keeps the provider default.
-    return effort ? { thinkingConfig: { thinkingBudget: GOOGLE_THINKING_BUDGETS[effort] } } : {};
+    return effort ? { thinkingConfig: { thinkingBudget: REASONING_TOKEN_BUDGETS[effort] } } : {};
   }
 
-  if (/^gemini-2\.5-(?:flash|flash-lite)/.test(model)) {
+  if (GEMINI_2_5_FLASH.test(model)) {
+    // Unset effort keeps thinking disabled for speed.
     return {
-      thinkingConfig: { thinkingBudget: effort ? GOOGLE_THINKING_BUDGETS[effort] : 0 },
+      thinkingConfig: { thinkingBudget: effort ? REASONING_TOKEN_BUDGETS[effort] : 0 },
     };
   }
 
-  if (/^gemini-(?:3|[4-9])/.test(model)) {
-    return { thinkingConfig: { thinkingLevel: effort ?? "low" } };
+  if (GEMINI_THINKING_LEVEL_MODELS.test(model)) {
+    return { thinkingConfig: { thinkingLevel: effort ?? DEFAULT_GEMINI_THINKING_LEVEL } };
   }
 
   return {};
 }
 
-async function requestJson(url: string, init: RequestInit): Promise<unknown> {
+/** Output-limit headroom matching the thinking each Gemini family does for this effort. */
+function googleThinkingTokens(model: string, effort?: AiEffort): number {
+  if (GEMINI_2_5_PRO.test(model)) {
+    return REASONING_TOKEN_BUDGETS[effort ?? DEFAULT_GEMINI_PRO_THINKING_EFFORT];
+  }
+
+  if (GEMINI_2_5_FLASH.test(model)) return effort ? REASONING_TOKEN_BUDGETS[effort] : 0;
+
+  if (GEMINI_THINKING_LEVEL_MODELS.test(model)) {
+    return REASONING_TOKEN_BUDGETS[effort ?? DEFAULT_GEMINI_THINKING_LEVEL];
+  }
+
+  return 0;
+}
+
+async function requestJson(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
   // Bound retries and honor provider delays; persistent throttling is returned to the batch owner.
   for (let attempt = 0; attempt < MAX_API_REQUEST_ATTEMPTS; attempt += 1) {
     let response: Response;
 
     try {
-      response = await fetch(url, { ...init, signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS) });
+      response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
       if (
         attempt + 1 >= MAX_API_REQUEST_ATTEMPTS ||

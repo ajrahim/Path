@@ -303,21 +303,54 @@ export const suggestDocumentWorkflowsInputSchema = recordingIdInputSchema.extend
   expectedPlanVersion: draftVersionSchema,
 });
 
-export const documentWorkflowPlanSchema = z
+const MAX_DOCUMENT_SECTIONS = 30;
+const MAX_DOCUMENT_EVIDENCE_RANGES = 20;
+const MAX_SECTION_COVERAGE_LENGTH = 1000;
+const MAX_SHARED_CONTEXT_LENGTH = 4000;
+
+/** A span of recording time, in seconds, that a planned document draws its evidence from. */
+const documentEvidenceRangeSchema = z
   .strictObject({
-    documents: z
-      .array(
-        z.strictObject({
-          title: workflowTitleSchema,
-          scope: workflowScopeSchema,
-        }),
-      )
-      .min(1)
-      .max(MAX_GENERATED_DOCUMENTS),
+    startSeconds: z.number().min(0),
+    endSeconds: z.number().min(0),
+  })
+  .refine(({ startSeconds, endSeconds }) => endSeconds >= startSeconds, {
+    message: "An evidence range must end at or after its start",
+  });
+
+const documentSectionSchema = z.strictObject({
+  heading: workflowTitleSchema,
+  coverage: z.string().trim().min(1).max(MAX_SECTION_COVERAGE_LENGTH),
+});
+
+const plannedDocumentSchema = z.strictObject({
+  title: workflowTitleSchema,
+  scope: workflowScopeSchema,
+  /** An empty list means the document draws on the whole recording. */
+  evidence: z.array(documentEvidenceRangeSchema).max(MAX_DOCUMENT_EVIDENCE_RANGES),
+  sections: z
+    .array(documentSectionSchema)
+    .min(1)
+    .max(MAX_DOCUMENT_SECTIONS)
+    .refine(
+      (sections) => hasUniqueTitles(sections.map((section) => ({ title: section.heading }))),
+      { message: "Section headings must be unique within a document" },
+    ),
+});
+
+/** The model's first-pass answer: which documents to write and what each section must cover. */
+export const documentStructurePlanSchema = z
+  .strictObject({
+    sharedContext: z.string().trim().max(MAX_SHARED_CONTEXT_LENGTH),
+    documents: z.array(plannedDocumentSchema).min(1).max(MAX_GENERATED_DOCUMENTS),
   })
   .refine(({ documents }) => hasUniqueTitles(documents), {
-    message: "Workflow titles must be unique",
+    message: "Document titles must be unique",
   });
+
+export type DocumentStructurePlan = z.infer<typeof documentStructurePlanSchema>;
+export type PlannedDocument = z.infer<typeof plannedDocumentSchema>;
+export type DocumentEvidenceRange = z.infer<typeof documentEvidenceRangeSchema>;
 
 export const generatedDocumentCollectionSchema = z
   .strictObject({

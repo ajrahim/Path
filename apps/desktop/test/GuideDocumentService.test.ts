@@ -16,6 +16,45 @@ afterEach(() => {
   for (const database of databases.splice(0)) database.close();
 });
 
+const SECTION = "Acceptance Criteria";
+
+interface PlannedFixture {
+  title: string;
+  scope?: string;
+  evidence?: { startSeconds: number; endSeconds: number }[];
+  sections?: { heading: string; coverage: string }[];
+}
+
+/** The first-pass response: one planned document per title unless a fixture says otherwise. */
+function structurePlan(documents: (string | PlannedFixture)[], sharedContext = ""): string {
+  return JSON.stringify({
+    sharedContext,
+    documents: documents.map((document) => {
+      const fixture = typeof document === "string" ? { title: document } : document;
+
+      return {
+        title: fixture.title,
+        scope: fixture.scope ?? `Recorded ${fixture.title} workflow`,
+        evidence: fixture.evidence ?? [],
+        sections: fixture.sections ?? [
+          { heading: SECTION, coverage: `What ${fixture.title} must satisfy` },
+        ],
+      };
+    }),
+  });
+}
+
+/** A second-pass response containing the planned section. */
+function documentBody(title: string): string {
+  return `# ${title}\n\n## ${SECTION}\nComplete content for ${title}.`;
+}
+
+const GENERATED_GUIDE = documentBody("Generated guide");
+
+function isPlanRequest(prompt: string): boolean {
+  return prompt.startsWith("Plan the structure");
+}
+
 async function setup() {
   const database = openInProcessDatabase();
 
@@ -23,7 +62,9 @@ async function setup() {
 
   const recordingId = await createStoppedRecording(database);
   const ai = {
-    generateText: vi.fn(async (_prompt: string) => "# Generated guide"),
+    generateText: vi.fn(async (prompt: string) =>
+      isPlanRequest(prompt) ? structurePlan(["Generated guide"]) : GENERATED_GUIDE,
+    ),
     describeContext: vi.fn(async () => "Screenshot shows Save"),
   };
 
@@ -77,18 +118,27 @@ describe("GuideDocumentService", () => {
     ]);
     ai.generateText
       .mockResolvedValueOnce(
-        JSON.stringify({
-          documents: [
-            { title: "Login", scope: "Email/password sign-in at 1s" },
+        structurePlan(
+          [
+            {
+              title: "Login",
+              scope: "Email/password sign-in at 1s",
+              evidence: [{ startSeconds: 0, endSeconds: 2 }],
+              sections: [
+                { heading: "Current Behavior", coverage: "Sign-in narration at 1.0s" },
+                { heading: SECTION, coverage: "Given/When/Then for sign-in" },
+              ],
+            },
             { title: "Registration", scope: "Account creation and email confirmation at 3s" },
           ],
-        }),
+          "Acme Portal visitors authenticate by email.",
+        ),
       )
       .mockResolvedValueOnce(
-        "# Login specification\n\n## Acceptance criteria\nSign in using email and password.",
+        `# Login specification\n\n## Current Behavior\nSign in at 1.0s.\n\n## ${SECTION}\nSign in using email and password.`,
       )
       .mockResolvedValueOnce(
-        "# Registration specification\n\n## Acceptance criteria\nCreate and confirm an account.",
+        `# Registration specification\n\n## ${SECTION}\nCreate and confirm an account.`,
       );
     const generated = await service.generateCollection({
       id: recordingId,
@@ -100,9 +150,9 @@ describe("GuideDocumentService", () => {
       "Login",
       "Registration",
     ]);
-    expect(generated.workflows?.map((workflow) => workflow.title)).toEqual([
-      "Login",
-      "Registration",
+    expect(generated.workflows).toMatchObject([
+      { title: "Login", scope: "Email/password sign-in at 1s" },
+      { title: "Registration", scope: "Account creation and email confirmation at 3s" },
     ]);
     expect(generated.mode).toBe("split");
     expect(generated.planVersion).toBe(placeholderPlan.planVersion + 1);
@@ -114,17 +164,28 @@ describe("GuideDocumentService", () => {
         (document) => !placeholderPlan.workflows!.some((workflow) => workflow.id === document.id),
       ),
     ).toBe(true);
+
+    // One structure request, then one write request per planned document.
     expect(ai.generateText).toHaveBeenCalledTimes(3);
-    const planningPrompt = ai.generateText.mock.calls[0]![0];
+    const [planningPrompt, loginPrompt, registrationPrompt] = ai.generateText.mock.calls.map(
+      ([prompt]) => prompt,
+    );
 
     expect(planningPrompt).toContain("Plan separate documents for EVERY distinct workflow");
     expect(planningPrompt).toContain("signs in with email and password");
     expect(planningPrompt).toContain("registers and confirms their email");
     expect(planningPrompt).toContain("Login form > email field");
     expect(planningPrompt).not.toContain("testt");
-    expect(planningPrompt).not.toContain("Workflow scope: test");
-    expect(ai.generateText.mock.calls[1]![0]).toContain("workflow only: Login");
-    expect(ai.generateText.mock.calls[2]![0]).toContain("workflow only: Registration");
+    expect(loginPrompt).toContain("planned document only: Login");
+    expect(loginPrompt).toContain("Document scope: Email/password sign-in at 1s");
+    expect(loginPrompt).toContain("Primary evidence time ranges: 0.0s–2.0s");
+    expect(loginPrompt).toContain("1. Current Behavior — Sign-in narration at 1.0s");
+    expect(loginPrompt).toContain(`2. ${SECTION} — Given/When/Then for sign-in`);
+    expect(loginPrompt).toContain("Acme Portal visitors authenticate by email.");
+    expect(loginPrompt).toContain("- Registration: Account creation and email confirmation at 3s");
+    expect(loginPrompt).toContain("signs in with email and password");
+    expect(registrationPrompt).toContain("planned document only: Registration");
+    expect(registrationPrompt).toContain("- Login: Email/password sign-in at 1s");
     for (const [prompt] of ai.generateText.mock.calls) {
       expect(prompt).toContain("Create a spec with acceptance criteria.");
     }
@@ -139,10 +200,8 @@ describe("GuideDocumentService", () => {
 
     await service.saveWorkflowPlan({ id: recordingId, expectedPlanVersion: 0, workflows: [] });
     ai.generateText
-      .mockResolvedValueOnce(
-        JSON.stringify({ documents: [{ title: "Login", scope: "Recorded login" }] }),
-      )
-      .mockResolvedValueOnce("# Login");
+      .mockResolvedValueOnce(structurePlan(["Login"]))
+      .mockResolvedValueOnce(documentBody("Login"));
     const result = await service.generateCollection({
       id: recordingId,
       mode: "split",
@@ -158,26 +217,12 @@ describe("GuideDocumentService", () => {
     [...BUILT_IN_FLOWS, { id: "custom", instructions: "Custom review" }].flatMap((flow) =>
       (["combine", "split"] as const).map((mode) => ({ flow, mode })),
     ),
-  )("generates content-selected documents for $flow.id in $mode mode", async ({ flow, mode }) => {
+  )("plans then writes documents for $flow.id in $mode mode", async ({ flow, mode }) => {
     const { service, recordingId, ai } = await setup();
-    const documents = ["Login", "Registration", "Forgot Password"].map((title) => ({
-      title,
-      markdown: "# " + title + "\n\nComplete content",
-    }));
+    const titles = mode === "split" ? ["Login", "Registration", "Forgot Password"] : ["Combined"];
 
-    if (mode === "split") {
-      ai.generateText.mockResolvedValueOnce(
-        JSON.stringify({
-          documents: documents.map((document) => ({
-            title: document.title,
-            scope: "Recorded " + document.title + " workflow",
-          })),
-        }),
-      );
-      for (const document of documents) ai.generateText.mockResolvedValueOnce(document.markdown);
-    } else {
-      ai.generateText.mockResolvedValueOnce("# Combined");
-    }
+    ai.generateText.mockResolvedValueOnce(structurePlan(titles));
+    for (const title of titles) ai.generateText.mockResolvedValueOnce(documentBody(title));
 
     const result = await service.generateCollection({
       id: recordingId,
@@ -185,34 +230,167 @@ describe("GuideDocumentService", () => {
       mode,
     });
 
-    expect(result.documents).toHaveLength(mode === "split" ? 3 : 1);
+    expect(result.documents).toHaveLength(titles.length);
     expect(result.generated).toHaveLength(result.documents.length);
     expect(result.mode).toBe(mode);
-    expect(ai.generateText).toHaveBeenCalledTimes(mode === "split" ? 4 : 1);
+    expect(ai.generateText).toHaveBeenCalledTimes(titles.length + 1);
+    expect(ai.generateText.mock.calls[0]![0]).toContain(
+      mode === "split" ? "EVERY distinct workflow" : "Plan exactly one document",
+    );
     for (const [prompt] of ai.generateText.mock.calls) expect(prompt).toContain(flow.instructions);
-    for (const document of result.documents) {
+    for (const [index, document] of result.documents.entries()) {
       expect(await service.getDocument(recordingId, document.id)).toMatchObject({
         saved: null,
-        draft: { markdown: expect.any(String) },
+        draft: { markdown: documentBody(titles[index]!) },
         latestRevisionNumber: 1,
       });
     }
   });
 
-  it("accepts one coherent workflow and retains its identity and history when regenerating", async () => {
+  it("accepts a plan wrapped in a fence and prose", async () => {
     const { service, recordingId, ai } = await setup();
-    const plan = JSON.stringify({
-      documents: [{ title: "Login", scope: "Recorded login workflow" }],
+
+    ai.generateText
+      .mockResolvedValueOnce(
+        "Here is the plan:\n```json\n" + structurePlan(["Login"]) + "\n```\nDone.",
+      )
+      .mockResolvedValueOnce(documentBody("Login"));
+    const result = await service.generateCollection({
+      id: recordingId,
+      mode: "split",
+      instructions: "Spec",
     });
 
-    ai.generateText.mockResolvedValueOnce(plan).mockResolvedValueOnce("# Login");
+    expect(result.documents.map((document) => document.title)).toEqual(["Login"]);
+    expect(ai.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries an invalid plan once, naming the problem", async () => {
+    const { service, recordingId, ai } = await setup();
+
+    ai.generateText
+      .mockResolvedValueOnce('{"sharedContext":"","documents":[]}')
+      .mockResolvedValueOnce(structurePlan(["Login"]))
+      .mockResolvedValueOnce(documentBody("Login"));
+    const result = await service.generateCollection({
+      id: recordingId,
+      mode: "split",
+      instructions: "Spec",
+    });
+
+    expect(result.documents.map((document) => document.title)).toEqual(["Login"]);
+    expect(ai.generateText).toHaveBeenCalledTimes(3);
+    const [planningPrompt, repairPrompt] = ai.generateText.mock.calls.map(([prompt]) => prompt);
+
+    expect(repairPrompt).toContain(planningPrompt);
+    expect(repairPrompt).toContain("A previous response to this request was rejected: documents");
+  });
+
+  it("requires a combine plan to hold exactly one document", async () => {
+    const { service, recordingId, ai } = await setup();
+
+    ai.generateText
+      .mockResolvedValueOnce(structurePlan(["Login", "Registration"]))
+      .mockResolvedValueOnce(structurePlan(["Whole recording"]))
+      .mockResolvedValueOnce(documentBody("Whole recording"));
+    const result = await service.generateCollection({
+      id: recordingId,
+      mode: "combine",
+      instructions: "Spec",
+    });
+
+    expect(result.documents).toHaveLength(1);
+    expect(ai.generateText.mock.calls[1]![0]).toContain("exactly one document");
+    expect((await service.getDocument(recordingId, result.documents[0]!.id)).draft?.markdown).toBe(
+      documentBody("Whole recording"),
+    );
+  });
+
+  it("rewrites a document that omits a planned section once, then fails without committing", async () => {
+    const { service, recordingId, ai } = await setup();
+    const incomplete = "# Login\n\nThe criteria are not written yet.";
+
+    ai.generateText
+      .mockResolvedValueOnce(structurePlan(["Login"]))
+      .mockResolvedValueOnce(incomplete)
+      .mockResolvedValueOnce(documentBody("Login"));
+    const result = await service.generateCollection({
+      id: recordingId,
+      mode: "split",
+      instructions: "Spec",
+    });
+
+    expect(ai.generateText).toHaveBeenCalledTimes(3);
+    expect(ai.generateText.mock.calls[2]![0]).toContain(
+      `omitted these required sections: ${SECTION}`,
+    );
+    expect((await service.getDocument(recordingId, result.documents[0]!.id)).draft?.markdown).toBe(
+      documentBody("Login"),
+    );
+
+    const committed = await service.getCollection(recordingId);
+
+    ai.generateText
+      .mockResolvedValueOnce(structurePlan(["Registration"]))
+      .mockResolvedValueOnce(incomplete)
+      .mockResolvedValueOnce(incomplete);
+    await expect(
+      service.generateCollection({ id: recordingId, mode: "split", instructions: "Spec" }),
+    ).rejects.toThrow("incomplete document");
+    expect(ai.generateText).toHaveBeenCalledTimes(6);
+    expect(await service.getCollection(recordingId)).toEqual(committed);
+  });
+
+  it("plans from the whole recording and writes each document from its own time range", async () => {
+    const { service, recordingId, ai, database } = await setup();
+
+    await database.repositories.recordings.replaceTranscript(
+      recordingId,
+      Array.from({ length: 600 }, (_, index) => ({
+        id: randomUUID(),
+        recordingId,
+        startMs: index * 1_000,
+        endMs: index * 1_000 + 500,
+        text: `Narration ${index}`,
+      })),
+    );
+    ai.generateText
+      .mockResolvedValueOnce(
+        structurePlan([{ title: "Checkout", evidence: [{ startSeconds: 450, endSeconds: 549 }] }]),
+      )
+      .mockResolvedValueOnce(documentBody("Checkout"));
+    await service.generateCollection({ id: recordingId, mode: "split", instructions: "Spec" });
+
+    const [planningPrompt, writePrompt] = ai.generateText.mock.calls.map(([prompt]) => prompt);
+    const narrationLines = (prompt: string) =>
+      prompt.split("\n").filter((line) => line.includes("] Speech: Narration "));
+
+    // 600 entries exceed the 300-entry budget: planning samples the whole recording.
+    expect(narrationLines(planningPrompt)).toHaveLength(300);
+    expect(planningPrompt).toContain("[0.0s] Speech: Narration 0");
+    expect(planningPrompt).toContain("[598.0s] Speech: Narration 598");
+
+    // The document's own range arrives complete; the rest stays sampled for context.
+    expect(narrationLines(writePrompt)).toHaveLength(300);
+    for (let second = 450; second <= 549; second += 1) {
+      expect(writePrompt).toContain(`[${second}.0s] Speech: Narration ${second}\n`);
+    }
+  });
+
+  it("accepts one coherent workflow and retains its identity and history when regenerating", async () => {
+    const { service, recordingId, ai } = await setup();
+    const plan = structurePlan(["Login"]);
+
+    ai.generateText.mockResolvedValueOnce(plan).mockResolvedValueOnce(documentBody("Login"));
     const original = await service.generateCollection({
       id: recordingId,
       instructions: "Spec",
       mode: "split",
     });
 
-    ai.generateText.mockResolvedValueOnce(plan).mockResolvedValueOnce("# Revised Login");
+    ai.generateText
+      .mockResolvedValueOnce(plan)
+      .mockResolvedValueOnce(documentBody("Revised Login"));
     const regenerated = await service.generateCollection({
       id: recordingId,
       instructions: "Spec",
@@ -223,7 +401,7 @@ describe("GuideDocumentService", () => {
     expect(regenerated.planVersion).toBe(original.planVersion + 1);
     expect(
       (await service.getDocument(recordingId, original.documents[0]!.id)).draft?.markdown,
-    ).toBe("# Revised Login");
+    ).toBe(documentBody("Revised Login"));
     expect(
       (
         await service.getRevision({
@@ -232,17 +410,15 @@ describe("GuideDocumentService", () => {
           number: 1,
         })
       ).markdown,
-    ).toBe("# Login");
+    ).toBe(documentBody("Login"));
   });
 
   it("preserves current tabs and documents when automatic planning is invalid or unavailable", async () => {
     const { service, recordingId, ai } = await setup();
 
     ai.generateText
-      .mockResolvedValueOnce(
-        JSON.stringify({ documents: [{ title: "Login", scope: "Recorded login" }] }),
-      )
-      .mockResolvedValueOnce("# Login");
+      .mockResolvedValueOnce(structurePlan(["Login"]))
+      .mockResolvedValueOnce(documentBody("Login"));
     const original = await service.generateCollection({
       id: recordingId,
       instructions: "Spec",
@@ -253,25 +429,22 @@ describe("GuideDocumentService", () => {
 
     for (const response of [
       "not JSON",
-      '{"documents":[]}',
-      '{"documents":[{"title":"Login","scope":" "}]}',
-      JSON.stringify({
-        documents: [
-          { title: "Login", scope: "One" },
-          { title: "login", scope: "Two" },
-        ],
-      }),
-      JSON.stringify({
-        documents: Array.from({ length: 25 }, (_, index) => ({
-          title: "Workflow " + index,
-          scope: "Recorded workflow",
-        })),
-      }),
+      '{"sharedContext":"","documents":[]}',
+      // The earlier title-and-scope plan shape no longer carries enough structure.
+      '{"documents":[{"title":"Login","scope":"Recorded login"}]}',
+      structurePlan([{ title: "Login", scope: " " }]),
+      structurePlan(["Login", "login"]),
+      structurePlan([{ title: "Login", sections: [] }]),
+      structurePlan(Array.from({ length: 25 }, (_, index) => "Workflow " + index)),
     ]) {
-      ai.generateText.mockResolvedValueOnce(response);
+      const requestsBefore = ai.generateText.mock.calls.length;
+
+      // The same invalid answer to the plan request and to its one correction request.
+      ai.generateText.mockResolvedValueOnce(response).mockResolvedValueOnce(response);
       await expect(
         service.generateCollection({ id: recordingId, instructions: "Spec", mode: "split" }),
-      ).rejects.toThrow("invalid or incomplete split plan");
+      ).rejects.toThrow("invalid or incomplete document plan");
+      expect(ai.generateText).toHaveBeenCalledTimes(requestsBefore + 2);
       expect(await service.getCollection(recordingId)).toMatchObject({
         documents: original.documents,
         workflows: original.workflows,
@@ -306,16 +479,11 @@ describe("GuideDocumentService", () => {
       })),
     });
 
-    const plan = JSON.stringify({
-      documents: [
-        { title: "Login", scope: "Login screen" },
-        { title: "Registration", scope: "Registration screen" },
-      ],
-    });
+    const plan = structurePlan(["Login", "Registration"]);
 
     ai.generateText
       .mockResolvedValueOnce(plan)
-      .mockResolvedValueOnce("# Login")
+      .mockResolvedValueOnce(documentBody("Login"))
       .mockRejectedValueOnce(new Error("Model offline"));
     await expect(
       service.generateCollection({ id: recordingId, instructions: "Spec", mode: "split" }),
@@ -323,15 +491,15 @@ describe("GuideDocumentService", () => {
     expect(await service.getCollection(recordingId)).toEqual(previous);
     ai.generateText
       .mockResolvedValueOnce(plan)
-      .mockResolvedValueOnce("# Login")
+      .mockResolvedValueOnce(documentBody("Login"))
       .mockResolvedValueOnce(" ");
     await expect(
       service.generateCollection({ id: recordingId, instructions: "Spec", mode: "split" }),
-    ).rejects.toThrow("incomplete document set");
+    ).rejects.toThrow("incomplete document");
     expect(await service.getCollection(recordingId)).toEqual(previous);
     expect(
       (await service.getDocument(recordingId, original.documents[0]!.id)).draft?.markdown,
-    ).toBe("# Generated guide");
+    ).toBe(GENERATED_GUIDE);
   });
 
   it("rejects a completed automatic generation if another window edited the plan meanwhile", async () => {
@@ -352,9 +520,9 @@ describe("GuideDocumentService", () => {
           workflows: concurrent,
         });
 
-        return JSON.stringify({ documents: [{ title: "Login", scope: "Recorded login" }] });
+        return structurePlan(["Login"]);
       })
-      .mockResolvedValueOnce("# Login");
+      .mockResolvedValueOnce(documentBody("Login"));
     await expect(
       service.generateCollection({ id: recordingId, instructions: "Spec", mode: "split" }),
     ).rejects.toThrow("changed in another window");
@@ -365,11 +533,34 @@ describe("GuideDocumentService", () => {
     });
     expect(
       (await service.getDocument(recordingId, original.documents[0]!.id)).draft?.markdown,
-    ).toBe("# Generated guide");
+    ).toBe(GENERATED_GUIDE);
   });
 
-  it("commits a generation to history before returning it and checkpoints the text it replaces", async () => {
-    const { service, recordingId, changes, timelineImports } = await setup();
+  it("suggests workflow tabs from the structure plan without writing documents", async () => {
+    const { service, recordingId, ai } = await setup();
+
+    ai.generateText.mockResolvedValueOnce(
+      structurePlan([{ title: "Login", scope: "Sign-in at 1s" }, "Registration"]),
+    );
+    const suggested = await service.suggestWorkflows({
+      id: recordingId,
+      instructions: "Spec",
+      expectedPlanVersion: 0,
+    });
+
+    expect(ai.generateText).toHaveBeenCalledTimes(1);
+    expect(suggested.documents).toEqual([]);
+    expect(suggested.workflows).toMatchObject([
+      { title: "Login", scope: "Sign-in at 1s" },
+      { title: "Registration", scope: "Recorded Registration workflow" },
+    ]);
+    // The outline guides one generation; the stored tab plan keeps only title and scope.
+    expect(suggested.workflows![0]).not.toHaveProperty("sections");
+    expect(suggested.workflows![0]).not.toHaveProperty("evidence");
+  });
+
+  it("plans one document, commits it to history before returning, and checkpoints replaced text", async () => {
+    const { service, recordingId, ai, changes, timelineImports } = await setup();
 
     const generated = await service.generate({
       id: recordingId,
@@ -378,9 +569,12 @@ describe("GuideDocumentService", () => {
     });
 
     expect(generated).toMatchObject({
-      markdown: "# Generated guide",
+      markdown: GENERATED_GUIDE,
       revision: { number: 2, kind: "generated" },
     });
+    expect(ai.generateText).toHaveBeenCalledTimes(2);
+    expect(ai.generateText.mock.calls[0]![0]).toContain("Plan exactly one document");
+    expect(ai.generateText.mock.calls[1]![0]).toContain(`1. ${SECTION} — `);
     expect(timelineImports.documentEntries).toHaveBeenCalledWith(
       recordingId,
       MAX_DOCUMENT_IMPORTED_ITEMS,
@@ -413,9 +607,9 @@ describe("GuideDocumentService", () => {
       "Model offline",
     );
 
-    ai.generateText.mockResolvedValueOnce("   ");
+    ai.generateText.mockResolvedValueOnce(structurePlan(["Guide"])).mockResolvedValueOnce("   ");
     await expect(service.generate({ id: recordingId, instructions: "" })).rejects.toThrow(
-      "returned no guide",
+      "incomplete document",
     );
     await expect(service.listRevisions({ id: recordingId })).resolves.toEqual({
       revisions: [],
@@ -437,6 +631,7 @@ describe("GuideDocumentService", () => {
     });
 
     expect(updated.revision).toMatchObject({ number: 2, kind: "ai-update" });
+    expect(ai.generateText).toHaveBeenCalledTimes(1);
     expect(ai.generateText).toHaveBeenCalledWith(
       expect.stringContaining("Screenshot shows Save"),
       undefined,
@@ -484,13 +679,19 @@ describe("GuideDocumentService", () => {
     const { service, recordingId, ai } = await setup();
 
     await service.generate({ id: recordingId, instructions: "" });
-    ai.generateText.mockResolvedValueOnce("# Second");
+    ai.generateText
+      .mockResolvedValueOnce(structurePlan(["Second"]))
+      .mockResolvedValueOnce(documentBody("Second"));
     await service.generate({ id: recordingId, instructions: "" });
 
     await expect(
-      service.restoreRevision({ id: recordingId, number: 1, replacedMarkdown: "# Second" }),
+      service.restoreRevision({
+        id: recordingId,
+        number: 1,
+        replacedMarkdown: documentBody("Second"),
+      }),
     ).resolves.toMatchObject({
-      markdown: "# Generated guide",
+      markdown: GENERATED_GUIDE,
       revision: { number: 3, kind: "restored", restoredFromNumber: 1 },
     });
 

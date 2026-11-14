@@ -15,7 +15,8 @@ Source baseline: 2026-09-24.
 ## Operational limits and constraints
 
 - **Click Analysis:** Maximum 200 clicks analyzed per recording session.
-- **Document Context:** Up to 300 chronological activity entries included in generation prompts, plus up to 200 imported log/element rows sampled across the video; cloud AI completion requests 2,048 tokens.
+- **Document Context:** Up to 300 chronological activity entries included in generation prompts, sampled across longer recordings with a document's own time ranges kept whole, plus up to 200 imported log/element rows sampled across the video.
+- **Document Generation:** Two passes: a validated structure plan, then one write request per planned document (`specs/StructuredDocumentGeneration.md`). Cloud and Ollama document requests ask for 8,192 output tokens and continue truncated output up to twice.
 - **Imports:** One log and one element file per recording; the file size limit defaults to 10 MB and is configurable from 1 to 100 MB. Imports stream through the database worker; renderers read pages of at most 500 rows and search in the desktop. Recordings without stored media timing cannot align imports.
 - **Markdown Documents:** Saving is explicit, with discard/overwrite confirmation. Unsaved text is written to a recovery draft 1 s after typing stops and before quit. Generations, AI updates, saves, restores, and replaced text are kept as append-only revisions that can be previewed, compared, and restored.
 - **Transcription:** Local whisper.cpp runs on Windows x64 using pinned `ggml-tiny.en.bin`.

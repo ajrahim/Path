@@ -19,6 +19,7 @@ IPC Handlers -> Desktop Services / Controllers -> Domain Packages & Native Adapt
 | `packages/timeline/`       | Pure Domain    | Chronological correlation of transcript segments and click events for seekable playback (zero I/O).                                                                                                                                                                                                    |
 | `packages/database/`       | Infrastructure | SQLite connection, Drizzle schema & `0000_baseline` migration, and synchronous typed repositories (recordings, documents, imports, projects, settings, storage roots, asset deletions). They run only inside the desktop database worker.                                                              |
 | `packages/transcription/`  | Infrastructure | Audio transcription contract and whisper.cpp Windows x64 runtime adapter with SHA-256 model verification.                                                                                                                                                                                              |
+| `site/`                    | Static Website | GitHub Pages product page ([index.html](../../site/index.html)) and its image assets, deployed by [pages.yml](../../.github/workflows/pages.yml). Not part of the app build.                                                                                                                           |
 
 ## Renderer structure and routing
 

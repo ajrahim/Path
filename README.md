@@ -197,7 +197,7 @@ Generated bundles, models, installers, credentials, local media, and environment
 - No completed system audio, user-facing pause/resume, thumbnails, or partial-recording recovery.
 - Startup marks unfinished recordings failed and removes their incomplete managed assets.
 - Playback loads the full processed MP4 into renderer memory; long-session memory use needs further validation.
-- Click analysis considers at most 200 clicks. Document context includes at most 300 ordered activity entries; cloud generation requests 2,048 output tokens.
+- Click analysis considers at most 200 clicks. Document context includes at most 300 ordered activity entries, sampled across longer recordings. Generation plans each document's structure before writing it; cloud and Ollama requests ask for 8,192 output tokens and continue truncated output up to twice, so models limited to fewer output tokens cannot generate documents.
 - English transcription uses `tiny.en`; multilingual/model-size selection is not exposed.
 - Window capture does not yet provide reliable window-relative click hotspots. Broader multi-monitor and platform capture/permission validation remains outstanding.
 

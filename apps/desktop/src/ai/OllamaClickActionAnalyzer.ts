@@ -25,6 +25,13 @@ export interface ClickActionAnalyzer {
 
 interface OllamaChatResponse {
   message?: { content?: string };
+  done_reason?: string;
+}
+
+/** Generated text, flagged when Ollama stopped at the output limit instead of finishing. */
+export interface LocalTextResponse {
+  text: string;
+  isTruncated: boolean;
 }
 
 export interface PreparedClickAction {
@@ -50,7 +57,11 @@ const MAX_IMAGE_HEIGHT = 960;
 const OLLAMA_DISCOVERY_TIMEOUT_MS = 10_000;
 const OLLAMA_CHAT_TIMEOUT_MS = 120_000;
 const MAX_CLICK_DESCRIPTION_TOKENS = 80;
-const MAX_DOCUMENT_TOKENS = 2_048;
+const MAX_IMAGE_DESCRIPTION_TOKENS = 2_048;
+
+// A full specification needs several thousand tokens, which a local model can take minutes to write.
+const MAX_DOCUMENT_TOKENS = 8_192;
+const OLLAMA_DOCUMENT_TIMEOUT_MS = 300_000;
 
 export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
   constructor(
@@ -149,19 +160,29 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
       prepared.imageBase64,
     ]);
 
-    return normalizeClickDescription(response, input.button);
+    return normalizeClickDescription(response.text.trim(), input.button);
   }
 
+  /** Text is returned unmodified so a truncated answer can be continued and joined exactly. */
   async generateText(
     prompt: string,
     model = this.defaultModel,
     effort?: AiEffort,
-  ): Promise<string> {
-    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS, undefined, effort ?? false);
+  ): Promise<LocalTextResponse> {
+    return this.chat(
+      model,
+      prompt,
+      MAX_DOCUMENT_TOKENS,
+      undefined,
+      effort ?? false,
+      OLLAMA_DOCUMENT_TIMEOUT_MS,
+    );
   }
 
   async describeImage(prompt: string, imageBase64: string, model: string): Promise<string> {
-    return this.chat(model, prompt, MAX_DOCUMENT_TOKENS, [imageBase64]);
+    const response = await this.chat(model, prompt, MAX_IMAGE_DESCRIPTION_TOKENS, [imageBase64]);
+
+    return response.text.trim();
   }
 
   private async chat(
@@ -170,11 +191,12 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
     maxTokens: number,
     images?: string[],
     think: false | AiEffort = false,
-  ): Promise<string> {
+    timeoutMs = OLLAMA_CHAT_TIMEOUT_MS,
+  ): Promise<LocalTextResponse> {
     const response = await fetch(`${this.endpoint}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      signal: AbortSignal.timeout(OLLAMA_CHAT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       body: JSON.stringify({
         model,
         stream: false,
@@ -190,7 +212,10 @@ export class OllamaClickActionAnalyzer implements ClickActionAnalyzer {
 
     const result = (await response.json()) as OllamaChatResponse;
 
-    return result.message?.content?.trim() ?? "";
+    return {
+      text: result.message?.content ?? "",
+      isTruncated: result.done_reason === "length",
+    };
   }
 }
 

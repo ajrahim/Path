@@ -22,6 +22,7 @@ Start at [AGENTS.md](../AGENTS.md). This folder holds the maintained project con
 | Document deployment to coding CLIs        | [CLI deployment](../specs/CliDeployment.md)                         |
 | Combined or split workflow documents      | [Document structure](../specs/DocumentStructure.md)                 |
 | Editable suggested workflow tabs          | [Editable document splits](../specs/EditableDocumentSplits.md)      |
+| Two-pass document planning and writing    | [Structured generation](../specs/StructuredDocumentGeneration.md)   |
 | Workflow tab menus and compact controls   | [Document tab actions](../specs/DocumentTabActions.md)              |
 | Settings sections and prompt library      | [Settings and prompts](../specs/SettingsAndPrompts.md)              |
 | Storage ownership, drafts, history        | [Local persistence](../specs/LocalPersistence.md)                   |

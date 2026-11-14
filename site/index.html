@@ -1,0 +1,1570 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Path — Open-source walkthrough documentation</title>
+    <meta
+      name="description"
+      content="Record a workflow. Turn it into clear documentation. Path is an open-source desktop tool for creating help guides and specifications with local or cloud AI."
+    />
+    <link rel="icon" href="assets/Favicon.png" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        background: #fff;
+      }
+      body {
+        margin: 0;
+        background: #fff;
+        color: #141619;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        text-rendering: optimizeLegibility;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button,
+      a,
+      summary,
+      input,
+      select,
+      textarea {
+        outline-offset: 4px;
+      }
+      :focus-visible {
+        outline: 2px solid #4285ed;
+      }
+      ::selection {
+        background: #215bcb;
+        color: #fff;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .skip-link {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 100;
+        padding: 10px 16px;
+        background: #191c21;
+        color: white;
+        transform: translateY(-180%);
+      }
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+
+      :where(.path-product) * {
+        margin: 0;
+        padding: 0;
+        border: 0 solid;
+      }
+      :where(.path-product) :is(h1, h2, h3) {
+        font-size: inherit;
+        font-weight: inherit;
+      }
+      :where(.path-product) :is(svg, img) {
+        display: block;
+        vertical-align: middle;
+      }
+      :where(.path-product) img {
+        max-width: 100%;
+        height: auto;
+      }
+      :where(.path-product) :is(button, input) {
+        color: inherit;
+        background-color: transparent;
+      }
+      :where(.path-product) small {
+        font-size: 80%;
+      }
+      .path-install-note[hidden] {
+        display: none;
+      }
+
+      .path-product {
+        --path-ink: #141619;
+        --path-muted: #636a75;
+        --path-blue: #215bcb;
+        --path-line: #e7e9ed;
+        background: #fff;
+        color: var(--path-ink);
+        font-family: Arial, Helvetica, sans-serif;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        position: relative;
+        isolation: isolate;
+      }
+      .path-product::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: -1;
+        height: 820px;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse 55% 60% at 50% 0%, rgba(33, 91, 203, 0.11), transparent 70%),
+          radial-gradient(ellipse 30% 35% at 85% 18%, rgba(66, 133, 237, 0.06), transparent 70%),
+          radial-gradient(ellipse 30% 35% at 15% 30%, rgba(66, 133, 237, 0.05), transparent 70%),
+          radial-gradient(circle at 1px 1px, rgba(20, 22, 25, 0.08) 1px, transparent 0) 0 0 / 24px
+            24px;
+        -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent);
+        mask-image: linear-gradient(to bottom, #000 35%, transparent);
+      }
+      .path-product * {
+        min-width: 0;
+      }
+      .path-product a:focus-visible,
+      .path-product summary:focus-visible {
+        outline: 3px solid #4285ed;
+        outline-offset: 5px;
+      }
+      .path-container {
+        width: min(1160px, calc(100% - 56px));
+        margin-inline: auto;
+      }
+      .path-product-hero {
+        padding-top: 128px;
+        text-align: center;
+      }
+      .path-hero-logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 11px;
+        margin: 0 0 24px;
+        color: var(--path-ink);
+        font-size: 1.625rem;
+        font-weight: 700;
+        letter-spacing: -0.035em;
+      }
+      .path-hero-logo img {
+        display: block;
+        flex: none;
+      }
+      .path-product h1 {
+        max-width: 1000px;
+        margin: 0 auto;
+        font-size: clamp(2.8rem, 4.85vw, 4.375rem);
+        font-weight: 700;
+        line-height: 1.08;
+        letter-spacing: -0.045em;
+      }
+      .path-product h1 > span {
+        color: var(--path-blue);
+      }
+      .path-product h1 > .path-headline-prefix {
+        display: block;
+        color: var(--path-ink);
+      }
+      .path-headline-endings {
+        display: grid;
+      }
+      .path-headline-endings > span {
+        grid-area: 1 / 1;
+        opacity: 0;
+        transform: translateY(8px);
+        transition:
+          opacity 350ms ease,
+          transform 350ms ease;
+        pointer-events: none;
+      }
+      .path-headline-endings > .is-active {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .path-headline-endings > span {
+          transition: none;
+          transform: none;
+        }
+      }
+      .path-product-lead {
+        color: var(--path-muted);
+        font-size: 1.0625rem;
+        line-height: 1.65;
+        max-width: 530px;
+        margin: 22px auto 0;
+        text-wrap: pretty;
+      }
+      .path-product-actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 27px;
+      }
+      .path-install-note {
+        max-width: 480px;
+        margin: 12px auto 0;
+        color: var(--path-muted);
+        font-size: 0.75rem;
+        line-height: 1.5;
+      }
+      .path-button {
+        min-height: 46px;
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        gap: 9px;
+        padding: 12px 20px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        line-height: 1.3;
+        transition:
+          background-color 150ms ease,
+          box-shadow 150ms ease;
+      }
+      .path-button svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+      .path-button-primary {
+        background: #191c21;
+        color: #fff;
+        box-shadow: 0 2px 3px #11182714;
+      }
+      .path-button-primary:hover {
+        background: #2e3849;
+        box-shadow: 0 3px 9px #11182726;
+      }
+      .path-button-secondary {
+        background: #fff;
+        color: #252b34;
+        border-color: #dce0e6;
+      }
+      .path-button-secondary:hover {
+        background: #f6f8fa;
+      }
+      .path-product-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        justify-content: center;
+        margin: 15px 0 0;
+        color: #636a75;
+        font-size: 0.75rem;
+      }
+      .path-product-meta > span {
+        color: #a0a7b1;
+      }
+      .path-app-preview {
+        max-width: 1040px;
+        margin: 64px auto 0;
+      }
+      .path-carousel-stage {
+        position: relative;
+      }
+      .path-carousel-viewport {
+        overflow: hidden;
+        touch-action: pan-y;
+      }
+      .path-carousel-viewport:focus-visible {
+        outline: 3px solid #4285ed;
+        outline-offset: 4px;
+      }
+      .path-carousel-track {
+        display: flex;
+        transition: transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1);
+      }
+      .path-carousel-slide {
+        flex: 0 0 100%;
+      }
+      .path-preview-image {
+        display: block;
+        padding: 0;
+        border: 0;
+        background: none;
+        box-shadow: none;
+      }
+      .path-preview-image img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1482 / 897;
+        object-fit: contain;
+      }
+      .path-carousel-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        border-radius: 50%;
+        background: linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.66),
+          rgba(240, 247, 255, 0.3) 48%,
+          rgba(226, 236, 250, 0.46)
+        );
+        color: #24344b;
+        cursor: pointer;
+        backdrop-filter: blur(12px) saturate(180%);
+        -webkit-backdrop-filter: blur(12px) saturate(180%);
+        box-shadow:
+          inset 0 1px 1px #fff,
+          inset 0 -1px 2px rgba(112, 133, 160, 0.22),
+          0 4px 14px rgba(28, 45, 70, 0.16),
+          0 0 0 1px rgba(112, 133, 160, 0.1);
+        transition:
+          background 180ms ease,
+          box-shadow 180ms ease,
+          color 180ms ease,
+          transform 180ms ease;
+      }
+      .path-carousel-arrow::before {
+        content: "";
+        position: absolute;
+        inset: 2px;
+        border-radius: inherit;
+        border: 1px solid transparent;
+        border-top-color: rgba(255, 255, 255, 0.8);
+        border-left-color: rgba(255, 255, 255, 0.36);
+        pointer-events: none;
+      }
+      .path-carousel-arrow:hover {
+        color: var(--path-blue);
+        background: linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.8),
+          rgba(240, 247, 255, 0.4) 48%,
+          rgba(226, 236, 250, 0.54)
+        );
+        box-shadow:
+          inset 0 1px 1px #fff,
+          inset 0 -1px 2px rgba(112, 133, 160, 0.22),
+          0 6px 18px rgba(28, 45, 70, 0.2),
+          0 0 0 1px rgba(112, 133, 160, 0.12);
+        transform: translateY(-50%) scale(1.04);
+      }
+      .path-carousel-arrow:active {
+        transform: translateY(-50%) scale(0.96);
+      }
+      .path-carousel-arrow:focus-visible {
+        outline: 3px solid #4285ed;
+        outline-offset: 2px;
+      }
+      .path-carousel-arrow:disabled {
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .path-carousel-arrow svg {
+        width: 18px;
+        height: 18px;
+      }
+      .path-carousel-arrow {
+        z-index: 2;
+      }
+      .path-carousel-previous {
+        left: -22px;
+      }
+      .path-carousel-next {
+        right: -22px;
+      }
+      .path-slide-count {
+        color: #77808d;
+        margin-right: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      @media (max-width: 1200px) {
+        .path-app-preview {
+          width: calc(100% - 16px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .path-carousel-track {
+          transition: none;
+        }
+        .path-carousel-arrow {
+          transition: none;
+        }
+        .path-carousel-arrow:hover,
+        .path-carousel-arrow:active {
+          transform: translateY(-50%);
+        }
+      }
+      .path-app-preview figcaption {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        color: var(--path-muted);
+        margin-top: 12px;
+        padding-inline: 3px;
+        font-size: 0.75rem;
+        text-align: center;
+      }
+      .path-proof-strip {
+        margin-top: 30px;
+        background: #f8f9fb;
+        border-block: 1px solid #eff1f4;
+      }
+      .path-proof-strip > div {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 20px 50px;
+        min-height: 62px;
+        padding-block: 15px;
+        color: #69717e;
+        font-size: 0.875rem;
+      }
+      .path-proof-strip span {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .path-proof-strip svg {
+        width: 14px;
+        height: 14px;
+        color: #798496;
+      }
+      .path-capabilities {
+        max-width: 1040px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 36px;
+        padding-block: 60px 68px;
+      }
+      .path-feature-icon {
+        color: var(--path-blue);
+        width: 18px;
+        height: 18px;
+        margin-bottom: 16px;
+      }
+      .path-capabilities h2 {
+        font-size: 1rem;
+        line-height: 1.4;
+        font-weight: 700;
+        margin: 0 0 10px;
+        letter-spacing: -0.02em;
+      }
+      .path-capabilities p {
+        margin: 0;
+        color: var(--path-muted);
+        font-size: 0.9375rem;
+        line-height: 1.65;
+      }
+      .path-how-section {
+        max-width: 1040px;
+        border-top: 1px solid var(--path-line);
+        padding-block: 72px;
+        scroll-margin-top: 30px;
+      }
+      .path-centered-heading {
+        text-align: center;
+      }
+      .path-section-label {
+        color: var(--path-blue);
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin: 0 0 14px;
+      }
+      .path-product h2 {
+        letter-spacing: -0.02em;
+      }
+      .path-centered-heading h2,
+      .path-choice-layout h2,
+      .path-contribute h2 {
+        margin: 0;
+        font-size: clamp(2rem, 3vw, 2.625rem);
+        font-weight: 700;
+        line-height: 1.16;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+      }
+      .path-process {
+        list-style: none;
+        margin: 46px auto 0;
+        padding: 0;
+        max-width: 760px;
+      }
+      .path-process li {
+        display: flex;
+        gap: 23px;
+        padding-block: 24px;
+        border-bottom: 1px solid var(--path-line);
+      }
+      .path-step-number {
+        flex: none;
+        color: var(--path-blue);
+        background: #f0f5ff;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: 1px solid #dde8fd;
+        border-radius: 10px;
+        font-size: 0.8125rem;
+        font-weight: 700;
+      }
+      .path-process h3 {
+        font-size: 1.125rem;
+        line-height: 1.4;
+        margin: 3px 0 7px;
+        letter-spacing: -0.02em;
+      }
+      .path-process p {
+        color: var(--path-muted);
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.65;
+      }
+      .path-document-types {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        max-width: 760px;
+        gap: 40px;
+        margin: 36px auto 0;
+      }
+      .path-document-types article > svg {
+        width: 18px;
+        height: 18px;
+        color: #667489;
+      }
+      .path-document-types h3 {
+        margin: 10px 0 6px;
+        font-size: 1rem;
+      }
+      .path-document-types p {
+        color: var(--path-muted);
+        margin: 0;
+        font-size: 1rem;
+      }
+      .path-choice-section {
+        background: #f7f9fc;
+        border-block: 1px solid #eaf0f7;
+        padding-block: 76px;
+      }
+      .path-choice-layout {
+        max-width: 1040px;
+        display: grid;
+        grid-template-columns: 1.12fr 1fr;
+        align-items: start;
+        gap: 72px;
+      }
+      .path-choice-layout h2 {
+        font-size: clamp(2rem, 2.8vw, 2.4rem);
+      }
+      .path-choice-layout > div > p:not(.path-section-label) {
+        max-width: 475px;
+        color: var(--path-muted);
+        font-size: 1rem;
+        line-height: 1.7;
+        margin: 22px 0 18px;
+      }
+      .path-inline-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--path-blue);
+        font-size: 0.9375rem;
+        font-weight: 600;
+        min-height: 40px;
+      }
+      .path-inline-link:hover {
+        text-decoration: underline;
+        text-underline-offset: 4px;
+      }
+      .path-inline-link svg {
+        width: 12px;
+        height: 12px;
+      }
+      .path-model-list article {
+        padding-block: 0 24px;
+      }
+      .path-model-list article + article {
+        border-top: 1px solid #dde3ec;
+        padding-block: 24px 0;
+      }
+      .path-model-list article > span {
+        font-size: 0.75rem;
+        letter-spacing: 0.09em;
+        color: #6c7c96;
+        font-weight: 700;
+      }
+      .path-model-list h3 {
+        margin: 6px 0 8px;
+        font-size: 1.25rem;
+        letter-spacing: -0.025em;
+      }
+      .path-model-list p {
+        margin: 0;
+        font-size: 1rem;
+        color: var(--path-muted);
+        line-height: 1.7;
+      }
+      .path-product-faq {
+        padding-block: 80px;
+        scroll-margin-top: 30px;
+      }
+      .path-product-questions {
+        max-width: 760px;
+        margin: 36px auto 0;
+      }
+      .path-product-questions details {
+        border-bottom: 1px solid var(--path-line);
+      }
+      .path-product-questions summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 23px 0;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 1rem;
+      }
+      .path-product-questions summary::-webkit-details-marker {
+        display: none;
+      }
+      .path-product-questions summary svg {
+        flex: none;
+        width: 13px;
+        height: 13px;
+        color: #8993a1;
+        transition: transform 150ms ease;
+      }
+      .path-product-questions details[open] summary svg {
+        transform: rotate(45deg);
+      }
+      .path-product-questions details > p {
+        color: var(--path-muted);
+        margin: 0 35px 20px 0;
+        font-size: 1rem;
+        line-height: 1.7;
+      }
+      .path-product-questions details > a {
+        margin-bottom: 17px;
+      }
+      .path-contribute {
+        max-width: 1040px;
+        border-top: 1px solid var(--path-line);
+        text-align: center;
+        padding-block: 70px 80px;
+      }
+      .path-contribute > img {
+        display: block;
+        margin: 0 auto 22px;
+      }
+      .path-contribute > p:not(.path-section-label) {
+        color: var(--path-muted);
+        margin: 17px auto 26px;
+        font-size: 1rem;
+      }
+      @media (max-width: 900px) {
+        .path-product-hero {
+          padding-top: 104px;
+        }
+        .path-product h1 {
+          font-size: clamp(2.8rem, 6.2vw, 3.65rem);
+        }
+        .path-capabilities {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 36px 45px;
+        }
+        .path-choice-layout {
+          gap: 40px;
+        }
+      }
+      @media (max-width: 620px) {
+        .path-container {
+          width: calc(100% - 36px);
+        }
+        .path-product-hero {
+          padding-top: 72px;
+        }
+        .path-hero-logo {
+          font-size: 1.5rem;
+          margin-bottom: 22px;
+        }
+        .path-hero-logo img {
+          width: 36px;
+          height: 36px;
+        }
+        .path-product h1 {
+          font-size: clamp(1.75rem, 8vw, 3rem);
+          line-height: 1.12;
+          letter-spacing: -0.04em;
+          text-wrap: balance;
+        }
+        .path-desktop-break {
+          display: none;
+        }
+        .path-product h1 .path-desktop-break {
+          display: block;
+        }
+        .path-product-lead {
+          font-size: 1rem;
+          margin-top: 20px;
+          max-width: 420px;
+        }
+        .path-product-actions {
+          gap: 10px;
+          margin-top: 25px;
+        }
+        .path-button {
+          padding-inline: 14px;
+          font-size: 0.875rem;
+          min-height: 46px;
+        }
+        .path-product-meta {
+          margin-top: 15px;
+          font-size: 0.75rem;
+          gap: 5px;
+        }
+        .path-app-preview {
+          margin-top: 48px;
+        }
+        .path-app-preview figcaption {
+          flex-direction: column;
+          gap: 2px;
+          font-size: 0.75rem;
+          max-width: 290px;
+          margin: 13px auto 0;
+          text-align: center;
+        }
+        .path-proof-strip {
+          margin-top: 29px;
+        }
+        .path-proof-strip > div {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px 20px;
+          padding-block: 20px;
+          font-size: 0.8125rem;
+        }
+        .path-capabilities {
+          gap: 32px 24px;
+          padding-block: 44px 50px;
+        }
+        .path-capabilities h2 {
+          font-size: 1rem;
+        }
+        .path-capabilities p {
+          font-size: 0.9375rem;
+        }
+        .path-how-section,
+        .path-product-faq {
+          padding-block: 52px;
+        }
+        .path-process {
+          margin-top: 24px;
+        }
+        .path-process li {
+          gap: 16px;
+        }
+        .path-process h3 {
+          font-size: 1.0625rem;
+        }
+        .path-document-types {
+          gap: 24px;
+          margin-top: 28px;
+        }
+        .path-choice-section {
+          padding-block: 52px;
+        }
+        .path-choice-layout {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 32px;
+        }
+        .path-product-questions {
+          margin-top: 22px;
+        }
+        .path-product-questions summary {
+          gap: 18px;
+          padding-block: 21px;
+        }
+        .path-product-questions details > p {
+          margin-right: 0;
+        }
+        .path-contribute {
+          padding-block: 52px 58px;
+        }
+      }
+      @media (max-width: 359px) {
+        .path-capabilities,
+        .path-document-types {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .path-product-actions {
+          flex-direction: column;
+        }
+        .path-product-meta {
+          max-width: 230px;
+          margin-inline: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="path-product">
+      <a class="skip-link" href="#path-main">Skip to content</a>
+      <main id="path-main">
+        <section class="path-product-hero path-container" aria-labelledby="path-title">
+          <div class="path-hero-logo">
+            <img src="assets/PathLogo.png" width="40" height="40" alt="" /><span>Path</span>
+          </div>
+          <h1 id="path-title">
+            <span class="sr-only"
+              >Turn video walkthroughs into clear documentation, clear specs, product feedback, and
+              help center guides.</span
+            ><span class="path-headline-prefix" aria-hidden="true"
+              >Turn video walkthroughs into</span
+            ><span class="path-headline-endings" aria-hidden="true"
+              ><span class="is-active">clear documentation.</span><span class="">clear specs.</span
+              ><span class="">product feedback.</span
+              ><span class="">help center guides.</span></span
+            >
+          </h1>
+          <p class="path-product-lead">
+            Record a workflow. Turn it into a help guide or spec you can edit and share. Open
+            source, with your choice of AI.
+          </p>
+          <div class="path-product-actions">
+            <a
+              class="path-button path-button-primary"
+              href="https://github.com/ajrahim/Path/releases"
+              ><svg
+                data-prefix="fas"
+                data-icon="download"
+                class="svg-inline--fa fa-download"
+                role="img"
+                viewBox="0 0 448 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M256 32c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 210.7-41.4-41.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l96 96c12.5 12.5 32.8 12.5 45.3 0l96-96c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 242.7 256 32zM64 320c-35.3 0-64 28.7-64 64l0 32c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-32c0-35.3-28.7-64-64-64l-46.9 0-56.6 56.6c-31.2 31.2-81.9 31.2-113.1 0L110.9 320 64 320zm304 56a24 24 0 1 1 0 48 24 24 0 1 1 0-48z"
+                ></path></svg
+              >Install</a
+            ><a
+              class="path-button path-button-secondary"
+              href="https://github.com/ajrahim/Path"
+              target="_blank"
+              rel="noreferrer"
+              ><svg
+                data-prefix="fab"
+                data-icon="github"
+                class="svg-inline--fa fa-github"
+                role="img"
+                viewBox="0 0 512 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5l0 52C323 491.5 335.5 500 350.5 494 441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5l0-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21z"
+                ></path></svg
+              >View on GitHub</a
+            >
+          </div>
+          <p class="path-install-note" hidden="hidden"></p>
+          <p class="path-product-meta">
+            Apache-2.0 license <span aria-hidden="true">·</span> Local or Cloud AI
+            <span aria-hidden="true">·</span> v0.3.0 prerelease
+          </p>
+          <figure
+            class="path-app-preview"
+            aria-label="Path screenshots"
+            aria-roledescription="carousel"
+          >
+            <div class="path-carousel-stage">
+              <button
+                class="path-carousel-arrow path-carousel-previous"
+                aria-label="Previous screenshot"
+                aria-controls="path-slides"
+                disabled
+              >
+                <svg
+                  data-prefix="fas"
+                  data-icon="arrow-left"
+                  class="svg-inline--fa fa-arrow-left"
+                  role="img"
+                  viewBox="0 0 512 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 288 480 288c17.7 0 32-14.3 32-32s-14.3-32-32-32l-370.7 0 105.4-105.4c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"
+                  ></path>
+                </svg>
+              </button>
+              <div
+                class="path-carousel-viewport"
+                id="path-slides"
+                tabindex="0"
+                aria-label="Screenshots. Use left and right arrow keys to navigate."
+              >
+                <div class="path-carousel-track" style="transform: translateX(-0%)">
+                  <div
+                    class="path-carousel-slide"
+                    role="group"
+                    aria-roledescription="slide"
+                    aria-label="1 of 2"
+                    aria-hidden="false"
+                    data-caption="Your recording, activity, and document — in one workspace."
+                  >
+                    <div class="path-preview-image">
+                      <img
+                        src="assets/RecordingScreenshot.png"
+                        width="1482"
+                        height="897"
+                        alt="Path workspace with a recorded walkthrough, timestamped click activity, and documentation editor"
+                        fetchpriority="high"
+                        draggable="false"
+                      />
+                    </div>
+                  </div>
+                  <div
+                    class="path-carousel-slide"
+                    role="group"
+                    aria-roledescription="slide"
+                    aria-label="2 of 2"
+                    aria-hidden="true"
+                    inert=""
+                    data-caption="Start with a recording. Choose what you want to create."
+                  >
+                    <div class="path-preview-image">
+                      <img
+                        src="assets/WorkspaceScreenshot.png"
+                        width="1482"
+                        height="897"
+                        alt="Path start screen with recording projects and options to generate specs, help guides, or feedback"
+                        fetchpriority="auto"
+                        draggable="false"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button
+                class="path-carousel-arrow path-carousel-next"
+                aria-label="Next screenshot"
+                aria-controls="path-slides"
+              >
+                <svg
+                  data-prefix="fas"
+                  data-icon="arrow-right"
+                  class="svg-inline--fa fa-arrow-right"
+                  role="img"
+                  viewBox="0 0 512 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M502.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L402.7 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l370.7 0-105.4 105.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"
+                  ></path>
+                </svg>
+              </button>
+            </div>
+            <figcaption>
+              <span aria-live="polite" aria-atomic="true"
+                ><span class="path-slide-count"
+                  >1<!-- -->
+                  /
+                  <!-- -->2</span
+                ><span class="path-slide-caption"
+                  >Your recording, activity, and document — in one workspace.</span
+                ></span
+              >
+            </figcaption>
+          </figure>
+        </section>
+        <div class="path-proof-strip">
+          <div class="path-container">
+            <span
+              ><svg
+                data-prefix="fas"
+                data-icon="code-branch"
+                class="svg-inline--fa fa-code-branch"
+                role="img"
+                viewBox="0 0 448 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3l0 70.7 176 0c26.5 0 48-21.5 48-48l0-22.7c-28.3-12.3-48-40.5-48-73.3 0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3l0 22.7c0 61.9-50.1 112-112 112l-176 0 0 70.7c28.3 12.3 48 40.5 48 73.3 0 44.2-35.8 80-80 80S0 476.2 0 432c0-32.8 19.7-61 48-73.3l0-205.3C19.7 141 0 112.8 0 80 0 35.8 35.8 0 80 0s80 35.8 80 80zm232 0a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48z"
+                ></path></svg
+              >Open source</span
+            ><span
+              ><svg
+                data-prefix="fas"
+                data-icon="desktop"
+                class="svg-inline--fa fa-desktop"
+                role="img"
+                viewBox="0 0 512 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M64 32C28.7 32 0 60.7 0 96L0 352c0 35.3 28.7 64 64 64l144 0-16 48-72 0c-13.3 0-24 10.7-24 24s10.7 24 24 24l272 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-72 0-16-48 144 0c35.3 0 64-28.7 64-64l0-256c0-35.3-28.7-64-64-64L64 32zM96 96l320 0c17.7 0 32 14.3 32 32l0 160c0 17.7-14.3 32-32 32L96 320c-17.7 0-32-14.3-32-32l0-160c0-17.7 14.3-32 32-32z"
+                ></path></svg
+              >Desktop capture</span
+            ><span
+              ><svg
+                data-prefix="fas"
+                data-icon="file-lines"
+                class="svg-inline--fa fa-file-lines"
+                role="img"
+                viewBox="0 0 384 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M0 64C0 28.7 28.7 0 64 0L213.5 0c17 0 33.3 6.7 45.3 18.7L365.3 125.3c12 12 18.7 28.3 18.7 45.3L384 448c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm208-5.5l0 93.5c0 13.3 10.7 24 24 24L325.5 176 208 58.5zM120 256c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0zm0 96c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0z"
+                ></path></svg
+              >Markdown export</span
+            ><span
+              ><svg
+                data-prefix="fas"
+                data-icon="lock"
+                class="svg-inline--fa fa-lock"
+                role="img"
+                viewBox="0 0 384 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M128 96l0 64 128 0 0-64c0-35.3-28.7-64-64-64s-64 28.7-64 64zM64 160l0-64C64 25.3 121.3-32 192-32S320 25.3 320 96l0 64c35.3 0 64 28.7 64 64l0 224c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 224c0-35.3 28.7-64 64-64z"
+                ></path></svg
+              >Locally stored media</span
+            >
+          </div>
+        </div>
+        <section class="path-capabilities path-container" aria-label="What you can do with Path">
+          <article>
+            <svg
+              data-prefix="fas"
+              data-icon="video"
+              class="svg-inline--fa fa-video path-feature-icon"
+              role="img"
+              viewBox="0 0 576 512"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M96 64c-35.3 0-64 28.7-64 64l0 256c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-256c0-35.3-28.7-64-64-64L96 64zM464 336l73.5 58.8c4.2 3.4 9.4 5.2 14.8 5.2 13.1 0 23.7-10.6 23.7-23.7l0-240.6c0-13.1-10.6-23.7-23.7-23.7-5.4 0-10.6 1.8-14.8 5.2L464 176 464 336z"
+              ></path>
+            </svg>
+            <h2>Capture your workflow</h2>
+            <p>Record a screen, window, or region, with optional microphone and click capture.</p>
+          </article>
+          <article>
+            <svg
+              data-prefix="fas"
+              data-icon="arrow-pointer"
+              class="svg-inline--fa fa-arrow-pointer path-feature-icon"
+              role="img"
+              viewBox="0 0 448 512"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M77.3 2.5c8.1-4.1 17.9-3.2 25.1 2.3l320 239.9c8.3 6.2 11.6 17 8.4 26.8s-12.4 16.4-22.8 16.4l-152.3 0 88.9 177.7c7.9 15.8 1.5 35-14.3 42.9s-35 1.5-42.9-14.3l-88.9-177.7-91.3 121.8c-6.2 8.3-17 11.6-26.8 8.4S64 434.3 64 424L64 24c0-9.1 5.1-17.4 13.3-21.5z"
+              ></path>
+            </svg>
+            <h2>Keep the useful details</h2>
+            <p>
+              Review the video, click screenshots, and transcript together. Edit what needs a
+              correction.
+            </p>
+          </article>
+          <article>
+            <svg
+              data-prefix="fas"
+              data-icon="file-lines"
+              class="svg-inline--fa fa-file-lines path-feature-icon"
+              role="img"
+              viewBox="0 0 384 512"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M0 64C0 28.7 28.7 0 64 0L213.5 0c17 0 33.3 6.7 45.3 18.7L365.3 125.3c12 12 18.7 28.3 18.7 45.3L384 448c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm208-5.5l0 93.5c0 13.3 10.7 24 24 24L325.5 176 208 58.5zM120 256c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0zm0 96c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0z"
+              ></path>
+            </svg>
+            <h2>Make it documentation</h2>
+            <p>
+              Generate a help guide or spec, refine the Markdown, and take it wherever you work.
+            </p>
+          </article>
+          <article>
+            <svg
+              data-prefix="fas"
+              data-icon="lock"
+              class="svg-inline--fa fa-lock path-feature-icon"
+              role="img"
+              viewBox="0 0 384 512"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M128 96l0 64 128 0 0-64c0-35.3-28.7-64-64-64s-64 28.7-64 64zM64 160l0-64C64 25.3 121.3-32 192-32S320 25.3 320 96l0 64c35.3 0 64 28.7 64 64l0 224c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 224c0-35.3 28.7-64 64-64z"
+              ></path>
+            </svg>
+            <h2>Choose your AI</h2>
+            <p>
+              Use a local Ollama model or your preferred cloud provider. Your media is stored
+              locally.
+            </p>
+          </article>
+        </section>
+        <section
+          class="path-how-section path-container"
+          id="how-it-works"
+          aria-labelledby="path-how-title"
+        >
+          <div class="path-centered-heading">
+            <p class="path-section-label">A simple path from screen to document</p>
+            <h2 id="path-how-title">Do the work once.<br />Make it easy to follow.</h2>
+          </div>
+          <ol class="path-process">
+            <li>
+              <span class="path-step-number">01</span>
+              <div>
+                <h3>Show what you mean.</h3>
+                <p>
+                  Pick a source and record a walkthrough. Explain the process, demonstrate a
+                  feature, or talk through an improvement.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="path-step-number">02</span>
+              <div>
+                <h3>Review what happened.</h3>
+                <p>
+                  Replay the video, seek from activity timestamps, and correct the transcript before
+                  turning it into a document.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="path-step-number">03</span>
+              <div>
+                <h3>Choose a flow. Make it yours.</h3>
+                <p>
+                  Select Help Guide, Spec Document, or your own instructions. Generate, edit, and
+                  export Markdown.
+                </p>
+              </div>
+            </li>
+          </ol>
+          <div class="path-document-types">
+            <article>
+              <svg
+                data-prefix="fas"
+                data-icon="book-open"
+                class="svg-inline--fa fa-book-open"
+                role="img"
+                viewBox="0 0 512 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M256 141.3l0 309.3 .5-.2C311.1 427.7 369.7 416 428.8 416l19.2 0 0-320-19.2 0c-42.2 0-84.1 8.4-123.1 24.6-16.8 7-33.4 13.9-49.7 20.7zM230.9 61.5L256 72 281.1 61.5C327.9 42 378.1 32 428.8 32L464 32c26.5 0 48 21.5 48 48l0 352c0 26.5-21.5 48-48 48l-35.2 0c-50.7 0-100.9 10-147.7 29.5l-12.8 5.3c-7.9 3.3-16.7 3.3-24.6 0l-12.8-5.3C184.1 490 133.9 480 83.2 480L48 480c-26.5 0-48-21.5-48-48L0 80C0 53.5 21.5 32 48 32l35.2 0c50.7 0 100.9 10 147.7 29.5z"
+                ></path>
+              </svg>
+              <h3>Help guides</h3>
+              <p>
+                Onboarding, product instructions, and the everyday workflows worth writing down.
+              </p>
+            </article>
+            <article>
+              <svg
+                data-prefix="fas"
+                data-icon="file-lines"
+                class="svg-inline--fa fa-file-lines"
+                role="img"
+                viewBox="0 0 384 512"
+                aria-hidden="true"
+              >
+                <path
+                  fill="currentColor"
+                  d="M0 64C0 28.7 28.7 0 64 0L213.5 0c17 0 33.3 6.7 45.3 18.7L365.3 125.3c12 12 18.7 28.3 18.7 45.3L384 448c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 64zm208-5.5l0 93.5c0 13.3 10.7 24 24 24L325.5 176 208 58.5zM120 256c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0zm0 96c-13.3 0-24 10.7-24 24s10.7 24 24 24l144 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-144 0z"
+                ></path>
+              </svg>
+              <h3>Improvement specs</h3>
+              <p>
+                Turn a product walkthrough and your observations into a focused document to refine.
+              </p>
+            </article>
+          </div>
+        </section>
+        <section class="path-choice-section" aria-labelledby="path-choice-title">
+          <div class="path-container path-choice-layout">
+            <div>
+              <p class="path-section-label">Your tools. Your choice.</p>
+              <h2 id="path-choice-title">Keep the capture local.<br />Choose how you use AI.</h2>
+              <p>
+                Recording and video processing work without a cloud AI provider. When you're ready
+                to generate, choose the model that fits your workflow.
+              </p>
+              <a
+                class="path-inline-link"
+                href="https://github.com/ajrahim/Path#ai-and-privacy"
+                target="_blank"
+                rel="noreferrer"
+                >Read about AI and privacy
+                <svg
+                  data-prefix="fas"
+                  data-icon="arrow-right"
+                  class="svg-inline--fa fa-arrow-right"
+                  role="img"
+                  viewBox="0 0 512 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M502.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L402.7 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l370.7 0-105.4 105.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"
+                  ></path></svg
+              ></a>
+            </div>
+            <div class="path-model-list">
+              <article>
+                <span>LOCAL</span>
+                <h3>Ollama</h3>
+                <p>
+                  Use a vision-capable model on your computer. A remote endpoint receives the
+                  supplied context.
+                </p>
+              </article>
+              <article>
+                <span>CLOUD</span>
+                <h3>OpenAI, Anthropic, Google</h3>
+                <p>
+                  Bring a provider key. The context needed for click analysis or document generation
+                  goes to your selected provider.
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+        <section class="path-product-faq path-container" id="faq" aria-labelledby="path-faq-title">
+          <div class="path-centered-heading">
+            <h2 id="path-faq-title">A few things to know.</h2>
+          </div>
+          <div class="path-product-questions">
+            <details>
+              <summary>
+                Is Path free and open source?<svg
+                  data-prefix="fas"
+                  data-icon="plus"
+                  class="svg-inline--fa fa-plus"
+                  role="img"
+                  viewBox="0 0 448 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"
+                  ></path>
+                </svg>
+              </summary>
+              <p>
+                Path is open source under the Apache-2.0 license. You can explore, run, and
+                contribute to the source on GitHub. If you choose a cloud AI provider, its usage
+                costs and terms apply.
+              </p>
+            </details>
+            <details>
+              <summary>
+                How do I get started?<svg
+                  data-prefix="fas"
+                  data-icon="plus"
+                  class="svg-inline--fa fa-plus"
+                  role="img"
+                  viewBox="0 0 448 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"
+                  ></path>
+                </svg>
+              </summary>
+              <p>
+                On Windows, download the installer using the Install button above. For source setup,
+                follow the repository guide. Running from source requires Node.js 22.14 or newer and
+                npm 10 or newer. Some native dependencies may need C++ build tools.
+              </p>
+              <a
+                class="path-inline-link"
+                href="https://github.com/ajrahim/Path#getting-started"
+                target="_blank"
+                rel="noreferrer"
+                >Read the setup guide<svg
+                  data-prefix="fas"
+                  data-icon="arrow-up-right-from-square"
+                  class="svg-inline--fa fa-arrow-up-right-from-square"
+                  role="img"
+                  viewBox="0 0 512 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M320 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l82.7 0-201.4 201.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L448 109.3 448 192c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160c0-17.7-14.3-32-32-32L320 0zM80 96C35.8 96 0 131.8 0 176L0 432c0 44.2 35.8 80 80 80l256 0c44.2 0 80-35.8 80-80l0-80c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 80c0 8.8-7.2 16-16 16L80 448c-8.8 0-16-7.2-16-16l0-256c0-8.8 7.2-16 16-16l80 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L80 96z"
+                  ></path></svg
+              ></a>
+            </details>
+            <details>
+              <summary>
+                Which platforms can I use?<svg
+                  data-prefix="fas"
+                  data-icon="plus"
+                  class="svg-inline--fa fa-plus"
+                  role="img"
+                  viewBox="0 0 448 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"
+                  ></path>
+                </svg>
+              </summary>
+              <p>
+                Windows is the primary development target. macOS packaging is configured, but native
+                runtime and permissions still need validation. Linux does not currently have an
+                installer target.
+              </p>
+            </details>
+            <details>
+              <summary>
+                Does everything stay on my computer?<svg
+                  data-prefix="fas"
+                  data-icon="plus"
+                  class="svg-inline--fa fa-plus"
+                  role="img"
+                  viewBox="0 0 448 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"
+                  ></path>
+                </svg>
+              </summary>
+              <p>
+                Recordings, screenshots, and transcripts are stored locally. Capture and video
+                processing do not require cloud AI. If you select a cloud provider or remote Ollama
+                endpoint, the context needed for that operation is sent there. Cloud document
+                generation does not send raw video or audio.
+              </p>
+            </details>
+            <details>
+              <summary>
+                What should I know before using it?<svg
+                  data-prefix="fas"
+                  data-icon="plus"
+                  class="svg-inline--fa fa-plus"
+                  role="img"
+                  viewBox="0 0 448 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M256 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 160-160 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l160 0 0 160c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160 160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-160 0 0-160z"
+                  ></path>
+                </svg>
+              </summary>
+              <p>
+                Generated documents need your review. Markdown drafts are not autosaved, so copy or
+                export them before switching recordings or closing Path. System audio and
+                user-facing pause and resume are not yet available.
+              </p>
+              <a
+                class="path-inline-link"
+                href="https://github.com/ajrahim/Path#current-limitations"
+                target="_blank"
+                rel="noreferrer"
+                >See current limitations<svg
+                  data-prefix="fas"
+                  data-icon="arrow-up-right-from-square"
+                  class="svg-inline--fa fa-arrow-up-right-from-square"
+                  role="img"
+                  viewBox="0 0 512 512"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M320 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l82.7 0-201.4 201.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L448 109.3 448 192c0 17.7 14.3 32 32 32s32-14.3 32-32l0-160c0-17.7-14.3-32-32-32L320 0zM80 96C35.8 96 0 131.8 0 176L0 432c0 44.2 35.8 80 80 80l256 0c44.2 0 80-35.8 80-80l0-80c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 80c0 8.8-7.2 16-16 16L80 448c-8.8 0-16-7.2-16-16l0-256c0-8.8 7.2-16 16-16l80 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L80 96z"
+                  ></path></svg
+              ></a>
+            </details>
+          </div>
+        </section>
+        <section class="path-contribute path-container" aria-labelledby="path-contribute-title">
+          <img src="assets/PathLogo.png" width="64" height="64" alt="" loading="lazy" />
+          <p class="path-section-label">Open source on GitHub.</p>
+          <h2 id="path-contribute-title">Use it. Inspect it. Improve it.</h2>
+          <p>Explore the source, try Path, and help shape what comes next.</p>
+          <a
+            class="path-button path-button-primary"
+            href="https://github.com/ajrahim/Path"
+            target="_blank"
+            rel="noreferrer"
+            ><svg
+              data-prefix="fab"
+              data-icon="github"
+              class="svg-inline--fa fa-github"
+              role="img"
+              viewBox="0 0 512 512"
+              aria-hidden="true"
+            >
+              <path
+                fill="currentColor"
+                d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5l0 52C323 491.5 335.5 500 350.5 494 441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5l0-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21z"
+              ></path></svg
+            >Explore the repository</a
+          >
+        </section>
+      </main>
+    </div>
+    <script>
+      (() => {
+        const page = document.querySelector(".path-product");
+        const repo = "https://github.com/ajrahim/Path";
+
+        // Match the published page's platform-specific install links.
+        const platform = navigator.platform || navigator.userAgent;
+        const mobile =
+          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+          (/Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+        const install = page.querySelector(".path-product-actions .path-button-primary");
+        const note = page.querySelector(".path-install-note");
+
+        function setInstall(label, destination, explanation = "") {
+          install.lastChild.textContent = label;
+          install.href = repo + destination;
+          note.textContent = explanation;
+          note.hidden = !explanation;
+        }
+
+        if (mobile) {
+          setInstall(
+            "Get desktop app",
+            "/releases",
+            "Path is a desktop app. Install it on your computer.",
+          );
+        } else if (/Win/i.test(platform)) {
+          setInstall("Install for Windows", "/releases/download/v0.3.0/Path-0.3.0.exe");
+        } else if (/Mac/i.test(platform)) {
+          setInstall(
+            "Install from source",
+            "#getting-started",
+            "No packaged macOS installer yet. Native macOS support is still being validated.",
+          );
+        } else if (/Linux/i.test(platform)) {
+          setInstall(
+            "Install from source",
+            "#getting-started",
+            "No packaged Linux installer yet. See the source setup instructions.",
+          );
+        }
+
+        // Rotate the hero headline when motion is enabled.
+        const endings = [...page.querySelectorAll(".path-headline-endings > span")];
+        const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+        let activeEnding = 0;
+        let timer;
+
+        function updateRotation() {
+          clearInterval(timer);
+          if (motion.matches) return;
+
+          timer = setInterval(() => {
+            if (document.hidden) return;
+            endings[activeEnding].classList.remove("is-active");
+            activeEnding = (activeEnding + 1) % endings.length;
+            endings[activeEnding].classList.add("is-active");
+          }, 3000);
+        }
+
+        motion.addEventListener("change", updateRotation);
+        updateRotation();
+
+        const carousel = page.querySelector(".path-app-preview");
+        const viewport = carousel.querySelector(".path-carousel-viewport");
+        const track = carousel.querySelector(".path-carousel-track");
+        const slides = [...track.children];
+        const previous = carousel.querySelector(".path-carousel-previous");
+        const next = carousel.querySelector(".path-carousel-next");
+        const count = carousel.querySelector(".path-slide-count");
+        const caption = carousel.querySelector(".path-slide-caption");
+        let activeSlide = 0;
+        let touchStart;
+
+        function moveSlide(direction) {
+          activeSlide = Math.max(0, Math.min(slides.length - 1, activeSlide + direction));
+          track.style.transform = `translateX(-${activeSlide * 100}%)`;
+
+          slides.forEach((slide, index) => {
+            slide.inert = index !== activeSlide;
+            slide.setAttribute("aria-hidden", String(slide.inert));
+          });
+
+          previous.disabled = activeSlide === 0;
+          next.disabled = activeSlide === slides.length - 1;
+          count.textContent = `${activeSlide + 1} / ${slides.length}`;
+          caption.textContent = slides[activeSlide].dataset.caption;
+        }
+
+        moveSlide(0);
+        previous.addEventListener("click", () => moveSlide(-1));
+        next.addEventListener("click", () => moveSlide(1));
+        viewport.addEventListener("keydown", (event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          moveSlide(event.key === "ArrowLeft" ? -1 : 1);
+        });
+        viewport.addEventListener(
+          "touchstart",
+          (event) => {
+            touchStart = event.touches[0].clientX;
+          },
+          { passive: true },
+        );
+        viewport.addEventListener("touchend", (event) => {
+          if (touchStart === undefined) return;
+          const distance = touchStart - event.changedTouches[0].clientX;
+          if (Math.abs(distance) > 50) moveSlide(distance > 0 ? 1 : -1);
+          touchStart = undefined;
+        });
+        viewport.addEventListener("touchcancel", () => {
+          touchStart = undefined;
+        });
+      })();
+    </script>
+  </body>
+</html>

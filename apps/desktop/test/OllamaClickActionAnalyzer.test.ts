@@ -182,20 +182,46 @@ describe("OllamaClickActionAnalyzer", () => {
 
     const analyzer = new OllamaClickActionAnalyzer();
 
-    await expect(analyzer.generateText("Write a guide", "qwen3:latest", "high")).resolves.toBe(
-      "# Guide",
-    );
+    await expect(analyzer.generateText("Write a guide", "qwen3:latest", "high")).resolves.toEqual({
+      text: "# Guide",
+      isTruncated: false,
+    });
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body));
 
     expect(body.think).toBe("high");
 
-    await expect(analyzer.generateText("Write a guide", "qwen3:latest")).resolves.toBe("# Guide");
+    await expect(analyzer.generateText("Write a guide", "qwen3:latest")).resolves.toEqual({
+      text: "# Guide",
+      isTruncated: false,
+    });
 
     const defaultBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body));
 
     expect(defaultBody.think).toBe(false);
+  });
+
+  it("requests the document output limit and reports text cut off at it unmodified", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ message: { content: "# Guide\n1. Open " }, done_reason: "length" }),
+          { status: 200 },
+        ),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Trailing whitespace is kept so a continuation joins at the exact cut-off point.
+    await expect(
+      new OllamaClickActionAnalyzer().generateText("Write a guide", "qwen3:latest"),
+    ).resolves.toEqual({ text: "# Guide\n1. Open ", isTruncated: true });
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+
+    expect(body.options.num_predict).toBe(8_192);
   });
 
   it("sends the screenshot, timestamp, and click position to a local model", async () => {

@@ -1,36 +1,57 @@
 import { randomUUID } from "node:crypto";
 import {
-  documentWorkflowPlanSchema,
   generateGuideCollectionInputSchema,
   generatedDocumentCollectionSchema,
+  type ClickEvent,
   type CommittedGuideCollection,
   type CommittedGuideRevision,
   type DesktopApi,
+  type DocumentEvidenceRange,
+  type DocumentGenerationMode,
   type DocumentRevision,
   type DocumentRevisionPage,
+  type DocumentStructurePlan,
   type DocumentWorkflow,
   type GuideDocumentChange,
   type GuideDocumentCollection,
   type GuideDocumentSnapshot,
+  type PlannedDocument,
   type SaveGuideDocumentResult,
   type SaveGuideDraftResult,
+  type TranscriptSegment,
 } from "@path/shared";
 import {
   buildDocumentActivity,
-  buildDocumentPrompt,
   buildDocumentUpdatePrompt,
-  buildSplitDocumentPrompt,
-  buildWorkflowDocumentPrompt,
   MAX_DOCUMENT_IMPORTED_ITEMS,
   normalizeDocumentMarkdown,
 } from "../ai/DocumentPrompt";
+import {
+  buildPlannedDocumentPrompt,
+  buildSectionRepairPrompt,
+  buildStructurePlanPrompt,
+  buildStructurePlanRepairPrompt,
+  findMissingSections,
+  parseStructurePlan,
+} from "../ai/DocumentStructurePlan";
 import type { SelectedAiService } from "../ai/SelectedAiService";
-import type { TimelineImportService } from "../recording/TimelineImportService";
+import type {
+  DocumentTimelineEntry,
+  TimelineImportService,
+} from "../recording/TimelineImportService";
 import type { RemoteRepositories } from "../storage/DatabaseClient";
 import type { Diagnostics } from "../storage/DiagnosticLog";
 
 /** Inputs arrive already validated by the IPC schemas that define the guides bridge. */
 type Input<Method extends keyof DesktopApi["guides"]> = Parameters<DesktopApi["guides"][Method]>[0];
+
+/** Everything recorded for one session; each prompt selects the activity it needs from it. */
+interface RecordingEvidence {
+  title: string;
+  transcript: TranscriptSegment[];
+  clicks: ClickEvent[];
+  importedEntries: DocumentTimelineEntry[];
+}
 
 /** One generated document awaiting its atomic collection commit. */
 interface GeneratedDocumentResult {
@@ -44,6 +65,8 @@ interface GeneratedCollection {
   results: GeneratedDocumentResult[];
   workflowPlan?: { workflows: DocumentWorkflow[]; expectedPlanVersion: number };
 }
+
+const INCOMPLETE_DOCUMENT_MESSAGE = "The model returned an incomplete document. Retry generation.";
 
 /** A planned workflow keeps its previous identity when the same title is suggested again. */
 function findByTitle<T extends { title: string }>(
@@ -70,8 +93,8 @@ export class GuideDocumentService {
   ) {}
 
   async generate(input: Input<"generate">): Promise<CommittedGuideRevision> {
-    const { title, activity } = await this.evidence(input.id);
-    const markdown = await this.generateMarkdown(title, activity, input.instructions);
+    const evidence = await this.evidence(input.id);
+    const markdown = await this.writeCombinedDocument(evidence, input.instructions);
 
     const committed = await this.repositories.documents.commitRevision(
       input.id,
@@ -100,12 +123,12 @@ export class GuideDocumentService {
 
   async generateCollection(input: Input<"generateCollection">): Promise<CommittedGuideCollection> {
     const parsed = generateGuideCollectionInputSchema.parse(input);
-    const { title, activity } = await this.evidence(parsed.id);
+    const evidence = await this.evidence(parsed.id);
 
     const { results, workflowPlan } =
       parsed.mode === "combine"
-        ? await this.generateCombinedCollection(title, activity, parsed.instructions)
-        : await this.generateSplitCollection(parsed.id, title, activity, parsed.instructions);
+        ? await this.generateCombinedCollection(evidence, parsed.instructions)
+        : await this.generateSplitCollection(parsed.id, evidence, parsed.instructions);
 
     const committed = await this.repositories.documents.commitCollection(
       parsed.id,
@@ -126,15 +149,16 @@ export class GuideDocumentService {
 
     if (existing.workflows !== null) return existing;
 
-    const { title, activity } = await this.evidence(input.id);
-    const plan = await this.planWorkflows(title, activity, input.instructions);
+    const evidence = await this.evidence(input.id);
+    const plan = await this.planStructure(evidence, input.instructions, "split");
 
     return this.saveWorkflowPlan({
       id: input.id,
       expectedPlanVersion: input.expectedPlanVersion,
-      workflows: plan.map((workflow) => ({
-        ...workflow,
-        id: findByTitle(existing.documents, workflow.title)?.id ?? randomUUID(),
+      workflows: plan.documents.map((document) => ({
+        id: findByTitle(existing.documents, document.title)?.id ?? randomUUID(),
+        title: document.title,
+        scope: document.scope,
       })),
     });
   }
@@ -152,10 +176,10 @@ export class GuideDocumentService {
   }
 
   async update(input: Input<"update">): Promise<CommittedGuideRevision> {
-    const { title, activity } = await this.evidence(input.id);
+    const evidence = await this.evidence(input.id);
     const prompt = buildDocumentUpdatePrompt(
-      title,
-      activity,
+      evidence.title,
+      this.activity(evidence),
       input.instructions,
       input.currentMarkdown,
       input.updatePrompt,
@@ -252,64 +276,48 @@ export class GuideDocumentService {
     return committed;
   }
 
-  private async generateMarkdown(
-    title: string,
-    activity: string,
+  /** Combine plans one document for the whole recording, then writes it from that outline. */
+  private async writeCombinedDocument(
+    evidence: RecordingEvidence,
     instructions: string,
   ): Promise<string> {
-    const prompt = buildDocumentPrompt(title, activity, instructions);
-    const markdown = normalizeDocumentMarkdown(await this.ai.generateText(prompt));
+    const plan = await this.planStructure(evidence, instructions, "combine");
 
-    if (!markdown) throw new Error("The selected AI model returned no guide");
-
-    return markdown;
+    // The plan parser guarantees exactly one document in combine mode.
+    return this.writePlannedDocument(evidence, instructions, plan, plan.documents[0]!);
   }
 
   private async generateCombinedCollection(
-    title: string,
-    activity: string,
+    evidence: RecordingEvidence,
     instructions: string,
   ): Promise<GeneratedCollection> {
-    const markdown = await this.generateMarkdown(title, activity, instructions);
+    const markdown = await this.writeCombinedDocument(evidence, instructions);
 
-    return { results: [{ title, markdown }] };
+    return { results: [{ title: evidence.title, markdown }] };
   }
 
   /** The plan version is read before planning so a concurrent tab edit rejects the commit. */
   private async generateSplitCollection(
     recordingId: string,
-    title: string,
-    activity: string,
+    evidence: RecordingEvidence,
     instructions: string,
   ): Promise<GeneratedCollection> {
     const existing = await this.getCollection(recordingId);
-    const plan = await this.planWorkflows(title, activity, instructions);
-    const workflows = plan.map((workflow) => ({
-      ...workflow,
-      id: findByTitle(existing.workflows, workflow.title)?.id ?? randomUUID(),
-    }));
+    const plan = await this.planStructure(evidence, instructions, "split");
 
+    const workflows: DocumentWorkflow[] = [];
     const results: GeneratedDocumentResult[] = [];
 
-    for (const workflow of workflows) {
-      const markdown = normalizeDocumentMarkdown(
-        await this.ai.generateText(
-          buildWorkflowDocumentPrompt(title, activity, instructions, workflow),
-        ),
-      );
+    for (const document of plan.documents) {
+      const id = findByTitle(existing.workflows, document.title)?.id ?? randomUUID();
+      const markdown = await this.writePlannedDocument(evidence, instructions, plan, document);
 
-      if (!markdown) {
-        throw new Error("The model returned an incomplete document set. Retry generation.");
-      }
-
-      results.push({ title: workflow.title, markdown, documentId: workflow.id });
+      workflows.push({ id, title: document.title, scope: document.scope });
+      results.push({ title: document.title, markdown, documentId: id });
     }
 
     generatedDocumentCollectionSchema.parse({
-      documents: results.map(({ title: workflowTitle, markdown }) => ({
-        title: workflowTitle,
-        markdown,
-      })),
+      documents: results.map(({ title, markdown }) => ({ title, markdown })),
     });
 
     return {
@@ -318,24 +326,88 @@ export class GuideDocumentService {
     };
   }
 
-  private async planWorkflows(
-    title: string,
-    activity: string,
+  /**
+   * First pass. An invalid plan is retried once with the validation problem, because repeating
+   * the identical request would repeat the identical answer.
+   */
+  private async planStructure(
+    evidence: RecordingEvidence,
     instructions: string,
-  ): Promise<Pick<DocumentWorkflow, "title" | "scope">[]> {
-    const response = await this.ai.generateText(
-      buildSplitDocumentPrompt(title, activity, instructions),
+    mode: DocumentGenerationMode,
+  ): Promise<DocumentStructurePlan> {
+    const prompt = buildStructurePlanPrompt(
+      evidence.title,
+      this.activity(evidence),
+      instructions,
+      mode,
     );
 
-    try {
-      return documentWorkflowPlanSchema.parse(JSON.parse(response)).documents;
-    } catch {
-      throw new Error("The model returned an invalid or incomplete split plan. Retry.");
+    const planned = parseStructurePlan(await this.ai.generateText(prompt), mode);
+
+    if (planned.isValid) return planned.plan;
+
+    const repaired = parseStructurePlan(
+      await this.ai.generateText(buildStructurePlanRepairPrompt(prompt, planned.problem)),
+      mode,
+    );
+
+    if (repaired.isValid) return repaired.plan;
+
+    throw new Error("The model returned an invalid or incomplete document plan. Retry generation.");
+  }
+
+  /**
+   * Second pass. A document must contain every planned section; one rewrite is allowed before
+   * the whole generation fails without committing anything.
+   */
+  private async writePlannedDocument(
+    evidence: RecordingEvidence,
+    instructions: string,
+    plan: DocumentStructurePlan,
+    document: PlannedDocument,
+  ): Promise<string> {
+    const prompt = buildPlannedDocumentPrompt(
+      evidence.title,
+      this.activity(evidence, document.evidence),
+      instructions,
+      plan,
+      document,
+    );
+
+    const markdown = normalizeDocumentMarkdown(await this.ai.generateText(prompt));
+
+    if (!markdown) throw new Error(INCOMPLETE_DOCUMENT_MESSAGE);
+
+    const missingSections = findMissingSections(markdown, document);
+
+    if (missingSections.length === 0) return markdown;
+
+    const rewritten = normalizeDocumentMarkdown(
+      await this.ai.generateText(buildSectionRepairPrompt(prompt, missingSections)),
+    );
+
+    if (!rewritten || findMissingSections(rewritten, document).length > 0) {
+      throw new Error(INCOMPLETE_DOCUMENT_MESSAGE);
     }
+
+    return rewritten;
+  }
+
+  /** Activity for one prompt; a document's own time ranges are kept at full density. */
+  private activity(
+    evidence: RecordingEvidence,
+    focusRanges: readonly DocumentEvidenceRange[] = [],
+  ): string {
+    return buildDocumentActivity(
+      evidence.transcript,
+      evidence.clicks,
+      evidence.importedEntries,
+      focusRanges,
+    );
   }
 
   /** Generation reads every stored activity row; imported evidence is sampled across the video. */
-  private async evidence(recordingId: string): Promise<{ title: string; activity: string }> {
+  private async evidence(recordingId: string): Promise<RecordingEvidence> {
     const [session, transcript, clicks, importedEntries] = await Promise.all([
       this.repositories.recordings.get(recordingId),
       this.repositories.recordings.listTranscript(recordingId),
@@ -345,10 +417,7 @@ export class GuideDocumentService {
 
     if (!session) throw new Error(`Recording not found: ${recordingId}`);
 
-    return {
-      title: session.title,
-      activity: buildDocumentActivity(transcript, clicks, importedEntries),
-    };
+    return { title: session.title, transcript, clicks, importedEntries };
   }
 
   /** Collection changes refresh every window's tab structure, not just one editor. */

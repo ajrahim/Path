@@ -3,36 +3,10 @@ import {
   buildDocumentActivity,
   buildDocumentPrompt,
   buildDocumentUpdatePrompt,
-  buildSplitDocumentPrompt,
-  buildWorkflowDocumentPrompt,
   normalizeDocumentMarkdown,
 } from "../src/ai/DocumentPrompt";
 
 describe("document generation prompt", () => {
-  it("plans content-selected tabs and gives each complete document its own evidence scope", () => {
-    const activity = "[1.0s] Speech: Sign in\n[3.0s] Speech: Create a new account";
-    const plan = buildSplitDocumentPrompt(
-      "Recording",
-      activity,
-      "Create specs with acceptance criteria.",
-    );
-
-    const document = buildWorkflowDocumentPrompt(
-      "Recording",
-      activity,
-      "Create specs with acceptance criteria.",
-      { title: "Login", scope: "Sign-in at 1s" },
-    );
-
-    expect(plan).toContain("document count yourself");
-    expect(plan).toContain("existing UI tabs are not constraints");
-    expect(plan).toContain(activity);
-    expect(document).toContain("workflow only: Login");
-    expect(document).toContain("Workflow scope: Sign-in at 1s");
-    expect(document).toContain("Do not return an outline or placeholder");
-    expect(document).toContain("Create specs with acceptance criteria.");
-  });
-
   it("defaults to a help guide for existing callers", () => {
     expect(buildDocumentPrompt("Recording", "Clicked Save", " ")).toContain(
       "help guide with a clear title and numbered steps",
@@ -99,18 +73,67 @@ describe("document activity", () => {
     ).toBe("[1.0s] Click: left click\n[2.0s] Speech: Save the document");
   });
 
-  it("limits evidence after ordering it", () => {
-    // Reverse the input so truncating before sorting would discard the earliest evidence.
-    const transcript = Array.from({ length: 301 }, (_, index) => ({
-      startMs: (300 - index) * 1_000,
-      text: `Item ${300 - index}`,
+  it("samples a long recording across its whole length after ordering it", () => {
+    // Reverse the input so sampling before sorting would not be chronological.
+    const transcript = Array.from({ length: 600 }, (_, index) => ({
+      startMs: (599 - index) * 1_000,
+      text: `Item ${599 - index}`,
     }));
 
     const lines = buildDocumentActivity(transcript, []).split("\n");
 
     expect(lines).toHaveLength(300);
     expect(lines[0]).toBe("[0.0s] Speech: Item 0");
-    expect(lines.at(-1)).toBe("[299.0s] Speech: Item 299");
+    expect(lines[150]).toBe("[300.0s] Speech: Item 300");
+    expect(lines.at(-1)).toBe("[598.0s] Speech: Item 598");
+  });
+
+  it("keeps a document's own time ranges at full density and samples the rest", () => {
+    const transcript = Array.from({ length: 600 }, (_, index) => ({
+      startMs: index * 1_000,
+      text: `Item ${index}`,
+    }));
+
+    const lines = buildDocumentActivity(
+      transcript,
+      [],
+      [],
+      [
+        { startSeconds: 400, endSeconds: 449 },
+        { startSeconds: 500, endSeconds: 549 },
+      ],
+    ).split("\n");
+
+    const focused = lines.filter((line) => {
+      const seconds = Number(/^\[(\d+)\.0s\]/.exec(line)?.[1]);
+
+      return (seconds >= 400 && seconds <= 449) || (seconds >= 500 && seconds <= 549);
+    });
+
+    expect(lines).toHaveLength(300);
+    expect(focused).toHaveLength(100);
+    expect(lines[0]).toBe("[0.0s] Speech: Item 0");
+    // The 200 remaining lines are sampled from the 500 entries outside the ranges.
+    expect(lines).toContain("[597.0s] Speech: Item 597");
+    expect(lines).not.toContain("[1.0s] Speech: Item 1");
+  });
+
+  it("samples within the time ranges when they alone exceed the limit", () => {
+    const transcript = Array.from({ length: 900 }, (_, index) => ({
+      startMs: index * 1_000,
+      text: `Item ${index}`,
+    }));
+
+    const lines = buildDocumentActivity(
+      transcript,
+      [],
+      [],
+      [{ startSeconds: 100, endSeconds: 699 }],
+    ).split("\n");
+
+    expect(lines).toHaveLength(300);
+    expect(lines[0]).toBe("[100.0s] Speech: Item 100");
+    expect(lines.at(-1)).toBe("[698.0s] Speech: Item 698");
   });
 
   it("interleaves imported logs and element paths as labeled, single-line evidence", () => {
