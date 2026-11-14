@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
     "cross-env": "^10.0.0",
-    "electron": "42.9.3",
+    "electron": "44.4.5",
     "electron-builder": "^26.0.12",
     "esbuild": "0.28.2",
     "wait-on": "^9.1.0",
